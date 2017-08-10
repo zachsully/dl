@@ -1,11 +1,5 @@
 module AST where
 
-import Text.Parsec.Char
-import Text.Parsec.String
-import Text.Parsec.Prim
-import Text.Parsec.Combinator
-import Text.Parsec.Language (haskellDef)
-import Text.Parsec.Token
 import Data.Monoid
 
 type Name = String
@@ -36,23 +30,6 @@ data CoDataDcl = CoData Name [Name] [CoPattern]
 data CoPattern = CoPattern Name Type
 data Observation = Obs [CoAlternative]
 data CoAlternative = CoAlt [CoPattern] Expr
-
-------------
--- Parser --
-------------
-
-parseSrc :: String -> Either String (Src CoDataDcl Observation)
-parseSrc p =
-  case parse pSrc "" p of
-    Left err -> Left . show $ err
-    Right r -> Right r
-
-pSrc :: Parser (Src CoDataDcl Observation)
-pSrc = try (parserFail "foo")
-
-pType :: Parser Type
-pType = undefined
-
 
 --------------------------------------------------------------------------------
 --                               Record AST                                   --

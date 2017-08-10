@@ -24,9 +24,10 @@ runPreprocessor fp =
   do { !contents <- case fp of
                       "-" -> getContents
                       _   -> readFile fp
-     ; case parseSrc contents of
-         Left err  -> putStrLn err
-         Right src -> putStrLn . ppSrc . translate $ src
+     ; return ()
+     -- ; case parseSrc contents of
+     --     Left err  -> putStrLn err
+     --     Right src -> putStrLn . ppSrc . translate $ src
      }
 
 runTest :: String -> IO ()
