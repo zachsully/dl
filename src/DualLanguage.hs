@@ -68,9 +68,16 @@ data Pattern where
 
 {- NOTE: we often use 'q' for a copattern variables -}
 data CoPattern where
+  -- ^ match any copattern
   QWild :: CoPattern
+
+  -- ^ the copattern matching the empty context
   QBox  :: CoPattern
+
+  -- ^ a specific destructor
   QDest :: Symbol -> CoPattern -> CoPattern
+
+  -- ^ a copattern applied ot a pattern
   QPat  :: CoPattern -> Pattern -> CoPattern
   deriving (Eq,Show)
 
@@ -213,12 +220,13 @@ type Env = [(Variable,Term)]
 
 {- An evaluation context for CoPatterns to match on -}
 data QCtx where
-  Box        :: QCtx
-  Destructor :: QCtx -> Pattern -> QCtx
+  Empty      :: QCtx
+  Destructor :: QCtx   -> Term -> QCtx
   Destructee :: Symbol -> QCtx -> QCtx
+  deriving (Show,Eq)
 
 evalClosed :: Term -> Either CoValue Value
-evalClosed = eval [] Box
+evalClosed = eval [] Empty
 
 eval :: Env -> QCtx -> Term -> Either CoValue Value
 eval env qc (Var v) =
@@ -239,47 +247,56 @@ eval env qc (Case t alts) =
             Just subs -> eval (subs++env) qc t''
             Nothing -> tryAlts t' alts'
 
-        matchPattern :: Term -> Pattern -> Maybe [(Variable,Term)]
-        matchPattern t PWild = Just []
-        matchPattern t (PVar v) = Just [(v,t)]
-        matchPattern (Cons k ts) (PCons k' ps) =
-          case k == k' of
-            True -> let subs = map (\(t,p) -> matchPattern t p) (zip ts ps)
-                    in foldr (\msub acc ->
-                               case (msub,acc) of
-                                 (_,Nothing) -> Nothing
-                                 (Nothing,_) -> Nothing
-                                 (Just as,Just bs) -> Just (as ++ bs)
-                             ) (Just []) subs
-            False -> Nothing
-        matchPattern _ _ = Nothing
+eval env qc (Dest s t) = eval env (Destructee s qc) t
 
-
-
-eval env qc (Dest s t) =
-  let qc' = Destructee s qc in
-  case eval env qc'  t of
-    Left (VDest s' t') -> undefined
-    Left (VCoCase coalts) -> tryCoAlts qc' coalts
-    _ -> error "destructors must be applied to cocase"
-  where tryCoAlts :: QCtx -> [(CoPattern,Term)] -> Either CoValue Value
-        tryCoAlts _ [] = error "no copattern match"
-        tryCoAlts qc ((q,t):coalts') =
+eval env qc (CoCase coalts) = tryCoAlts coalts
+  where tryCoAlts :: [(CoPattern,Term)] -> Either CoValue Value
+        tryCoAlts [] = error ("no copattern match in Q context: " ++ show qc)
+        tryCoAlts ((q,t):coalts') =
           case matchCoPattern qc  q of
-            True -> eval env qc t
-            False -> tryCoAlts qc coalts'
+            Just subs -> eval (subs++env) qc t
+            Nothing -> tryCoAlts coalts'
 
-        matchCoPattern :: QCtx -> CoPattern -> Bool
-        matchCoPattern _   QWild = True
-        matchCoPattern Box QBox  = True
-        matchCoPattern (Destructee sym qctx) (QDest sym' q) =
-          case sym == sym' of
-            True -> matchCoPattern qctx q
-            False -> False
-        matchCoPattern _ _ = False
+--------------------
+-- Matching Rules --
+--------------------
 
-eval _ _ (CoCase coalts) = Left (VCoCase coalts)
+{- Takes a term and a pattern and returns a set of substitutions if it succeeds.
+   Note that the set of substitutions can be empty -}
+matchPattern :: Term -> Pattern -> Maybe [(Variable,Term)]
+matchPattern t PWild = Just []
+matchPattern t (PVar v) = Just [(v,t)]
 
+matchPattern (Cons k ts) (PCons k' ps) =
+  case k == k' of
+    True -> let subs = map (\(t,p) -> matchPattern t p) (zip ts ps)
+            in foldr (\msub acc ->
+                       case (msub,acc) of
+                         (_,Nothing) -> Nothing
+                         (Nothing,_) -> Nothing
+                         (Just as,Just bs) -> Just (as ++ bs)
+                     ) (Just []) subs
+    False -> Nothing
+matchPattern _ _ = Nothing
+
+{- Takes a copattern context and copattern and returns just a list of
+   substitutions if it succeeds. The reason there can be substitutions
+   is because patterns can be in copatterns which may bind variables. -}
+matchCoPattern :: QCtx -> CoPattern -> Maybe [(Variable,Term)]
+matchCoPattern _     QWild = Just []
+matchCoPattern Empty QBox  = Just []
+
+matchCoPattern (Destructor qc t) (QPat q p) =
+  do { subs1 <- matchCoPattern qc q
+     ; subs2 <-  matchPattern t p
+     ; return (subs1++subs2) }
+
+matchCoPattern (Destructee s qc) (QDest s' q) =
+  case s == s' of
+    True -> matchCoPattern qc q
+    False -> Nothing
+
+matchCoPattern _ _ = Nothing
 
 --------------------------------------------------------------------------------
 --                               Examples                                     --
@@ -302,11 +319,20 @@ lam = CoCase [(QPat QWild (PVar (Variable "x"))
                                       ,Var (Variable "x")])]
 
 negPair :: Term
-negPair = CoCase [(QDest (Symbol "fst") QWild, unit)
-                 ,(QDest (Symbol "snd") QWild, pair1)]
+negPair = CoCase [(QDest (Symbol "fst") QBox, unit)
+                 ,(QDest (Symbol "snd") QBox, pair1)]
 
 fstProj :: Term
 fstProj = Dest (Symbol "fst") negPair
 
 sndProj :: Term
 sndProj = Dest (Symbol "snd") negPair
+
+-- stream :: Term
+-- stream = CoCase [ ( QDest (Symbol "head") QWild , unit )
+--                 , ( QDest (Symbol "tail")
+--                           (QPat (PVar "s") undefined)
+--                   , Cons (Symbol "mkPair")
+--                          [(Dest (Symbol "head") (Var (Variable "s")))
+--                          ,(Dest (Symbol "head") (Var (Variable "s")))])
+--                 ]
