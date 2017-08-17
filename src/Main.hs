@@ -3,7 +3,8 @@ module Main where
 
 import System.Environment (getArgs,getProgName)
 
-import AST
+import DualSyn
+import Syn
 import Translation
 
 --------------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-module AST where
+module Syn where
 
 import Data.Monoid
 

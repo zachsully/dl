@@ -2,7 +2,7 @@ module Translation where
 
 import Data.Char (toLower)
 
-import AST
+import Syn
 
 translate :: Src CoDataDcl Observation -> Src RecordDcl RecordIntro
 translate = \src ->

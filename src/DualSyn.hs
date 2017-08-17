@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-module DualLanguage where
+module DualSyn where
 
 --------------------------------------------------------------------------------
 --                                 Types                                      --
