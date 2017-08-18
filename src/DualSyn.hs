@@ -302,8 +302,10 @@ matchPattern _ _ = Nothing
    is because patterns can be in copatterns which may bind variables.
 
    [Problem] Consider the two instances of NegPair Int Int, which I (Zach) think
-   should be equal.
+   should be equal. I give their traces as well in the context of the
+   observation `fst (snd f)`:
 
+   ```
    f1 = cocase { fst #       -> 1
                , fst (snd #) -> 2
                , snd (snd #) -> 3 }
@@ -312,6 +314,17 @@ matchPattern _ _ = Nothing
                , snd # -> cocase { fst # -> 2
                                  , snd # -> 3 }
                }
+   ```
+
+   0 : < fst (snd f1) , # >
+   1 : < snd f1       , fst # >
+   2 : < f1           , snd (fst #) >
+   3 : 2
+
+   0 : < fst (snd f2) , # >
+   1 : < snd f2       , fst # >
+   2 : < f2           , snd (fst #) >
+     -- error : `snd #` does not match `snd (fst #)`
 
    Possible [Fix]:
 
