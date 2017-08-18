@@ -6,7 +6,7 @@ module DualSyn where
 --------------------------------------------------------------------------------
 
 data Type where
-  Nat    :: Type
+  Int    :: Type
   Fun    :: Type -> Type -> Type
   TyVar  :: TyVariable -> Type
   TyApp  :: Type -> Type -> Type
@@ -50,6 +50,7 @@ data Decl = Decl Polarity TySymbol [TyVariable] [Data]
 --------------------------------------------------------------------------------
 
 data Term where
+  Lit :: Int -> Term
   Var :: Variable -> Term
 
   {- positive datum intro and elim -}
@@ -72,7 +73,7 @@ data CoPattern where
   QWild :: CoPattern
 
   -- ^ the copattern matching the empty context
-  QBox  :: CoPattern
+  QHash  :: CoPattern
 
   -- ^ a specific destructor
   QDest :: Symbol -> CoPattern -> CoPattern
@@ -91,6 +92,14 @@ data CoValue where
   VDest :: Symbol -> Term -> CoValue
   VCoCase :: [(CoPattern,Term)] -> CoValue
   deriving (Eq,Show)
+
+data Result where
+  RInt    :: Int -> Result
+  RCons   :: Symbol -> [Term] -> Result
+  RDest   :: Symbol -> Term -> Result
+  RCoCase :: [(CoPattern,Term)] -> Result
+  deriving (Eq,Show)
+
 
 {- Symbols are introduced in typing declarations -}
 newtype Symbol = Symbol String
@@ -220,42 +229,51 @@ type Env = [(Variable,Term)]
 
 {- An evaluation context for CoPatterns to match on -}
 data QCtx where
-  Empty      :: QCtx
+  Hash       :: QCtx
   Destructor :: QCtx   -> Term -> QCtx
   Destructee :: Symbol -> QCtx -> QCtx
   deriving (Show,Eq)
 
-evalClosed :: Term -> Either CoValue Value
-evalClosed = eval [] Empty
+data Machine = Machine { step :: (Term, QCtx, Env) -> (Result, QCtx, Env) }
 
-eval :: Env -> QCtx -> Term -> Either CoValue Value
-eval env qc (Var v) =
-  case lookup v env of
-    Just t -> eval env qc t
-    Nothing -> error $ "unbound variable" ++ show v
+evalStart :: Term -> Result
+evalStart t = case step evalMachine (t,Hash,[]) of
+                (r,_,_) -> r
 
-eval _ _ (Cons k ts) = Right (VCons k ts)
+evalMachine :: Machine
+evalMachine = Machine $ \(t,qc,env) ->
+  case t of
+    Lit i -> (RInt i,qc,env)
+    Var v ->
+      case lookup v env of
+        Just t' -> step evalMachine (t',qc,env)
+        Nothing -> error $ "unbound variable" ++ show v
 
-eval env qc (Case t alts) =
-  case eval env qc t of
-    Right (VCons k ts) -> tryAlts (Cons k ts) alts
-    _ -> error "case only operates on constructed values"
-  where tryAlts :: Term -> [(Pattern,Term)] -> Either CoValue Value
-        tryAlts _ [] = error "no matching alternative"
-        tryAlts t' ((p,t''):alts') =
-          case matchPattern t' p of
-            Just subs -> eval (subs++env) qc t''
-            Nothing -> tryAlts t' alts'
+    Cons k ts -> (RCons k ts,qc,env)
 
-eval env qc (Dest s t) = eval env (Destructee s qc) t
+    Case t' alts ->
+      case step evalMachine (t',qc,env) of
+        (RCons k ts, qc', env') ->
+          let tryAlts :: Term -> [(Pattern,Term)] -> (Result, QCtx, Env)
+              tryAlts _ [] = error "no matching alternative"
+              tryAlts t'' ((p,t'''):alts') =
+                case matchPattern t' p of
+                  Just subs -> step evalMachine (t''',qc,(subs++env))
+                  Nothing -> tryAlts t'' alts'
+          in tryAlts (Cons k ts) alts
 
-eval env qc (CoCase coalts) = tryCoAlts coalts
-  where tryCoAlts :: [(CoPattern,Term)] -> Either CoValue Value
-        tryCoAlts [] = error ("no copattern match in Q context: " ++ show qc)
-        tryCoAlts ((q,t):coalts') =
-          case matchCoPattern qc  q of
-            Just subs -> eval (subs++env) qc t
-            Nothing -> tryCoAlts coalts'
+        _ -> error "case only operates on constructed values"
+
+    Dest s t' -> step evalMachine (t',(Destructee s qc),env)
+
+    CoCase coalts ->
+      let tryCoAlts :: [(CoPattern,Term)] -> (Result, QCtx, Env)
+          tryCoAlts [] = error ("no copattern match in Q context: " ++ show qc)
+          tryCoAlts ((q,t'):coalts') =
+            case matchCoPattern qc  q of
+              Just (qc',subs) -> step evalMachine (t',qc',(subs++env))
+              Nothing -> tryCoAlts coalts'
+      in tryCoAlts coalts
 
 --------------------
 -- Matching Rules --
@@ -281,15 +299,39 @@ matchPattern _ _ = Nothing
 
 {- Takes a copattern context and copattern and returns just a list of
    substitutions if it succeeds. The reason there can be substitutions
-   is because patterns can be in copatterns which may bind variables. -}
-matchCoPattern :: QCtx -> CoPattern -> Maybe [(Variable,Term)]
-matchCoPattern _     QWild = Just []
-matchCoPattern Empty QBox  = Just []
+   is because patterns can be in copatterns which may bind variables.
+
+   [Problem] Consider the two instances of NegPair Int Int, which I (Zach) think
+   should be equal.
+
+   f1 = cocase { fst #       -> 1
+               , fst (snd #) -> 2
+               , snd (snd #) -> 3 }
+
+   f2 = cocase { fst # -> 1
+               , snd # -> cocase { fst # -> 2
+                                 , snd # -> 3 }
+               }
+
+   Possible [Fix]:
+
+   This is where we need the wildcard copattern, because we do not know the
+   context in which f2 was call.
+
+   f2 = cocase { fst # -> 1
+               , snd _ -> cocase { fst # -> 2
+                                 , snd # -> 3 }
+               }
+
+-}
+matchCoPattern :: QCtx -> CoPattern -> Maybe (QCtx,[(Variable,Term)])
+matchCoPattern qc   QWild = Just (qc,[])
+matchCoPattern Hash QHash = Just (Hash,[])
 
 matchCoPattern (Destructor qc t) (QPat q p) =
-  do { subs1 <- matchCoPattern qc q
+  do { (qc',subs1) <- matchCoPattern qc q
      ; subs2 <-  matchPattern t p
-     ; return (subs1++subs2) }
+     ; return (qc',(subs1++subs2)) }
 
 matchCoPattern (Destructee s qc) (QDest s' q) =
   case s == s' of
@@ -315,18 +357,33 @@ pair2 = Case pair1 [(PCons (Symbol "mkPair")
 
 lam :: Term
 lam = CoCase [(QPat QWild (PVar (Variable "x"))
-              ,Cons (Symbol "mkPair") [Var (Variable "x")
-                                      ,Var (Variable "x")])]
+             ,Cons (Symbol "mkPair") [Var (Variable "x")
+                                     ,Var (Variable "x")])]
 
-negPair :: Term
-negPair = CoCase [(QDest (Symbol "fst") QBox, unit)
-                 ,(QDest (Symbol "snd") QBox, pair1)]
+foo1 :: Term
+foo1 = CoCase [(QDest (Symbol "fst") QHash, Lit 1)
+              ,(QDest (Symbol "fst") (QDest (Symbol "snd") QHash), Lit 2)
+              ,(QDest (Symbol "snd") (QDest (Symbol "snd") QHash), Lit 3)]
 
-fstProj :: Term
-fstProj = Dest (Symbol "fst") negPair
+foo2 :: Term
+foo2 = CoCase [(QDest (Symbol "fst") QHash, Lit 1)
+              ,(QDest (Symbol "snd") QHash,
+                  CoCase [(QDest (Symbol "fst") QHash, Lit 2)
+                         ,(QDest (Symbol "snd") QHash, Lit 3)])
+              ]
 
-sndProj :: Term
-sndProj = Dest (Symbol "snd") negPair
+foo3 :: Term
+foo3 = CoCase [(QDest (Symbol "fst") QHash, Lit 1)
+              ,(QDest (Symbol "snd") QWild,
+                  CoCase [(QDest (Symbol "fst") QHash, Lit 2)
+                         ,(QDest (Symbol "snd") QHash, Lit 3)])
+              ]
+
+fstProj :: Term -> Term
+fstProj = Dest (Symbol "fst")
+
+sndProj :: Term -> Term
+sndProj = Dest (Symbol "snd")
 
 -- stream :: Term
 -- stream = CoCase [ ( QDest (Symbol "head") QWild , unit )
