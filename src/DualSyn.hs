@@ -50,8 +50,13 @@ data Decl = Decl Polarity TySymbol [TyVariable] [Data]
 --------------------------------------------------------------------------------
 
 data Term where
+  -- ^ Number primitives
   Lit :: Int -> Term
+  Add :: Term -> Term -> Term
+
   Var :: Variable -> Term
+  Fix :: Variable -> Term -> Term
+  App :: Term -> Term -> Term
 
   {- positive datum intro and elim -}
   Cons :: Symbol -> [Term] -> Term
@@ -69,10 +74,7 @@ data Pattern where
 
 {- NOTE: we often use 'q' for a copattern variables -}
 data CoPattern where
-  -- ^ match any copattern
-  QWild :: CoPattern
-
-  -- ^ the copattern matching the empty context
+  -- ^ the copattern matching the context
   QHash  :: CoPattern
 
   -- ^ a specific destructor
@@ -229,7 +231,7 @@ type Env = [(Variable,Term)]
 
 {- An evaluation context for CoPatterns to match on -}
 data QCtx where
-  Hash       :: QCtx
+  Empty      :: QCtx
   Destructor :: QCtx   -> Term -> QCtx
   Destructee :: Symbol -> QCtx -> QCtx
   deriving (Show,Eq)
@@ -237,17 +239,25 @@ data QCtx where
 data Machine = Machine { step :: (Term, QCtx, Env) -> (Result, QCtx, Env) }
 
 evalStart :: Term -> Result
-evalStart t = case step evalMachine (t,Hash,[]) of
+evalStart t = case step evalMachine (t,Empty,[]) of
                 (r,_,_) -> r
 
 evalMachine :: Machine
 evalMachine = Machine $ \(t,qc,env) ->
   case t of
     Lit i -> (RInt i,qc,env)
+    Add t1 t2 ->
+      case (step evalMachine (t1,qc,env), step evalMachine (t2,qc,env)) of
+        ((RInt t1',_,_),(RInt t2',_,_)) -> (RInt (t1' + t2'),qc,env)
+
     Var v ->
       case lookup v env of
         Just t' -> step evalMachine (t',qc,env)
         Nothing -> error $ "unbound variable" ++ show v
+
+    Fix x t -> step evalMachine (t,qc,(x,t):env)
+
+    App t1 t2 -> step evalMachine (t1,qc,env)
 
     Cons k ts -> (RCons k ts,qc,env)
 
@@ -280,7 +290,7 @@ evalMachine = Machine $ \(t,qc,env) ->
 --------------------
 
 {- Takes a term and a pattern and returns a set of substitutions if it succeeds.
-   Note that the set of substitutions can be empty -}
+   Note that the set of substitutions can be empty. This is pretty standard. -}
 matchPattern :: Term -> Pattern -> Maybe [(Variable,Term)]
 matchPattern t PWild = Just []
 matchPattern t (PVar v) = Just [(v,t)]
@@ -326,20 +336,20 @@ matchPattern _ _ = Nothing
    2 : < f2           , snd (fst #) >
      -- error : `snd #` does not match `snd (fst #)`
 
-   Possible [Fix]:
+   Solution:
 
-   This is where we need the wildcard copattern, because we do not know the
-   context in which f2 was call.
+   Instead of having a copattern for matching the top of the context with
+   `QWild` and a copattern to exactly match the remaining environment `QEmpty`,
+   We will just use `QWild` which will be denoted hash `#`
 
    f2 = cocase { fst # -> 1
-               , snd _ -> cocase { fst # -> 2
+               , snd # -> cocase { fst # -> 2
                                  , snd # -> 3 }
                }
 
 -}
 matchCoPattern :: QCtx -> CoPattern -> Maybe (QCtx,[(Variable,Term)])
-matchCoPattern qc   QWild = Just (qc,[])
-matchCoPattern Hash QHash = Just (Hash,[])
+matchCoPattern qc QHash = Just (qc,[])
 
 matchCoPattern (Destructor qc t) (QPat q p) =
   do { (qc',subs1) <- matchCoPattern qc q
@@ -369,7 +379,7 @@ pair2 = Case pair1 [(PCons (Symbol "mkPair")
                            ,PVar (Variable "y")], Var (Variable "x"))]
 
 lam :: Term
-lam = CoCase [(QPat QWild (PVar (Variable "x"))
+lam = CoCase [(QPat QHash (PVar (Variable "x"))
              ,Cons (Symbol "mkPair") [Var (Variable "x")
                                      ,Var (Variable "x")])]
 
@@ -385,24 +395,19 @@ foo2 = CoCase [(QDest (Symbol "fst") QHash, Lit 1)
                          ,(QDest (Symbol "snd") QHash, Lit 3)])
               ]
 
-foo3 :: Term
-foo3 = CoCase [(QDest (Symbol "fst") QHash, Lit 1)
-              ,(QDest (Symbol "snd") QWild,
-                  CoCase [(QDest (Symbol "fst") QHash, Lit 2)
-                         ,(QDest (Symbol "snd") QHash, Lit 3)])
-              ]
-
 fstProj :: Term -> Term
 fstProj = Dest (Symbol "fst")
 
 sndProj :: Term -> Term
 sndProj = Dest (Symbol "snd")
 
--- stream :: Term
--- stream = CoCase [ ( QDest (Symbol "head") QWild , unit )
---                 , ( QDest (Symbol "tail")
---                           (QPat (PVar "s") undefined)
---                   , Cons (Symbol "mkPair")
---                          [(Dest (Symbol "head") (Var (Variable "s")))
---                          ,(Dest (Symbol "head") (Var (Variable "s")))])
---                 ]
+zeros :: Term
+zeros = Fix (Variable "s")
+            (CoCase [ ( QDest (Symbol "head") QHash , Lit 0 )
+                    , ( QDest (Symbol "tail") QHash , (Var (Variable "s")))])
+
+nats :: Term
+nats = Fix (Variable "s")
+           (CoCase [ ( QDest (Symbol "head") QHash , Lit 0 )
+                   , ( (QPat (QDest (Symbol "tail") QHash) (PVar (Variable "x")))
+                     , (Var (Variable "s")))])
