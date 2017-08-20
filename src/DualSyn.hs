@@ -95,6 +95,7 @@ data CoValue where
   VCoCase :: [(CoPattern,Term)] -> CoValue
   deriving (Eq,Show)
 
+{- The machine returns results which can be of positive or negative types -}
 data Result where
   RInt    :: Int -> Result
   RCons   :: Symbol -> [Term] -> Result
@@ -255,7 +256,7 @@ evalMachine = Machine $ \(t,qc,env) ->
         Just t' -> step evalMachine (t',qc,env)
         Nothing -> error $ "unbound variable" ++ show v
 
-    Fix x t -> step evalMachine (t,qc,(x,t):env)
+    Fix x t' -> step evalMachine (t',qc,(x,t):env)
 
     App t1 t2 -> step evalMachine (t1,qc,env)
 
@@ -278,7 +279,7 @@ evalMachine = Machine $ \(t,qc,env) ->
 
     CoCase coalts ->
       let tryCoAlts :: [(CoPattern,Term)] -> (Result, QCtx, Env)
-          tryCoAlts [] = error ("no copattern match in Q context: " ++ show qc)
+          tryCoAlts [] = error ("no copattern match in Q context: " ++ show qc ++ "\nwith term: " ++ show t)
           tryCoAlts ((q,t'):coalts') =
             case matchCoPattern qc  q of
               Just (qc',subs) -> step evalMachine (t',qc',(subs++env))
@@ -408,6 +409,8 @@ zeros = Fix (Variable "s")
 
 nats :: Term
 nats = Fix (Variable "s")
-           (CoCase [ ( QDest (Symbol "head") QHash , Lit 0 )
-                   , ( (QPat (QDest (Symbol "tail") QHash) (PVar (Variable "x")))
-                     , (Var (Variable "s")))])
+           (CoCase [ (QDest (Symbol "head") QHash
+                     , Lit 0 )
+                   , (QDest (Symbol "tail") QHash
+                     , Add (Lit 1)
+                           (Dest (Symbol "head") (Var (Variable "s"))))])
