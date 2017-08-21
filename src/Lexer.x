@@ -28,6 +28,7 @@ tokens :-
   \)         { const TokRParen }
   \,         { const TokRBrac }
   \|         { const TokRBrac }
+  \:         { const TokColon }
   $alpha+    { TokString }
 
 {
@@ -50,6 +51,7 @@ data Token
   | TokRParen
   | TokComma
   | TokMid
+  | TokColon
   deriving (Eq,Show)
 
 lexFile :: FilePath -> IO [Token]

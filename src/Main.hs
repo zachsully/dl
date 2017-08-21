@@ -27,8 +27,8 @@ runPreprocessor fp =
   do { !tokens <- case fp of
                     "-" -> lexContents
                     _   -> lexFile fp
-     ; let syn = parse tokens []
-     -- ; print syn
+     ; let syn = snd $ runState (parseProgram tokens) []
+     ; print syn
      ; return ()
      -- ; case parseSrc contents of
      --     Left err  -> putStrLn err

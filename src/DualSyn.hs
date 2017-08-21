@@ -9,11 +9,10 @@ data Program = Program [Decl] Term
 --------------------------------------------------------------------------------
 
 data Type where
-  Int    :: Type
-  Fun    :: Type -> Type -> Type
+  TyInt  :: Type
+  TyFun  :: Type -> Type -> Type
   TyVar  :: TyVariable -> Type
   TyApp  :: Type -> Type -> Type
-  TyDecl :: Type
   deriving (Eq,Show)
 
 {- A symbol introduced at the type level -}
@@ -47,6 +46,12 @@ data Decl = Decl Polarity TySymbol [TyVariable] [Data]
       Head :: Stream a -> a
       Tail :: Stream a -> Stream a
 -}
+
+
+{- Data are added to a typing context as functions, in terms they are
+   introductions to be eleminated by case statements -}
+data Data = Data Symbol Type
+  deriving (Eq,Show)
 
 --------------------------------------------------------------------------------
 --                                 Terms                                      --
@@ -115,11 +120,6 @@ newtype Symbol = Symbol String
 newtype Variable = Variable String
   deriving (Eq,Show)
 
-{- Data are added to a typing context as functions, in terms they are
-   introductions to be eleminated by case statements -}
-data Data = Data Symbol [Type]
-  deriving (Eq,Show)
-
 
 --------------------------------------------------------------------------------
 --                           Primitive DataDecl                               --
@@ -129,31 +129,33 @@ data Data = Data Symbol [Type]
 -- Positive --
 --------------
 unitDecl :: Decl
-unitDecl = Decl Positive (TySymbol "Unit") [] [Data (Symbol "()") []]
+unitDecl = Decl Positive (TySymbol "Unit") []
+                         [Data (Symbol "()") (TyVar (TyVariable "Unit"))]
 
 pairDecl :: Decl
 pairDecl = Decl Positive
                 (TySymbol "Pair")
                 [TyVariable "A",TyVariable "B"]
                 [Data (Symbol "mkPair")
-                      [TyVar (TyVariable "A")
-                      ,TyVar (TyVariable "B")]]
+                      (TyFun (TyVar (TyVariable "A"))
+                             (TyVar (TyVariable "B")))]
 
 eitherDecl :: Decl
 eitherDecl = Decl Positive
                   (TySymbol "Either")
                   [TyVariable "A",TyVariable "B"]
-                  [Data (Symbol "inl") [TyVar (TyVariable "A")]
-                  ,Data (Symbol "inr") [TyVar (TyVariable "B")]]
+                  [Data (Symbol "inl") (TyVar (TyVariable "A"))
+                  ,Data (Symbol "inr") (TyVar (TyVariable "B"))]
 
 listDecl :: Decl
 listDecl = Decl Negative
                 (TySymbol "List")
                 [TyVariable "A"]
-                [Data (Symbol "nil") []
-                ,Data (Symbol "cons") [TyVar (TyVariable "A")
-                                      ,TyApp (TyVar (TyVariable "List"))
-                                             (TyVar (TyVariable "A"))]]
+                [Data (Symbol "nil") (TyApp (TyVar (TyVariable "List"))
+                                                   (TyVar (TyVariable "A")))
+                ,Data (Symbol "cons") (TyFun (TyVar (TyVariable "A"))
+                                             (TyApp (TyVar (TyVariable "List"))
+                                                    (TyVar (TyVariable "A"))))]
 
 --------------
 -- Negative --
@@ -162,22 +164,23 @@ negPairDecl :: Decl
 negPairDecl = Decl Negative
                    (TySymbol "NegPair")
                    [TyVariable "A",TyVariable "B"]
-                   [Data (Symbol "fst") [TyVar (TyVariable "A")]
-                   ,Data (Symbol "snd") [TyVar (TyVariable "B")]]
+                   [Data (Symbol "fst") (TyVar (TyVariable "A"))
+                   ,Data (Symbol "snd") (TyVar (TyVariable "B"))]
 
 streamDecl :: Decl
 streamDecl = Decl Negative
                   (TySymbol "Stream")
                   [TyVariable "A"]
-                  [Data (Symbol "head") []
-                  ,Data (Symbol "tail") [TyApp (TyVar (TyVariable "Stream"))
-                                               (TyVar (TyVariable "A"))]]
+                  [Data (Symbol "head") (TyApp (TyVar (TyVariable "Stream"))
+                                               (TyVar (TyVariable "A")))
+                  ,Data (Symbol "tail") (TyApp (TyVar (TyVariable "Stream"))
+                                               (TyVar (TyVariable "A")))]
 
 funDecl :: Decl
 funDecl = Decl Negative
                (TySymbol "fun")
                [TyVariable "A",TyVariable "B"]
-               [Data (Symbol "app") [TyVar (TyVariable "A")]]
+               [Data (Symbol "app") (TyVar (TyVariable "A"))]
 
 --------------------------------------------------------------------------------
 --                              Type Check                                    --
