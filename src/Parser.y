@@ -10,7 +10,7 @@ import DualSyn
 %name parseTerm Term
 %tokentype { Token }
 %error { parseError }
-%monad { State [Symbol] }
+%monad { State ([TySymbol],[Symbol]) }
 
 %token
   num    { TokLit $$ }
@@ -33,6 +33,15 @@ import DualSyn
   '|'    { TokMid }
   ':'    { TokColon }
 
+%left ':'
+%left fix
+%right data codata
+%right arr
+%right '+'
+%right '|' ','
+%right case cocase
+
+
 %%
 
 Program : decls Term { Program $1 $2 }
@@ -40,27 +49,35 @@ Program : decls Term { Program $1 $2 }
 
 Type : str { case $1 of
                "Int" -> TyInt
-               _ -> parseError [] }
+               _ -> parseError [TokString $1] }
      | str { TyVar (TyVariable $1) }
-     | Type Type  { TyApp $1 $2 }
-     | Type arr Type { TyFun $1 $3 }
      | '(' Type ')' { $2 }
+     | Type arr Type { TyFun $1 $3 }
+     | Type Type  { TyApp $1 $2 }
 
 Decl : codata str strs '{' projs '}' { Decl Negative
-       	      	       	   	       	    (TySymbol $2)
-					    (map TyVariable $3)
-					    $5 }
+                                            (TySymbol $2)
+                                            (map TyVariable $3)
+                                            $5 }
+     | codata str '{' projs '}' { Decl Negative
+                                       (TySymbol $2)
+				       []
+                                       $4 }
      | data str strs '{' injs '}'    { Decl Positive
-       	      	       	   	       	    (TySymbol $2)
-					    (map TyVariable $3)
-					    $5 }
+                                            (TySymbol $2)
+                                            (map TyVariable $3)
+                                            $5 }
+     | data str '{' injs '}' { Decl Positive
+                                    (TySymbol $2)
+                                    []
+                                    $4 }
 
 decls : Decl         { [$1] }
       | decls Decl   { $2 : $1 }
 
 datad : str ':' Type {% get >>=
-                	(\s -> put ((Symbol $1):s))
-			>> return (Data (Symbol $1) $3) }
+                        (\ (tyss,ss) -> put (tyss,(Symbol $1):ss))
+                        >> return (Data (Symbol $1) $3) }
 
 projs : datad           { [$1] }
       | projs ',' datad { $3 : $1 }
@@ -83,14 +100,14 @@ Term : num                        { Lit $1 }
      | Term Term                  { App $1 $2 }
 
 symbol : str {% get >>=
-                (\s -> case elem (Symbol $1) s of
-                         True -> return (Symbol $1)
-                         False -> parseError [$1]) }
+                (\ (_,s) -> case elem (Symbol $1) s of
+                             True -> return (Symbol $1)
+                             False -> parseError [TokString $1] ) }
 
 var : str {% get >>=
-             (\s -> case not (elem (Symbol $1) s) of
-                      True -> return (Variable $1)
-                      False -> parseError [$1]) }
+             (\ (_,s) -> case not (elem (Symbol $1) s) of
+                          True -> return (Variable $1)
+                          False -> parseError [TokString $1]) }
 
 terms : Term { [$1] }
       | terms Term { $2 : $1 }
@@ -106,16 +123,16 @@ coalts : coalt { [$1] }
 coalt : CoPattern arr Term { ($1,$3) }
 
 Pattern : '_' { PWild }
-	| var { PVar $1 }
-	| symbol patterns { PCons $1 $2 }
+        | var { PVar $1 }
+        | symbol patterns { PCons $1 $2 }
 
 patterns : Pattern { [$1] }
-	 | patterns Pattern { $2 : $1 }
+         | patterns Pattern { $2 : $1 }
 
 CoPattern : '#' { QHash }
-	  | symbol CoPattern { QDest $1 $2 }
-	  | CoPattern Pattern { QPat $1 $2 }
-	  | '(' CoPattern ')' { $2 }
+          | symbol CoPattern { QDest $1 $2 }
+          | CoPattern Pattern { QPat $1 $2 }
+          | '(' CoPattern ')' { $2 }
 
 {
 data State s a = State { runState :: s -> (s,a) }
