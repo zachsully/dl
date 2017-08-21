@@ -3,8 +3,10 @@ module Main where
 
 import System.Environment (getArgs,getProgName)
 
-import DualSyn
+import qualified DualSyn as D
 import Syn
+import Lexer
+import Parser
 import Translation
 
 --------------------------------------------------------------------------------
@@ -22,9 +24,11 @@ main =
 
 runPreprocessor :: FilePath -> IO ()
 runPreprocessor fp =
-  do { !contents <- case fp of
-                      "-" -> getContents
-                      _   -> readFile fp
+  do { !tokens <- case fp of
+                    "-" -> lexContents
+                    _   -> lexFile fp
+     ; let syn = parse tokens []
+     -- ; print syn
      ; return ()
      -- ; case parseSrc contents of
      --     Left err  -> putStrLn err
