@@ -29,6 +29,8 @@ runPreprocessor fp =
                     _   -> lexFile fp
      ; let syn = snd $ runState (parseProgram tokens) ([],[])
      ; print syn
+     ; print (case syn of
+                D.Program _ t -> D.evalStart t)
      ; return ()
      -- ; case parseSrc contents of
      --     Left err  -> putStrLn err

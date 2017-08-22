@@ -53,7 +53,6 @@ Type : str { case $1 of
      | str { TyVar (TyVariable $1) }
      | '(' Type ')' { $2 }
      | Type arr Type { TyFun $1 $3 }
-     | Type Type  { TyApp $1 $2 }
 
 Decl : codata str strs '{' projs '}' { Decl Negative
                                             (TySymbol $2)

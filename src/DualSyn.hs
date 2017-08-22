@@ -12,16 +12,20 @@ data Type where
   TyInt  :: Type
   TyFun  :: Type -> Type -> Type
   TyVar  :: TyVariable -> Type
-  TyApp  :: Type -> Type -> Type
+  TyCons :: TySymbol -> [Type] -> Type
   deriving (Eq,Show)
 
-{- A symbol introduced at the type level -}
+{- A type level symbol is introduced in the left hand side of a data declaration
+   and can be used for recursion in types. -}
 newtype TySymbol = TySymbol String
   deriving (Eq,Show)
 
+{- TyVariable are bound inside of the types in a declaration -}
 newtype TyVariable = TyVariable String
   deriving (Eq,Show)
 
+{- There is a special polarity type because positive and negative types are
+   declared with the same structure, but we still need to keep them separate. -}
 data Polarity = Positive | Negative
   deriving (Eq,Show)
 
@@ -49,7 +53,9 @@ data Decl = Decl Polarity TySymbol [TyVariable] [Data]
 
 
 {- Data are added to a typing context as functions, in terms they are
-   introductions to be eleminated by case statements -}
+   introductions to be eleminated by case statements. We bind term level symbols
+   here. -}
+
 data Data = Data Symbol Type
   deriving (Eq,Show)
 
@@ -103,7 +109,9 @@ data CoValue where
   VCoCase :: [(CoPattern,Term)] -> CoValue
   deriving (Eq,Show)
 
-{- The machine returns results which can be of positive or negative types -}
+{- The machine returns results which can be of positive or negative types. We
+   call this result instead of value (as is the common approach) because of the
+   polarity of values. -}
 data Result where
   RInt    :: Int -> Result
   RCons   :: Symbol -> [Term] -> Result
@@ -112,11 +120,12 @@ data Result where
   deriving (Eq,Show)
 
 
-{- Symbols are introduced in typing declarations -}
+{- Symbols are introduced in typing declarations. They refer to constructors and
+   destructors. -}
 newtype Symbol = Symbol String
   deriving (Eq,Show)
 
-{- Vars are introduced and consumed -}
+{- Vars are introduced and consumed by pattern matching within terms. -}
 newtype Variable = Variable String
   deriving (Eq,Show)
 
@@ -151,11 +160,11 @@ listDecl :: Decl
 listDecl = Decl Negative
                 (TySymbol "List")
                 [TyVariable "A"]
-                [Data (Symbol "nil") (TyApp (TyVar (TyVariable "List"))
-                                                   (TyVar (TyVariable "A")))
+                [Data (Symbol "nil") (TyCons (TySymbol "List")
+                                     [TyVar (TyVariable "A")])
                 ,Data (Symbol "cons") (TyFun (TyVar (TyVariable "A"))
-                                             (TyApp (TyVar (TyVariable "List"))
-                                                    (TyVar (TyVariable "A"))))]
+                                             (TyCons (TySymbol "List")
+                                                     [TyVar (TyVariable "A")]))]
 
 --------------
 -- Negative --
@@ -171,10 +180,10 @@ streamDecl :: Decl
 streamDecl = Decl Negative
                   (TySymbol "Stream")
                   [TyVariable "A"]
-                  [Data (Symbol "head") (TyApp (TyVar (TyVariable "Stream"))
-                                               (TyVar (TyVariable "A")))
-                  ,Data (Symbol "tail") (TyApp (TyVar (TyVariable "Stream"))
-                                               (TyVar (TyVariable "A")))]
+                  [Data (Symbol "head") (TyCons (TySymbol "Stream")
+                                                [TyVar (TyVariable "A")])
+                  ,Data (Symbol "tail") (TyCons (TySymbol "Stream")
+                                                [TyVar (TyVariable "A")])]
 
 funDecl :: Decl
 funDecl = Decl Negative
@@ -243,10 +252,10 @@ data QCtx where
   Destructee :: Symbol -> QCtx -> QCtx
   deriving (Show,Eq)
 
-data Machine = Machine { step :: (Term, QCtx, Env) -> (Result, QCtx, Env) }
+data Machine = Machine { run :: (Term, QCtx, Env) -> (Result, QCtx, Env) }
 
 evalStart :: Term -> Result
-evalStart t = case step evalMachine (t,Empty,[]) of
+evalStart t = case run evalMachine (t,Empty,[]) of
                 (r,_,_) -> r
 
 evalMachine :: Machine
@@ -254,41 +263,46 @@ evalMachine = Machine $ \(t,qc,env) ->
   case t of
     Lit i -> (RInt i,qc,env)
     Add t1 t2 ->
-      case (step evalMachine (t1,qc,env), step evalMachine (t2,qc,env)) of
+      case (run evalMachine (t1,qc,env), run evalMachine (t2,qc,env)) of
         ((RInt t1',_,_),(RInt t2',_,_)) -> (RInt (t1' + t2'),qc,env)
 
     Var v ->
       case lookup v env of
-        Just t' -> step evalMachine (t',qc,env)
+        Just t' -> run evalMachine (t',qc,env)
         Nothing -> error $ "unbound variable" ++ show v
 
-    Fix x t' -> step evalMachine (t',qc,(x,t):env)
+    Fix x t' -> run evalMachine (t',qc,(x,t):env)
 
-    App t1 t2 -> step evalMachine (t1,qc,env)
+    App t1 t2 ->
+      case run evalMachine (t1,qc,env) of
+        (RCoCase coalts,qc',env') ->
+          run evalMachine (CoCase coalts,Destructor qc' t2,env')
+        _ -> error $ show t1 ++ " is not a valid application term"
+
 
     Cons k ts -> (RCons k ts,qc,env)
 
     Case t' alts ->
-      case step evalMachine (t',qc,env) of
+      case run evalMachine (t',qc,env) of
         (RCons k ts, qc', env') ->
           let tryAlts :: Term -> [(Pattern,Term)] -> (Result, QCtx, Env)
               tryAlts _ [] = error "no matching alternative"
               tryAlts t'' ((p,t'''):alts') =
                 case matchPattern t' p of
-                  Just subs -> step evalMachine (t''',qc,(subs++env))
+                  Just subs -> run evalMachine (t''',qc,(subs++env))
                   Nothing -> tryAlts t'' alts'
           in tryAlts (Cons k ts) alts
 
         _ -> error "case only operates on constructed values"
 
-    Dest s t' -> step evalMachine (t',(Destructee s qc),env)
+    Dest s t' -> run evalMachine (t',(Destructee s qc),env)
 
     CoCase coalts ->
       let tryCoAlts :: [(CoPattern,Term)] -> (Result, QCtx, Env)
-          tryCoAlts [] = error ("no copattern match in Q context: " ++ show qc ++ "\nwith term: " ++ show t)
+          tryCoAlts [] = (RCoCase coalts,qc,env)
           tryCoAlts ((q,t'):coalts') =
             case matchCoPattern qc  q of
-              Just (qc',subs) -> step evalMachine (t',qc',(subs++env))
+              Just (qc',subs) -> run evalMachine (t',qc',(subs++env))
               Nothing -> tryCoAlts coalts'
       in tryCoAlts coalts
 
@@ -389,6 +403,11 @@ lam :: Term
 lam = CoCase [(QPat QHash (PVar (Variable "x"))
              ,Cons (Symbol "mkPair") [Var (Variable "x")
                                      ,Var (Variable "x")])]
+
+app :: Term
+app = App (CoCase [(QPat QHash (PVar (Variable "x"))
+                   ,(Add (Var (Variable "x")) (Lit 20)))])
+          (Lit 22)
 
 foo1 :: Term
 foo1 = CoCase [(QDest (Symbol "fst") QHash, Lit 1)
