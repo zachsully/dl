@@ -1,0 +1,5 @@
+data Either a b
+  { Inl : a -> Either a b
+  , Inr : b -> Either a b }
+
+Inl 42

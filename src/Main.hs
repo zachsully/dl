@@ -28,11 +28,14 @@ runPreprocessor fp =
   do { !tokens <- case fp of
                     "-" -> lexContents
                     _   -> lexFile fp
-     ; let prog = snd $ runState (parseProgram tokens) ([],[])
+     ; let prog = parseProgram tokens
+     ; putStr "\nProgram:\n"
      ; print prog
+     ; putStr "\nEvaluates:\n"
      ; print (case prog of
                 D.Program _ t -> D.evalStart t)
-     ; putStrLn . H.ppProgram . translateProgram $ prog
+     ; putStr "\nTranslation:\n"
+     ; print . H.ppProgram . translateProgram $ prog
      }
 
 runTest :: String -> IO ()

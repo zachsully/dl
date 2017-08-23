@@ -71,6 +71,9 @@ newtype Variable = Variable String
 (<+>) :: String -> String -> String
 a <+> b = a <> " " <> b
 
+(<->) :: String -> String -> String
+a <-> b = a <> "\n" <> b
+
 {- concatenates terms with a space between them -}
 smconcat :: [String] -> String
 smconcat = foldr (<+>) mempty
@@ -84,7 +87,12 @@ ppProgram (Program decls term) = vmconcat [vmconcat (map ppDecl decls)
                                           ,ppTerm term]
 
 ppDecl :: Decl -> String
-ppDecl = error "ppDecl"
+ppDecl (Decl (TySymbol ts) fts ds) =
+  (smconcat ["data",ts,smconcat . fmap (\(TyVariable s) -> s) $ fts,"where"])
+  <-> (vmconcat . fmap ppData $ ds)
+
+ppData :: Data -> String
+ppData = undefined
 
 ppType :: Type -> String
 ppType = error "ppType"
@@ -92,9 +100,20 @@ ppType = error "ppType"
 ppTerm :: Term -> String
 ppTerm (Lit i) = show i
 ppTerm (Add a b) = "(" <> ppTerm a <+> "+" <+> ppTerm b <> ")"
-ppTerm (Var _) = undefined
-ppTerm (Fix _ _) = undefined
-ppTerm (Lam _ _) = undefined
-ppTerm (App _ _) = undefined
-ppTerm (Cons _ _) = undefined
-ppTerm (Case _ _) = undefined
+ppTerm (Var (Variable s)) = s
+ppTerm (Fix (Variable s) t) = smconcat ["let",s,"=",ppTerm t,"in",s]
+ppTerm (Lam (Variable s) t) = smconcat ["\\",s,"->",ppTerm t]
+ppTerm (App a b) = smconcat ["(",ppTerm a,")",ppTerm b]
+ppTerm (Cons (Symbol s) ts) =
+  s <+> (smconcat . map (\t -> "(" <> ppTerm t <> ")") $ ts)
+ppTerm (Case t alts) =
+  "case" <+> ppTerm t <+> "of"
+    <-> (vmconcat . map ppAlt $ alts)
+  where ppAlt :: (Pattern,Term) -> String
+        ppAlt (p,t) = ppPattern p <+> "->" <+> ppTerm t
+
+        ppPattern :: Pattern -> String
+        ppPattern PWild = "_"
+        ppPattern (PVar (Variable s)) = s
+        ppPattern (PCons (Symbol s) ps) =
+          s <+> (smconcat . map (\p -> "(" <> ppPattern p <> ")") $ ps)

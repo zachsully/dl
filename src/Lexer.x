@@ -15,10 +15,10 @@ tokens :-
   \+         { const TokPlus }
   codata     { const TokCodata }
   data       { const TokData }
-  where      { const TokWhere }
   cocase     { const TokCocase }
   case       { const TokCase }
   fix        { const TokFix }
+  in         { const TokIn }
   \#         { const TokHash }
   _          { const TokUnderscore }
   \->        { const TokArr }
@@ -38,10 +38,10 @@ data Token
   | TokString String
   | TokCodata
   | TokData
-  | TokWhere
   | TokCase
   | TokCocase
   | TokFix
+  | TokIn
   | TokHash
   | TokUnderscore
   | TokArr

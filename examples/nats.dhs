@@ -1,0 +1,19 @@
+codata Stream a
+  { Head : Stream a -> a
+  , Tail : Stream a -> Stream a }
+
+fix s in
+  cocase
+    { Head # -> 0
+    , Tail # -> 1 + (Head s) }
+
+
+cocase
+  { Head # -> 0
+  , Head (Tail #) -> 1
+  , Head (Tail (Tail #)) -> 2
+  , Head (Tail (Tail (Tail #))) -> 3
+  }
+
+cocase
+  { (Head #) x -> x + 1 }

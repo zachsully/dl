@@ -6,11 +6,8 @@ import DualSyn
 }
 
 %name parseProgram Program
-%name parseType Type
-%name parseTerm Term
 %tokentype { Token }
 %error { parseError }
-%monad { State ([TySymbol],[Symbol]) }
 
 %token
   num    { TokLit $$ }
@@ -18,10 +15,10 @@ import DualSyn
   str    { TokString $$ }
   codata { TokCodata }
   data   { TokData }
-  where  { TokWhere }
   case   { TokCase }
   cocase { TokCocase }
   fix    { TokFix }
+  in     { TokIn }
   '#'    { TokHash }
   '_'    { TokUnderscore }
   arr    { TokArr }
@@ -34,11 +31,14 @@ import DualSyn
   ':'    { TokColon }
 
 %left ':'
-%left fix
+%left fix in
+%left '}' '('
+
 %right data codata
 %right arr
 %right '+'
-%right '|' ','
+%right '|' ',' ':'
+%right '{' ')'
 %right case cocase
 
 
@@ -47,12 +47,15 @@ import DualSyn
 Program : decls Term { Program $1 $2 }
         | Term { Program [] $1 }
 
-Type : str { case $1 of
-               "Int" -> TyInt
-               _ -> parseError [TokString $1] }
-     | str { TyVar (TyVariable $1) }
-     | '(' Type ')' { $2 }
-     | Type arr Type { TyArr $1 $3 }
+Type : str                            { case $1 of
+                                          "Int" -> TyInt
+                                          _     -> TyVar (TyVariable $1) }
+     | '(' Type ')'                   { $2 }
+     | str types                      { TyCons (TySymbol $1) $2 }
+     | Type arr Type                  { TyArr $1 $3 }
+
+types : Type { [$1] }
+      | types Type { $2 : $1 }
 
 Decl : codata str strs '{' projs '}' { Decl Negative
                                             (TySymbol $2)
@@ -74,9 +77,7 @@ Decl : codata str strs '{' projs '}' { Decl Negative
 decls : Decl         { [$1] }
       | decls Decl   { $2 : $1 }
 
-datad : str ':' Type {% get >>=
-                        (\ (tyss,ss) -> put (tyss,(Symbol $1):ss))
-                        >> return (Data (Symbol $1) $3) }
+datad : str ':' Type { (Data (Symbol $1) $3) }
 
 projs : datad           { [$1] }
       | projs ',' datad { $3 : $1 }
@@ -89,24 +90,13 @@ strs : str        { [$1] }
 
 Term : num                        { Lit $1 }
      | '(' Term ')'               { $2 }
-     | fix str arr Term           { Fix (Variable $2) $4 }
+     | fix str in Term            { Fix (Variable $2) $4 }
      | case Term '{' alts '}'     { Case $2 $4 }
      | cocase '{' coalts '}'      { CoCase $3 }
-     | symbol terms               { Cons $1 $2 }
-     | symbol Term                { Dest $1 $2 }
-     | var                        { Var $1 }
      | Term '+' Term              { Add $1 $3 }
+     | str                        { Var (Variable $1) }
+     | str terms                  { Cons (Symbol $1) $2 }
      | Term Term                  { App $1 $2 }
-
-symbol : str {% get >>=
-                (\ (_,s) -> case elem (Symbol $1) s of
-                             True -> return (Symbol $1)
-                             False -> parseError [TokString $1] ) }
-
-var : str {% get >>=
-             (\ (_,s) -> case not (elem (Symbol $1) s) of
-                          True -> return (Variable $1)
-                          False -> parseError [TokString $1]) }
 
 terms : Term { [$1] }
       | terms Term { $2 : $1 }
@@ -122,38 +112,18 @@ coalts : coalt { [$1] }
 coalt : CoPattern arr Term { ($1,$3) }
 
 Pattern : '_' { PWild }
-        | var { PVar $1 }
-        | symbol patterns { PCons $1 $2 }
+        | str patterns { PCons (Symbol $1) $2 }
+        | str { PVar (Variable $1) }
 
 patterns : Pattern { [$1] }
          | patterns Pattern { $2 : $1 }
 
 CoPattern : '#' { QHash }
-          | symbol CoPattern { QDest $1 $2 }
+          | str CoPattern { QDest  (Symbol $1)  $2 }
           | CoPattern Pattern { QPat $1 $2 }
           | '(' CoPattern ')' { $2 }
 
 {
-data State s a = State { runState :: s -> (s,a) }
-
-instance Functor (State s) where
-  fmap f  m = State $ \s -> let (s',a) = (runState m) s in (s',f a)
-
-instance Applicative (State s) where
-  pure = return
-  a <*> b = undefined
-
-instance Monad (State s) where
-  return a = State $ \s -> (s,a)
-  m >>= k = State $ \s -> let (s',a) = runState m s
-                          in runState (k a) s'
-
-get :: State s s
-get = State $ \s -> (s,s)
-
-put :: s -> State s ()
-put s = State $ \_ -> (s,())
-
 parseError :: [Token] -> a
 parseError ts = error ("parse error: " ++ show ts)
 }
