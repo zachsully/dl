@@ -10,7 +10,7 @@ data Program = Program [Decl] Term
 
 data Type where
   TyInt  :: Type
-  TyFun  :: Type -> Type -> Type
+  TyArr  :: Type -> Type -> Type
   TyVar  :: TyVariable -> Type
   TyCons :: TySymbol -> [Type] -> Type
   deriving (Eq,Show)
@@ -146,7 +146,7 @@ pairDecl = Decl Positive
                 (TySymbol "Pair")
                 [TyVariable "A",TyVariable "B"]
                 [Data (Symbol "mkPair")
-                      (TyFun (TyVar (TyVariable "A"))
+                      (TyArr (TyVar (TyVariable "A"))
                              (TyVar (TyVariable "B")))]
 
 eitherDecl :: Decl
@@ -162,7 +162,7 @@ listDecl = Decl Negative
                 [TyVariable "A"]
                 [Data (Symbol "nil") (TyCons (TySymbol "List")
                                      [TyVar (TyVariable "A")])
-                ,Data (Symbol "cons") (TyFun (TyVar (TyVariable "A"))
+                ,Data (Symbol "cons") (TyArr (TyVar (TyVariable "A"))
                                              (TyCons (TySymbol "List")
                                                      [TyVar (TyVariable "A")]))]
 

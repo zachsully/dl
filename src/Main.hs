@@ -4,7 +4,7 @@ module Main where
 import System.Environment (getArgs,getProgName)
 
 import qualified DualSyn as D
-import Syn
+import qualified HsSyn as H
 import Lexer
 import Parser
 import Translation
@@ -27,52 +27,17 @@ runPreprocessor fp =
   do { !tokens <- case fp of
                     "-" -> lexContents
                     _   -> lexFile fp
-     ; let syn = snd $ runState (parseProgram tokens) ([],[])
-     ; print syn
-     ; print (case syn of
+     ; let prog = snd $ runState (parseProgram tokens) ([],[])
+     ; print prog
+     ; print (case prog of
                 D.Program _ t -> D.evalStart t)
-     ; return ()
-     -- ; case parseSrc contents of
-     --     Left err  -> putStrLn err
-     --     Right src -> putStrLn . ppSrc . translate $ src
+     ; putStrLn . H.ppProgram . translateProgram $ prog
      }
 
 runTest :: String -> IO ()
 runTest n =
   case lookup n tests of
-    Just t -> putStrLn . ppSrc $ (translate t)
+    Just t -> putStrLn undefined
     Nothing -> putStrLn $ "no test named: " ++ n
 
---------------------------------------------------------------------------------
---                                 Examples                                   --
---------------------------------------------------------------------------------
-
-tests :: [(String,Src CoDataDcl Observation)]
-tests = [("stream",testStream)
-        ,("state",testState)]
-
-testStream :: Src CoDataDcl Observation
-testStream = SrcDcl $
-  CoData "Stream" ["a"]
-    [ CoPattern "Head"
-        (TyArr (TyApp (TyVar "Stream") (TyVar "a"))
-               (TyVar "a"))
-    , CoPattern "Tail"
-        (TyArr (TyApp (TyVar "Stream") (TyVar "a"))
-               (TyApp (TyVar "Stream") (TyVar "a")))
-    ]
-
-testState :: Src CoDataDcl Observation
-testState = SrcDcl $
-  CoData "State" ["s","a"]
-    [ CoPattern "Get"
-        (TyArr (TyApp (TyApp (TyVar "State") (TyVar "s"))
-                             (TyVar "a"))
-               (TyArr (TyVar "s")
-                      (TyVar "s")))
-    , CoPattern "Put"
-        (TyArr (TyApp (TyApp (TyVar "State") (TyVar "s"))
-                             (TyVar "a"))
-               (TyArr (TyVar "s")
-                      (TyVar "()")))
-    ]
+tests = []

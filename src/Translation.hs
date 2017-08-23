@@ -2,21 +2,18 @@ module Translation where
 
 import Data.Char (toLower)
 
-import Syn
+import qualified DualSyn as D
+import qualified HsSyn as H
 
-translate :: Src CoDataDcl Observation -> Src RecordDcl RecordIntro
-translate = \src ->
-  case src of
-    SrcDcl     dcl -> SrcDcl (translateDcl dcl)
-    SrcIntro intro -> SrcIntro (translateIntro intro)
-    SrcExpr    exp -> SrcExpr exp
-    s1 :*: s2      -> translate s1 :*: translate s2
+translateProgram :: D.Program -> H.Program
+translateProgram (D.Program decls term) =
+  H.Program (map translateDecl decls) (translateTerm term)
 
+translateDecl :: D.Decl -> H.Decl
+translateDecl = undefined              
 
-translateDcl :: CoDataDcl -> RecordDcl
-translateDcl (CoData name vars copats) =
-  Record name vars (fmap (\(CoPattern n ty) -> Proj (fmap toLower n) ty) copats)
+translateType :: D.Type -> H.Type
+translateType = undefined
 
-translateIntro :: Observation -> RecordIntro
-translateIntro (Obs coalts) =
-  RecordIntro undefined undefined
+translateTerm :: D.Term -> H.Term
+translateTerm = undefined

@@ -52,7 +52,7 @@ Type : str { case $1 of
                _ -> parseError [TokString $1] }
      | str { TyVar (TyVariable $1) }
      | '(' Type ')' { $2 }
-     | Type arr Type { TyFun $1 $3 }
+     | Type arr Type { TyArr $1 $3 }
 
 Decl : codata str strs '{' projs '}' { Decl Negative
                                             (TySymbol $2)
