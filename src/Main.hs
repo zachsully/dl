@@ -8,6 +8,7 @@ import qualified HsSyn as H
 import Lexer
 import Parser
 import Translation
+import Judgement
 
 --------------------------------------------------------------------------------
 --                                   Main                                     --

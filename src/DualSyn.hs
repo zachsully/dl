@@ -32,8 +32,17 @@ data Polarity = Positive | Negative
 {- Decl introduce types, which can be eliminated with TyApp.
    The list of Data describes the set of term level ways to create an
    of this type -}
-data Decl = Decl Polarity TySymbol [TyVariable] [Data]
+data Decl
+  = Decl
+  { polarity   :: Polarity
+  , tySymbol   :: TySymbol
+  , freeTyVars :: [TyVariable]
+  , datas      :: [Data]
+  }
   deriving (Eq,Show)
+
+tyArity :: Decl -> Int
+tyArity = length . freeTyVars
 
 {- The polarity describes the nature of the Data parameters.
    If it is positive, then the list of Data corresponds to a disjoint union of
@@ -56,7 +65,10 @@ data Decl = Decl Polarity TySymbol [TyVariable] [Data]
    introductions to be eleminated by case statements. We bind term level symbols
    here. -}
 
-data Data = Data Symbol Type
+data Data
+  = Data
+  { dataSymbol :: Symbol
+  , dataType   :: Type  }
   deriving (Eq,Show)
 
 --------------------------------------------------------------------------------
@@ -190,54 +202,6 @@ funDecl = Decl Negative
                (TySymbol "fun")
                [TyVariable "A",TyVariable "B"]
                [Data (Symbol "app") (TyVar (TyVariable "A"))]
-
---------------------------------------------------------------------------------
---                              Type Check                                    --
---------------------------------------------------------------------------------
-
-type Sig = [Decl]
-type Ctx = [(Variable,Type)]
-
--- Takes a term level symbol and returns the declaration containing the symbol
-lookupSymbol :: Symbol -> Sig -> Maybe Decl
-lookupSymbol sym [] = Nothing
-lookupSymbol sym (d@(Decl _ _ _ dcs):ds) =
-    case contains sym dcs of
-      True -> Just d
-      False -> lookupSymbol sym ds
-  where contains s [] = False
-        contains s ((Data s' _):dcs') =
-          case s == s' of
-            True -> True
-            False -> contains s dcs'
-
------------
--- infer --
------------
-infer :: Sig -> Ctx -> Term -> Type
-infer s c (Cons sym ts) =
-  case lookupSymbol sym s of
-    Nothing -> error $ "no constructor: " ++ show sym
-    Just (Decl _ _ _ _) ->
-      let tys = map (infer s c) ts
-      in error $ show tys
-
-infer s c (Case t _) =
-  let ty = infer s c t
-  in undefined
-
-infer _ _ (Dest _ _) = undefined
-infer _ _ (CoCase _) = undefined
-
-
------------
--- check --
------------
-check :: Sig -> Ctx -> Term -> Type -> Bool
-check _ _ (Cons _ _) _  = undefined
-check _ _ (Case _ _) _  = undefined
-check _ _ (Dest _ _) _  = undefined
-check _ _ (CoCase _) _  = undefined
 
 --------------------------------------------------------------------------------
 --                              Evaluation                                    --
