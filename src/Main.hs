@@ -21,16 +21,25 @@ main =
   do { args <- getArgs
      ; case args of
          ("test":n:[]) -> runTest n
+         ("type":[]) -> tryParse parseType
+         ("term":[]) -> tryParse parseTerm
+         ("datum":[]) -> tryParse parseDatum
+         ("decl":[]) -> tryParse parseDecl
          (fp:[]) -> runPreprocessor fp
          _ -> getProgName >>= \p -> putStrLn ("Usage: " ++ p ++ " *.cohs")
      }
+  where tryParse :: Show a
+                 => ([Token] -> State ([D.TySymbol],[(D.Symbol,D.Polarity)]) a)
+                 -> IO ()
+        tryParse p = do { toks <- lexContents
+                        ; print . fst . runState (p toks) $ emptyState }
 
 runPreprocessor :: FilePath -> IO ()
 runPreprocessor fp =
   do { !tokens <- case fp of
                     "-" -> lexContents
                     _   -> lexFile fp
-     ; let prog = fst . runState (parseProgram tokens) $ []
+     ; let prog = fst . runState (parseProgram tokens) $ emptyState
      ; putStr "\nProgram:\n"
      ; print prog
      ; putStr "\nEvaluates:\n"
