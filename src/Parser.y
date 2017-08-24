@@ -1,6 +1,7 @@
 {
 module Parser where
 
+import Control.Monad.State
 import Lexer
 import DualSyn
 }
@@ -8,6 +9,7 @@ import DualSyn
 %name parseProgram Program
 %tokentype { Token }
 %error { parseError }
+%monad { State [(Symbol,Polarity)] }
 
 %token
   num    { TokLit $$ }
@@ -30,17 +32,16 @@ import DualSyn
   '|'    { TokMid }
   ':'    { TokColon }
 
-%left ':'
-%left fix in
+%left ':' '_' '#'
+%left in
 %left '}' '('
 
-%right data codata
-%right arr
+%right str num
+%right data codata fix arr
 %right '+'
 %right '|' ',' ':'
 %right '{' ')'
 %right case cocase
-
 
 %%
 
@@ -57,22 +58,18 @@ Type : str                            { case $1 of
 types : Type { [$1] }
       | types Type { $2 : $1 }
 
-Decl : codata str strs '{' projs '}' { Decl Negative
-                                            (TySymbol $2)
-                                            (map TyVariable $3)
-                                            $5 }
-     | codata str '{' projs '}' { Decl Negative
-                                       (TySymbol $2)
-				       []
-                                       $4 }
-     | data str strs '{' injs '}'    { Decl Positive
-                                            (TySymbol $2)
-                                            (map TyVariable $3)
-                                            $5 }
-     | data str '{' injs '}' { Decl Positive
-                                    (TySymbol $2)
-                                    []
-                                    $4 }
+Decl : codata str strs '{' projs '}'
+         {% addSymbols Negative $5 >>
+            return (Decl Negative (TySymbol $2) (map TyVariable $3) $5) }
+     | codata str '{' projs '}'
+         {% addSymbols Negative $4 >>
+            return (Decl Negative (TySymbol $2) [] $4) }
+     | data str strs '{' injs '}'
+         {% addSymbols Positive $5 >>
+            return (Decl Positive (TySymbol $2) (map TyVariable $3) $5) }
+     | data str '{' injs '}'
+         {% addSymbols Positive $4 >>
+            return (Decl Positive (TySymbol $2) [] $4) }
 
 decls : Decl         { [$1] }
       | decls Decl   { $2 : $1 }
@@ -94,8 +91,17 @@ Term : num                        { Lit $1 }
      | case Term '{' alts '}'     { Case $2 $4 }
      | cocase '{' coalts '}'      { CoCase $3 }
      | Term '+' Term              { Add $1 $3 }
-     | str                        { Var (Variable $1) }
-     | str terms                  { Cons (Symbol $1) $2 }
+     | str terms                  {% get >>= \s -> return $
+                                     case lookup (Symbol $1) s of
+                                       Nothing -> parseError [TokString $1]
+                                       Just Positive -> Cons (Symbol $1) $2
+                                       Just Negative -> Dest (Symbol $1) (head $2)
+                                  }
+     | str                        {% get >>= \s -> return $
+                                     case lookup (Symbol $1) s of
+                                       Nothing -> Var (Variable $1)
+                                       Just _ -> parseError [TokString $1]
+                                  }
      | Term Term                  { App $1 $2 }
 
 terms : Term { [$1] }
@@ -124,6 +130,10 @@ CoPattern : '#' { QHash }
           | '(' CoPattern ')' { $2 }
 
 {
+addSymbols :: Polarity -> [Data] -> State [(Symbol,Polarity)] ()
+addSymbols p dats = get >>= \s -> put (getSyms dats ++ s)
+  where getSyms = foldr (\(Data sym _) acc -> (sym,p):acc) []
+
 parseError :: [Token] -> a
 parseError ts = error ("parse error: " ++ show ts)
 }

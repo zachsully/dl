@@ -1,8 +1,10 @@
 {-# LANGUAGE BangPatterns #-}
 module Main where
 
+import Control.Monad.State
 import System.Environment (getArgs,getProgName)
 
+-- local
 import qualified DualSyn as D
 import qualified HsSyn as H
 import Lexer
@@ -28,14 +30,14 @@ runPreprocessor fp =
   do { !tokens <- case fp of
                     "-" -> lexContents
                     _   -> lexFile fp
-     ; let prog = parseProgram tokens
+     ; let prog = fst . runState (parseProgram tokens) $ []
      ; putStr "\nProgram:\n"
      ; print prog
      ; putStr "\nEvaluates:\n"
      ; print (case prog of
                 D.Program _ t -> D.evalStart t)
      ; putStr "\nTranslation:\n"
-     ; print . H.ppProgram . translateProgram $ prog
+     ; putStrLn . H.ppProgram . translateProgram $ prog
      }
 
 runTest :: String -> IO ()

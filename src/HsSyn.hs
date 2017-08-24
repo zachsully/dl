@@ -38,7 +38,8 @@ data Data = Data Symbol Type
 --                                 Terms                                      --
 --------------------------------------------------------------------------------
 {- This is mostly the same as DualSyn. A lambda term has been introduced to be
-   used as an application. The destructor and cocase terms are not present.
+   used as an application. The destructor and cocase terms are not present. The
+   `fix` term is actually a let
 -}
 
 data Term where
@@ -82,20 +83,36 @@ smconcat = foldr (<+>) mempty
 vmconcat :: [String] -> String
 vmconcat = foldr (\a b -> a <> "\n" <> b) mempty
 
+parens :: String -> String
+parens s = "(" <> s <> ")"
+
 ppProgram :: Program -> String
-ppProgram (Program decls term) = vmconcat [vmconcat (map ppDecl decls)
-                                          ,ppTerm term]
+ppProgram (Program decls term) = "{-# LANGUAGE GADTs #-}"
+                             <-> (vmconcat (map ppDecl decls))
+                             <-> ("main = print" <+> parens (ppTerm term))
 
 ppDecl :: Decl -> String
-ppDecl (Decl (TySymbol ts) fts ds) =
-  (smconcat ["data",ts,smconcat . fmap (\(TyVariable s) -> s) $ fts,"where"])
+ppDecl (Decl s fts ds) =
+  (smconcat ["data",ppTySymbol s,smconcat . fmap ppTyVariable $ fts,"where"])
   <-> (vmconcat . fmap ppData $ ds)
 
 ppData :: Data -> String
-ppData = undefined
+ppData (Data (Symbol s) typ) =
+  "  " <> s <+> "::" <+> ppType typ
 
 ppType :: Type -> String
-ppType = error "ppType"
+ppType TyInt = "Int"
+ppType (TyArr a b) = "(" <> ppType a <+> "->" <+> ppType b <> ")"
+ppType (TyVar v) = ppTyVariable v
+ppType (TyCons s tys) = "(" <> ppTySymbol s <+> (smconcat . fmap ppType $ tys)
+                      <> ")"
+
+ppTyVariable :: TyVariable -> String
+ppTyVariable (TyVariable s) = s
+
+ppTySymbol :: TySymbol -> String
+ppTySymbol (TySymbol s) = s
+
 
 ppTerm :: Term -> String
 ppTerm (Lit i) = show i
