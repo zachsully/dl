@@ -32,16 +32,8 @@ import DualSyn
   '|'    { TokMid }
   ':'    { TokColon }
 
-%left ':' '_' '#'
-%left in
-%left '}' '('
-
-%right str num
-%right data codata fix arr
-%right '+'
-%right '|' ',' ':'
-%right '{' ')'
-%right case cocase
+%left '_' '#' in ':' '|' ','
+%right str num data codata fix arr '+' '{' '}' '(' ')' case cocase
 
 %%
 
