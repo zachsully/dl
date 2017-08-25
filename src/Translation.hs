@@ -24,7 +24,8 @@ translateDecl decl =
     D.Positive -> H.Decl (translateTySymbol (D.tySymbol decl))
                          (map translateTyVariable (D.freeTyVars decl))
                          (map translateData (D.datas decl))
-    D.Negative -> error "translateDecl{Negative}"
+    D.Negative -> let num = length . D.datas $ decl in
+                  error "translateDecl{Negative}"
 
 translateData :: D.Data -> H.Data
 translateData (D.Data s ty) = H.Data (translateSymbol s) (translateType ty)
@@ -67,8 +68,13 @@ translateTerm (D.Case t alts) =
 
 -- The interesting cases
 translateTerm (D.App _ _) = error "translateTerm{D.App}"
-translateTerm (D.Dest _ _) = error "translateTerm{D.Dest}"
-translateTerm (D.CoCase _) = error "translateTerm{D.CoCase}"
+
+translateTerm (D.Dest s t) =
+  H.Case (translateTerm t)
+         [(H.PCons (translateSymbol s) [],H.Var (H.Variable "x"))]
+
+translateTerm (D.CoCase coalts) =
+  H.Cons (H.Symbol "mkCocase") (map (\(_,t) -> translateTerm t) coalts)
 
 translatePattern :: D.Pattern -> H.Pattern
 translatePattern D.PWild = H.PWild

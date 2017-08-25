@@ -12,6 +12,7 @@ tokens :-
   $white+    ;
   "--".*     ;
   $digit+    { TokLit . read }
+  Int        { const TokInt }
   \+         { const TokPlus }
   codata     { const TokCodata }
   data       { const TokData }
@@ -34,6 +35,7 @@ tokens :-
 {
 data Token
   = TokLit Int
+  | TokInt
   | TokPlus
   | TokString String
   | TokCodata

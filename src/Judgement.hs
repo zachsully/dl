@@ -96,6 +96,7 @@ infer _ _ (CoCase _) = undefined
 -----------
 -- check --
 -----------
+
 check :: Signature -> Ctx -> Term -> Type -> Bool
 check _ _ (Lit _) TyInt = True
 check s c (Add a b) TyInt = undefined
@@ -103,8 +104,8 @@ check _ c (Var v) ty =
   case lookup v c of
     Just ty' -> ty == ty'
     Nothing -> False
-check _ _ (Fix _ _) _ = undefined
-check _ _ (App _ _) _ = undefined
+check s c (Fix v t) ty = check s ((v,ty):c) t ty
+check _ _ (App _ _) ty = undefined
 check _ _ (Cons sym ts) _ = undefined
 check _ _ (Case _ _) _ = undefined
 check _ _ (Dest _ _) _ = undefined

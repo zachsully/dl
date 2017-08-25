@@ -17,6 +17,7 @@ import DualSyn
 
 %token
   num      { TokLit $$ }
+  'tyint'  { TokInt }
   '+'      { TokPlus }
   str      { TokString $$ }
   'codata' { TokCodata }
@@ -36,16 +37,16 @@ import DualSyn
   '|'      { TokMid }
   ':'      { TokColon }
 
-%left str
+-- %left str
 
-%left ':'
-%left '|' ','
-%right '{' '('
-%left '}' ')'
+-- %left ':'
+-- %left '|' ','
+-- %right '{' '('
+-- %left '}' ')'
 
-%left '_' '#' 'in'
-%right num 'data' 'codata' 'fix' '+' 'case' 'cocase'
-%right '->'
+-- %left '_' '#' 'in'
+-- %right num 'data' 'codata' 'fix' '+' 'case' 'cocase'
+-- %right '->'
 
 %%
 
@@ -57,15 +58,13 @@ program :: { Program }
 program : decls term                  { Program $1 $2 }
 
 decl :: { Decl }
-decl : 'codata' str tyvars '{' projs '}'
-            {% do { addTySymbol (TySymbol $2)
-                  ; addSymbols Negative $5
-                  ; return (Decl Negative (TySymbol $2) $3 $5) } }
+decl : 'codata' tysymbol tyvars '{' projs '}'
+            {% do { addSymbols Negative $5
+                  ; return (Decl Negative $2 $3 $5) } }
 
-     | 'data' str tyvars '{' injs '}'
-            {% do { addTySymbol (TySymbol $2)
-                  ; addSymbols Positive $5
-                  ; return (Decl Positive (TySymbol $2) $3 $5) } }
+     | 'data' tysymbol tyvars '{' injs '}'
+            {% do { addSymbols Positive $5
+                  ; return (Decl Positive $2 $3 $5) } }
 
 decls :: { [Decl] }
 decls : decl decls          { $1 : $2 }
@@ -82,9 +81,19 @@ injs :: { [Data] }
 injs : injs '|' datad       { $3 : $1 }
      | {- empty -}          { [] }
 
+tysymbol :: { TySymbol }
+tysymbol : str              {% let sym = TySymbol $1 in
+                               addTySymbol sym >> return sym }
+
+tyvar :: { TyVariable }
+tyvar : str                 {% (isTySymbol (TySymbol $1)) >>=
+                               (\b -> case b of
+                                        False -> return (TyVariable $1)
+                                        True -> parseError []) }
+
 tyvars :: { [TyVariable] }
-tyvars : tyvars str         { (TyVariable $2) : $1 }
-       | {- empty -}        { [] }
+tyvars : tyvars tyvar         { $2 : $1 }
+       | {- empty -}          { [] }
 
 --------------------------------------------------------------------------------
 --                                 Types                                      --
@@ -92,22 +101,14 @@ tyvars : tyvars str         { (TyVariable $2) : $1 }
 
 type :: { Type }
 type : '(' type ')'                   { $2 }
-     | str
-          {% case $1 of
-              "Int" -> return TyInt
-              _     -> do { b <- isTySymbol (TySymbol $1)
-                          ; case b of
-                              True -> return (TyCons (TySymbol $1) [])
-                              _ -> return (TyVar (TyVariable $1))
-                          }
-          }
+     | 'tyint'                        { TyInt }
+     | tyvar                          { TyVar $1 }
      | type '->' type                 { TyArr $1 $3 }
-     | str types                      { TyCons (TySymbol $1) $2 }
-
+     | tysymbol types                 { TyCons $1 $2 }
 
 types :: { [Type] }
-types : types type                    { $2 : $1 }
-      | type                          { [$1] }
+types : type types                    { $1 : $2 }
+      | {- empty -}                   { [] }
 
 --------------------------------------------------------------------------------
 --                                 Terms                                      --
