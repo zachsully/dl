@@ -5,15 +5,15 @@ import Control.Monad.State
 import Lexer
 import DualSyn
 }
+-- All shift/reduce conflicts
+%expect 17
 
 %name parseProgram program
 %name parseType type
 %name parseTerm term
-%name parseDecl decl
-%name parseDatum datad
 %tokentype { Token }
 %error { parseError }
-%monad { State ([TySymbol],[(Symbol,Polarity)]) }
+%monad { State ([TyVariable],[(Variable,Polarity)]) }
 
 %token
   num      { TokLit $$ }
@@ -37,106 +37,101 @@ import DualSyn
   '|'      { TokMid }
   ':'      { TokColon }
 
--- %left str
-
--- %left ':'
--- %left '|' ','
--- %right '{' '('
--- %left '}' ')'
-
--- %left '_' '#' 'in'
--- %right num 'data' 'codata' 'fix' '+' 'case' 'cocase'
--- %right '->'
-
 %%
+
+strs :: { [String] }
+strs : strs str                                { $2 : $1 }
+     | str                                     { [$1] }
 
 --------------------------------------------------------------------------------
 --                              Top Level                                     --
 --------------------------------------------------------------------------------
 
 program :: { Program }
-program : decls term                  { Program $1 $2 }
+program : decls term                           { Pgm $1 $2 }
 
 decl :: { Decl }
-decl : 'codata' tysymbol tyvars '{' projs '}'
-            {% do { addSymbols Negative $5
-                  ; return (Decl Negative $2 $3 $5) } }
-
-     | 'data' tysymbol tyvars '{' injs '}'
-            {% do { addSymbols Positive $5
-                  ; return (Decl Positive $2 $3 $5) } }
+decl : 'codata' str strs '{' projs '}'         { Left (NegTyCons $2 $3 $5) }
+     | 'data'   str strs '{' injs  '}'         { Right (PosTyCons $2 $3 $5) }
 
 decls :: { [Decl] }
-decls : decl decls          { $1 : $2 }
-      | {- empty -}         { [] }
+decls : decl decls                             { $1 : $2 }
+      | {- empty -}                            { [] }
 
-datad :: { Data }
-datad : str ':' type        { Data (Symbol $1) $3 }
+proj :: { Projection }
+proj : str ':' type '->' type                  {% do { addVar $1 Negative
+                                                     ; return (Proj $1 $3 $5) } }
+projs :: { [Projection] }
+projs : projs ',' proj                         { $3 : $1 }
+      | proj                                   { [$1] }
+      | {- empty-}                             { [] }
 
-projs :: { [Data] }
-projs : projs ',' datad     { $3 : $1 }
-      | {- empty-}          { [] }
+inj :: { Injection }
+inj : str ':' type                             {% do { addVar $1 Positive
+                                                     ; return (Inj $1 $3)  } }
 
-injs :: { [Data] }
-injs : injs '|' datad       { $3 : $1 }
-     | {- empty -}          { [] }
-
-tysymbol :: { TySymbol }
-tysymbol : str              {% let sym = TySymbol $1 in
-                               addTySymbol sym >> return sym }
-
-tyvar :: { TyVariable }
-tyvar : str                 {% (isTySymbol (TySymbol $1)) >>=
-                               (\b -> case b of
-                                        False -> return (TyVariable $1)
-                                        True -> parseError []) }
-
-tyvars :: { [TyVariable] }
-tyvars : tyvars tyvar         { $2 : $1 }
-       | {- empty -}          { [] }
+injs :: { [Injection] }
+injs : injs '|' inj                            { $3 : $1 }
+     | inj                                     { [$1] }
+     | {- empty -}                             { [] }
 
 --------------------------------------------------------------------------------
 --                                 Types                                      --
 --------------------------------------------------------------------------------
 
 type :: { Type }
-type : '(' type ')'                   { $2 }
-     | 'tyint'                        { TyInt }
-     | tyvar                          { TyVar $1 }
-     | type '->' type                 { TyArr $1 $3 }
-     | tysymbol types                 { TyCons $1 $2 }
+type : type0                           { $1 }
 
-types :: { [Type] }
-types : type types                    { $1 : $2 }
-      | {- empty -}                   { [] }
+-- try type constructor
+type0 :: { Type }
+type0 :  type typeA                    { TyApp $1 $2 }
+      |  type1                         { $1 }
+
+-- try function
+type1 :: { Type }
+type1 :  type '->' type                { TyArr $1 $3 }
+      |  typeA                         { $1 }
+
+typeA :: { Type }
+typeA : '(' type ')'                   { $2 }
+      | 'tyint'                        { TyInt }
+      | str                            {% do { b <- isTyCons $1
+                                             ; return (case b of
+                                                         True -> TyCons $1
+                                                         False -> TyVar $1)
+                                             }
+                                       }
 
 --------------------------------------------------------------------------------
 --                                 Terms                                      --
 --------------------------------------------------------------------------------
 
 term :: { Term }
-term : num                        { Lit $1 }
-     | '(' term ')'               { $2 }
-     | 'fix' str 'in' term        { Fix (Variable $2) $4 }
-     | 'case' term '{' alts '}'   { Case $2 $4 }
-     | 'cocase' '{' coalts '}'    { CoCase $3 }
-     | term '+' term              { Add $1 $3 }
-     | str terms                  {% getPolarity (Symbol $1) >>= \mp -> return $
-                                     case mp of
-                                       Nothing -> parseError [TokString $1]
-                                       Just Positive -> Cons (Symbol $1) $2
-                                       Just Negative -> Dest (Symbol $1) (head $2)
-                                  }
-     | str                        {% getPolarity (Symbol $1) >>= \mp -> return $
-                                     case mp of
-                                       Nothing -> Var (Variable $1)
-                                       Just _ -> parseError [TokString $1]
-                                  }
-     | term term                  { App $1 $2 }
+term : term1                      { $1 }
 
-terms :: { [Term] }
-terms : term                        { [$1] }
-      | terms term                  { $2 : $1 }
+term1 :: { Term }
+term1 :  term  termA              { App $1 $2 }
+      |  term2                    { $1 }
+
+term2 :: { Term }
+term2 :  termA '+' termA          { Add $1 $3 }
+      |  'fix' str 'in' term      { Fix $2 $4 }
+      |  'case' term '{' alts '}' { Case $2 $4 }
+      |  'cocase' '{' coalts '}'  { CoCase $3 }
+      |  termA                    { $1 }
+
+{- We lookup to see if the string is defined as a symbol and a singleton
+   constructor, otherwise it is a variable. -}
+termA :: { Term }
+termA :  num                      { Lit $1 }
+      |  str                      {% do { mp <- getPolarity $1
+                                        ; case mp of
+                                            Nothing -> return (Var $1)
+                                            Just Negative -> return (Dest $1)
+                                            Just Positive -> return (Cons $1)
+                                        }
+                                  }
+      |  '(' term ')'             { $2 }
 
 --------------
 -- Matching --
@@ -158,8 +153,8 @@ coalts : coalt                      { [$1] }
 
 pattern :: { Pattern }
 pattern : '_'                       { PWild }
-        | str patterns              { PCons (Symbol $1) $2 }
-        | str                       { PVar (Variable $1) }
+        | str patterns              { PCons $1 $2 }
+        | str                       { PVar $1 }
 
 patterns :: { [Pattern] }
 patterns : pattern                  { [$1] }
@@ -167,7 +162,7 @@ patterns : pattern                  { [$1] }
 
 copattern :: { CoPattern }
 copattern : '#'                     { QHash }
-          | str copattern           { QDest  (Symbol $1)  $2 }
+          | str copattern           { QDest $1 $2 }
           | copattern pattern       { QPat $1 $2 }
           | '(' copattern ')'       { $2 }
 
@@ -178,17 +173,16 @@ copattern : '#'                     { QHash }
 
 emptyState = ([],[])
 
-addTySymbol :: TySymbol -> State ([TySymbol],ss) ()
-addTySymbol s = get >>= \(ts,ss) -> put (s:ts,ss)
+addTyCons :: TyVariable -> State ([TyVariable],ss) ()
+addTyCons s = get >>= \(ts,ss) -> put (s:ts,ss)
 
-isTySymbol :: TySymbol -> State ([TySymbol],ss) Bool
-isTySymbol s = elem s . fst <$> get
+isTyCons :: TyVariable -> State ([TyVariable],ss) Bool
+isTyCons s = elem s . fst <$> get
 
-addSymbols :: Polarity -> [Data] -> State (ts,[(Symbol,Polarity)]) ()
-addSymbols p dats = get >>= \(ts,ss) -> put (ts,getSyms dats ++ ss)
-  where getSyms = foldr (\(Data sym _) acc -> (sym,p):acc) []
+addVar :: Variable -> Polarity -> State (ts,[(Variable,Polarity)]) ()
+addVar s p = get >>= \(ts,ss) -> put (ts,(s,p):ss)
 
-getPolarity :: Symbol -> State (ts,[(Symbol,Polarity)]) (Maybe Polarity)
+getPolarity :: Variable -> State (ts,[(Variable,Polarity)]) (Maybe Polarity)
 getPolarity s = get >>= \(_,ss) -> return (lookup s ss)
 
 parseError :: [Token] -> a

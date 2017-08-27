@@ -1,8 +1,18 @@
 {-# LANGUAGE GADTs #-}
 module DualSyn where
 
-data Program = Program [Decl] Term
+data Program
+  = Pgm
+  { pgmDecl :: [Decl]
+  , pgmTerm  :: Term }
   deriving (Show,Eq)
+
+type Decl = Either NegativeTyCons PositiveTyCons
+
+{- There is a special polarity type because positive and negative types are
+   declared with the same structure, but we still need to keep them separate. -}
+data Polarity = Positive | Negative
+  deriving (Eq,Show)
 
 --------------------------------------------------------------------------------
 --                                 Types                                      --
@@ -12,64 +22,51 @@ data Type where
   TyInt  :: Type
   TyArr  :: Type -> Type -> Type
   TyVar  :: TyVariable -> Type
-  TyCons :: TySymbol -> [Type] -> Type
-  deriving (Eq,Show)
-
-{- A type level symbol is introduced in the left hand side of a data declaration
-   and can be used for recursion in types. -}
-newtype TySymbol = TySymbol String
+  TyCons :: TyVariable -> Type
+  TyApp  :: Type -> Type -> Type
   deriving (Eq,Show)
 
 {- TyVariable are bound inside of the types in a declaration -}
-newtype TyVariable = TyVariable String
+type TyVariable = String
+
+{- Intoduction of positive and negative types are done with NegativeTyCons and
+   PositiveTyCons. These two are very similar. The notable difference is in
+   projections and injections, where every projection must have domain and a
+   codomain, injections may not take arguments. -}
+data NegativeTyCons
+  = NegTyCons
+  { negTyName   :: TyVariable
+  , negTyFVars  :: [TyVariable]
+  , projections :: [Projection] }
   deriving (Eq,Show)
 
-{- There is a special polarity type because positive and negative types are
-   declared with the same structure, but we still need to keep them separate. -}
-data Polarity = Positive | Negative
-  deriving (Eq,Show)
+negTyArity :: NegativeTyCons -> Int
+negTyArity = length . negTyFVars
 
-{- Decl introduce types, which can be eliminated with TyApp.
-   The list of Data describes the set of term level ways to create an
-   of this type -}
-data Decl
-  = Decl
-  { polarity   :: Polarity
-  , tySymbol   :: TySymbol
-  , freeTyVars :: [TyVariable]
-  , datas      :: [Data]
-  }
-  deriving (Eq,Show)
+data Projection
+  = Proj
+  { projSymbol :: Variable
+  , projDom    :: Type
+  , projCod    :: Type   }
+  deriving (Eq, Show)
 
-tyArity :: Decl -> Int
-tyArity = length . freeTyVars
+data PositiveTyCons
+  = PosTyCons
+  { posTySymbol :: TyVariable
+  , posTyFVars  :: [TyVariable]
+  , injections  :: [Injection]  }
+  deriving (Eq, Show)
 
-{- The polarity describes the nature of the Data parameters.
-   If it is positive, then the list of Data corresponds to a disjoint union of
-   injections into the new data type. E.g.
+posTyArity :: PositiveTyCons -> Int
+posTyArity = length . posTyFVars
 
-     data List a where
-       Nil  :: List a
-       Cons :: a -> List a -> List a
-
-  If it is negative, then the list of Data corresponds to a product of
-  projections out of the new data type. E.g.
-
-    data Stream a where
-      Head :: Stream a -> a
-      Tail :: Stream a -> Stream a
--}
-
-
-{- Data are added to a typing context as functions, in terms they are
-   introductions to be eleminated by case statements. We bind term level symbols
-   here. -}
-
-data Data
-  = Data
-  { dataSymbol :: Symbol
-  , dataType   :: Type  }
-  deriving (Eq,Show)
+data Injection
+  = Inj
+  { injSymbol :: Variable
+  , injCod    :: Type }
+  deriving (Eq, Show)
+  {- the domain is a maybe value because unary constructors do not take
+     arguments, e.g. () : Unit -}
 
 --------------------------------------------------------------------------------
 --                                 Terms                                      --
@@ -84,124 +81,46 @@ data Term where
   Fix :: Variable -> Term -> Term
   App :: Term -> Term -> Term
 
-  {- positive datum intro and elim -}
-  Cons :: Symbol -> [Term] -> Term
+  Cons :: Variable -> Term
   Case :: Term -> [(Pattern,Term)] -> Term
 
-  Dest :: Symbol -> Term -> Term
+  Dest :: Variable -> Term
   CoCase :: [(CoPattern,Term)] -> Term
   deriving (Eq,Show)
+
+collectArgs :: Term -> Maybe (Variable,[Term])
+collectArgs (App e t) = collectArgs e >>= \(k,ts) -> return (k,t:ts)
+collectArgs (Cons k)  = return (k,[])
+collectArgs _         = Nothing
+
+distributeArgs :: (Variable,[Term]) -> Term
+distributeArgs (k,ts) = foldl App (Cons k) ts
 
 data Pattern where
   PWild :: Pattern
   PVar  :: Variable -> Pattern
-  PCons :: Symbol -> [Pattern] -> Pattern
+  PCons :: Variable -> [Pattern] -> Pattern
   deriving (Eq,Show)
 
 {- NOTE: we often use 'q' for a copattern variables -}
 data CoPattern where
-  -- ^ the copattern matching the context
-  QHash  :: CoPattern
-
-  -- ^ a specific destructor
-  QDest :: Symbol -> CoPattern -> CoPattern
-
-  -- ^ a copattern applied ot a pattern
-  QPat  :: CoPattern -> Pattern -> CoPattern
-  deriving (Eq,Show)
-
-{- Values are always positive data types. Also not that the are in weak head
-   normal form, implying call-by-name -}
-data Value where
-  VCons :: Symbol -> [Term] -> Value
-  deriving (Eq,Show)
-
-data CoValue where
-  VDest :: Symbol -> Term -> CoValue
-  VCoCase :: [(CoPattern,Term)] -> CoValue
+  QHash  :: CoPattern                         -- ^ the copattern matching the context
+  QDest :: Variable -> CoPattern -> CoPattern -- ^ a specific destructor
+  QPat  :: CoPattern -> Pattern -> CoPattern  -- ^ a copattern applied ot a pattern
   deriving (Eq,Show)
 
 {- The machine returns results which can be of positive or negative types. We
    call this result instead of value (as is the common approach) because of the
    polarity of values. -}
 data Result where
-  RInt    :: Int -> Result
-  RCons   :: Symbol -> [Term] -> Result
-  RDest   :: Symbol -> Term -> Result
-  RCoCase :: [(CoPattern,Term)] -> Result
-  deriving (Eq,Show)
-
-
-{- Symbols are introduced in typing declarations. They refer to constructors and
-   destructors. -}
-newtype Symbol = Symbol String
+  RInt     :: Int -> Result
+  RConsApp :: Variable -> [Term] -> Result
+  RDest    :: Variable -> Result
+  RCoCase  :: [(CoPattern,Term)] -> Result
   deriving (Eq,Show)
 
 {- Vars are introduced and consumed by pattern matching within terms. -}
-newtype Variable = Variable String
-  deriving (Eq,Show)
-
-
---------------------------------------------------------------------------------
---                           Primitive DataDecl                               --
---------------------------------------------------------------------------------
-
---------------
--- Positive --
---------------
-unitDecl :: Decl
-unitDecl = Decl Positive (TySymbol "Unit") []
-                         [Data (Symbol "()") (TyVar (TyVariable "Unit"))]
-
-pairDecl :: Decl
-pairDecl = Decl Positive
-                (TySymbol "Pair")
-                [TyVariable "A",TyVariable "B"]
-                [Data (Symbol "mkPair")
-                      (TyArr (TyVar (TyVariable "A"))
-                             (TyVar (TyVariable "B")))]
-
-eitherDecl :: Decl
-eitherDecl = Decl Positive
-                  (TySymbol "Either")
-                  [TyVariable "A",TyVariable "B"]
-                  [Data (Symbol "inl") (TyVar (TyVariable "A"))
-                  ,Data (Symbol "inr") (TyVar (TyVariable "B"))]
-
-listDecl :: Decl
-listDecl = Decl Negative
-                (TySymbol "List")
-                [TyVariable "A"]
-                [Data (Symbol "nil") (TyCons (TySymbol "List")
-                                     [TyVar (TyVariable "A")])
-                ,Data (Symbol "cons") (TyArr (TyVar (TyVariable "A"))
-                                             (TyCons (TySymbol "List")
-                                                     [TyVar (TyVariable "A")]))]
-
---------------
--- Negative --
---------------
-negPairDecl :: Decl
-negPairDecl = Decl Negative
-                   (TySymbol "NegPair")
-                   [TyVariable "A",TyVariable "B"]
-                   [Data (Symbol "fst") (TyVar (TyVariable "A"))
-                   ,Data (Symbol "snd") (TyVar (TyVariable "B"))]
-
-streamDecl :: Decl
-streamDecl = Decl Negative
-                  (TySymbol "Stream")
-                  [TyVariable "A"]
-                  [Data (Symbol "head") (TyCons (TySymbol "Stream")
-                                                [TyVar (TyVariable "A")])
-                  ,Data (Symbol "tail") (TyCons (TySymbol "Stream")
-                                                [TyVar (TyVariable "A")])]
-
-funDecl :: Decl
-funDecl = Decl Negative
-               (TySymbol "fun")
-               [TyVariable "A",TyVariable "B"]
-               [Data (Symbol "app") (TyVar (TyVariable "A"))]
+type Variable = String
 
 --------------------------------------------------------------------------------
 --                              Evaluation                                    --
@@ -212,8 +131,8 @@ type Env = [(Variable,Term)]
 {- An evaluation context for CoPatterns to match on -}
 data QCtx where
   Empty      :: QCtx
-  Destructor :: QCtx   -> Term -> QCtx
-  Destructee :: Symbol -> QCtx -> QCtx
+  Destructor :: QCtx -> Term -> QCtx
+  Destructee :: Variable -> QCtx -> QCtx
   deriving (Show,Eq)
 
 data Machine = Machine { run :: (Term, QCtx, Env) -> (Result, QCtx, Env) }
@@ -237,33 +156,38 @@ evalMachine = Machine $ \(t,qc,env) ->
 
     Fix x t' -> run evalMachine (t',qc,(x,t):env)
 
+    Cons k -> (RConsApp k [], qc, env)
+    Dest d -> (RDest d, qc, env)
+
     App t1 t2 ->
       case run evalMachine (t1,qc,env) of
+        (RConsApp k ts,qc',env')  -> (RConsApp k (t2:ts),qc',env')
+
+        (RDest d,qc',env')        ->
+          run evalMachine (t2, Destructee d qc', env')
+
         (RCoCase coalts,qc',env') ->
           run evalMachine (CoCase coalts,Destructor qc' t2,env')
         _ -> error $ show t1 ++ " is not a valid application term"
 
-
-    Cons k ts -> (RCons k ts,qc,env)
-
     Case t' alts ->
-      case run evalMachine (t',qc,env) of
-        (RCons k ts, qc', env') ->
-          let tryAlts :: Term -> [(Pattern,Term)] -> (Result, QCtx, Env)
-              tryAlts _ [] = error "no matching alternative"
-              tryAlts t'' ((p,t'''):alts') =
-                case matchPattern t' p of
-                  Just subs -> run evalMachine (t''',qc,(subs++env))
-                  Nothing -> tryAlts t'' alts'
-          in tryAlts (Cons k ts) alts
+      let tryAlts :: Term -> [(Pattern,Term)] -> (Result, QCtx, Env)
+          tryAlts _ [] = error "no matching alternative"
+          tryAlts r ((p,t''):alts') =
+            case matchPattern r p of
+              Just subs -> run evalMachine (t'',qc,(subs++env))
+              Nothing -> tryAlts r alts'
+      in case run evalMachine (t',qc,env) of
+           (RInt i,qc',env')         -> tryAlts (Lit i) alts
+           (RConsApp k ts,qc',env')  -> tryAlts (distributeArgs (k,ts)) alts
+           (RDest h,qc',env')        -> tryAlts (Dest h) alts
+           (RCoCase coalts,qc',env') -> tryAlts (CoCase coalts) alts
 
-        _ -> error "case only operates on constructed values"
-
-    Dest s t' -> run evalMachine (t',(Destructee s qc),env)
 
     CoCase coalts ->
       let tryCoAlts :: [(CoPattern,Term)] -> (Result, QCtx, Env)
-          tryCoAlts [] = (RCoCase coalts,qc,env)
+          tryCoAlts [] = error (concat ["no copattern context match:\nQ = "
+                                       ,show qc,"\nt = ",show t])
           tryCoAlts ((q,t'):coalts') =
             case matchCoPattern qc  q of
               Just (qc',subs) -> run evalMachine (t',qc',(subs++env))
@@ -277,20 +201,14 @@ evalMachine = Machine $ \(t,qc,env) ->
 {- Takes a term and a pattern and returns a set of substitutions if it succeeds.
    Note that the set of substitutions can be empty. This is pretty standard. -}
 matchPattern :: Term -> Pattern -> Maybe [(Variable,Term)]
-matchPattern t PWild = Just []
+matchPattern _ PWild    = Just []
 matchPattern t (PVar v) = Just [(v,t)]
-
-matchPattern (Cons k ts) (PCons k' ps) =
-  case k == k' of
-    True -> let subs = map (\(t,p) -> matchPattern t p) (zip ts ps)
-            in foldr (\msub acc ->
-                       case (msub,acc) of
-                         (_,Nothing) -> Nothing
-                         (Nothing,_) -> Nothing
-                         (Just as,Just bs) -> Just (as ++ bs)
-                     ) (Just []) subs
-    False -> Nothing
-matchPattern _ _ = Nothing
+matchPattern t (PCons k' ps) =
+  do { (k,ts) <- collectArgs t
+     ; case k == k' of
+         True -> concat <$> mapM (\(t,p) -> matchPattern t p) (zip ts ps)
+         False -> Nothing
+     }
 
 {- Takes a copattern context and copattern and returns just a list of
    substitutions if it succeeds. The reason there can be substitutions
@@ -333,73 +251,22 @@ matchPattern _ _ = Nothing
                }
 
 -}
+
 matchCoPattern :: QCtx -> CoPattern -> Maybe (QCtx,[(Variable,Term)])
+
+{- Q , # -}
 matchCoPattern qc QHash = Just (qc,[])
 
+{- Q t , q p -}
 matchCoPattern (Destructor qc t) (QPat q p) =
   do { (qc',subs1) <- matchCoPattern qc q
      ; subs2 <-  matchPattern t p
      ; return (qc',(subs1++subs2)) }
 
+{- H Q , H q -}
 matchCoPattern (Destructee s qc) (QDest s' q) =
   case s == s' of
     True -> matchCoPattern qc q
     False -> Nothing
 
 matchCoPattern _ _ = Nothing
-
---------------------------------------------------------------------------------
---                               Examples                                     --
---------------------------------------------------------------------------------
-
-unit :: Term
-unit = Cons (Symbol "()") []
-
-pair1 :: Term
-pair1 = Cons (Symbol "mkPair") [Cons (Symbol "mkPair") [unit,unit],unit]
-
-pair2 :: Term
-pair2 = Case pair1 [(PCons (Symbol "mkPair")
-                           [PVar (Variable "x")
-                           ,PVar (Variable "y")], Var (Variable "x"))]
-
-lam :: Term
-lam = CoCase [(QPat QHash (PVar (Variable "x"))
-             ,Cons (Symbol "mkPair") [Var (Variable "x")
-                                     ,Var (Variable "x")])]
-
-app :: Term
-app = App (CoCase [(QPat QHash (PVar (Variable "x"))
-                   ,(Add (Var (Variable "x")) (Lit 20)))])
-          (Lit 22)
-
-foo1 :: Term
-foo1 = CoCase [(QDest (Symbol "fst") QHash, Lit 1)
-              ,(QDest (Symbol "fst") (QDest (Symbol "snd") QHash), Lit 2)
-              ,(QDest (Symbol "snd") (QDest (Symbol "snd") QHash), Lit 3)]
-
-foo2 :: Term
-foo2 = CoCase [(QDest (Symbol "fst") QHash, Lit 1)
-              ,(QDest (Symbol "snd") QHash,
-                  CoCase [(QDest (Symbol "fst") QHash, Lit 2)
-                         ,(QDest (Symbol "snd") QHash, Lit 3)])
-              ]
-
-fstProj :: Term -> Term
-fstProj = Dest (Symbol "fst")
-
-sndProj :: Term -> Term
-sndProj = Dest (Symbol "snd")
-
-zeros :: Term
-zeros = Fix (Variable "s")
-            (CoCase [ ( QDest (Symbol "head") QHash , Lit 0 )
-                    , ( QDest (Symbol "tail") QHash , (Var (Variable "s")))])
-
-nats :: Term
-nats = Fix (Variable "s")
-           (CoCase [ (QDest (Symbol "head") QHash
-                     , Lit 0 )
-                   , (QDest (Symbol "tail") QHash
-                     , Add (Lit 1)
-                           (Dest (Symbol "head") (Var (Variable "s"))))])

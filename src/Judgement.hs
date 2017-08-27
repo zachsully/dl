@@ -7,16 +7,14 @@ import DualSyn
 --------------------------------------------------------------------------------
 
 typeOfProgram :: Program -> Type
-typeOfProgram (Program decls term) = undefined
+typeOfProgram (Pgm decls term) = undefined
 
 --------------------------------------------------------------------------------
 --                                isType                                      --
 --------------------------------------------------------------------------------
 {- Checks whether a type is well formed -}
 
-type Signature = [Decl]
-
-isType :: Signature           -- ^ A set of type signatures
+isType :: [Decl]              -- ^ A set of type signatures
        -> [(TyVariable,Type)] -- ^ A context of bindings of type variables
        -> Type
        -> Bool
@@ -25,16 +23,16 @@ isType s ctx (TyArr a b)      = isType s ctx a && isType s ctx b
 isType s ctx (TyVar v)        = case lookup v ctx of
                                   Just t -> isType s ctx t
                                   Nothing -> False
-isType s ctx (TyCons sym tys) = case lookupDecl sym s of
-                                  Just d -> (all (isType s ctx) tys)
-                                         && (tyArity d == length tys)
-                                  Nothing -> False
+-- isType s ctx (TyCons sym tys) = case lookupDecl sym s of
+--                                   Just d -> (all (isType s ctx) tys)
+--                                          && (tyArity d == length tys)
+--                                   Nothing -> False
 
-lookupDecl :: TySymbol -> [Decl] -> Maybe Decl
-lookupDecl _ []     = Nothing
-lookupDecl s (d:ds) = case s == tySymbol d of
-                        True -> Just d
-                        False -> lookupDecl s ds
+-- lookupDecl :: TySymbol -> [Decl] -> Maybe Decl
+-- lookupDecl _ []     = Nothing
+-- lookupDecl s (d:ds) = case s == tySymbol d of
+--                         True -> Just d
+--                         False -> lookupDecl s ds
 
 
 --------------------------------------------------------------------------------
@@ -43,21 +41,21 @@ lookupDecl s (d:ds) = case s == tySymbol d of
 
 type Ctx = [(Variable,Type)]
 
-lookupCons :: Symbol -> Signature -> Maybe (Decl,Data)
-lookupCons sym [] = Nothing
-lookupCons sym (d:ds) = case lookupCons' (datas d) of
-                          Just dat -> Just (d,dat)
-                          Nothing -> lookupCons sym ds
-  where lookupCons' :: [Data] -> Maybe Data
-        lookupCons' []  = Nothing
-        lookupCons' (dat:dats) = case sym == dataSymbol dat of
-                                   True -> Just dat
-                                   False -> lookupCons' dats
+-- lookupCons :: Symbol -> [Decl] -> Maybe (Decl,Injection)
+-- lookupCons sym [] = Nothing
+-- lookupCons sym (d:ds) = case lookupCons' (datas d) of
+--                           Just dat -> Just (d,dat)
+--                           Nothing -> lookupCons sym ds
+--   where lookupCons' :: [Data] -> Maybe Data
+--         lookupCons' []  = Nothing
+--         lookupCons' (dat:dats) = case sym == dataSymbol dat of
+--                                    True -> Just dat
+--                                    False -> lookupCons' dats
 
 -----------
 -- infer --
 -----------
-infer :: Signature -> Ctx -> Term -> Type
+infer :: [Decl] -> Ctx -> Term -> Type
 infer _ _ (Lit _) = TyInt
 
 infer s c (Add a b) =
@@ -80,14 +78,11 @@ infer s c (App a b) =
         False -> error (show a ++ " expects arguments of type " ++ show tyDom)
     _ -> error ("operator must have a function type: " ++ show a)
 
-infer s c (Cons sym ts) =
-  case lookupCons sym s of
-    Just (decl,dat) -> undefined
-    Nothing -> error ("unknown constructor: " ++ show sym)
+  -- case lookupCons sym s of
+  --   Just (decl,dat) -> undefined
+  --   Nothing -> error ("unknown constructor: " ++ show sym)
 
 infer _ _ (Case _ _) = undefined
-
-infer _ _ (Dest _ _) = undefined
 
 infer _ _ (CoCase _) = undefined
 
@@ -97,7 +92,7 @@ infer _ _ (CoCase _) = undefined
 -- check --
 -----------
 
-check :: Signature -> Ctx -> Term -> Type -> Bool
+check :: [Decl] -> Ctx -> Term -> Type -> Bool
 check _ _ (Lit _) TyInt = True
 check s c (Add a b) TyInt = undefined
 check _ c (Var v) ty =
@@ -106,8 +101,6 @@ check _ c (Var v) ty =
     Nothing -> False
 check s c (Fix v t) ty = check s ((v,ty):c) t ty
 check _ _ (App _ _) ty = undefined
-check _ _ (Cons sym ts) _ = undefined
 check _ _ (Case _ _) _ = undefined
-check _ _ (Dest _ _) _ = undefined
 check _ _ (CoCase _) _ = undefined
 check _ _ _ _ = False

@@ -1,0 +1,7 @@
+codata Stream a
+  { Head : Stream a -> a
+  , Tail : Stream a -> Stream a }
+
+Head (Tail (Tail (fix x in
+    	           (cocase { Head # -> 0
+    	                   , Tail # -> Head x }))))

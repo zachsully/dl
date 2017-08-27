@@ -27,8 +27,8 @@ tokens :-
   \}         { const TokRBrac }
   \(         { const TokLParen }
   \)         { const TokRParen }
-  \,         { const TokRBrac }
-  \|         { const TokRBrac }
+  \,         { const TokComma }
+  \|         { const TokMid }
   \:         { const TokColon }
   $alpha+    { TokString }
 

@@ -1,7 +1,0 @@
-codata Stream a
-  { Head : Stream a -> a
-  , Tail : Stream a -> Stream a }
-
-fix s ->
-  cocase { Head # -> 0
-         , Tail # -> Head s }

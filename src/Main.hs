@@ -23,13 +23,12 @@ main =
          ("test":n:[]) -> runTest n
          ("type":[]) -> tryParse parseType
          ("term":[]) -> tryParse parseTerm
-         ("datum":[]) -> tryParse parseDatum
-         ("decl":[]) -> tryParse parseDecl
          (fp:[]) -> runPreprocessor fp
          _ -> getProgName >>= \p -> putStrLn ("Usage: " ++ p ++ " *.cohs")
      }
   where tryParse :: Show a
-                 => ([Token] -> State ([D.TySymbol],[(D.Symbol,D.Polarity)]) a)
+                 => (  [Token]
+                    -> State ([D.TyVariable],[(D.Variable,D.Polarity)]) a)
                  -> IO ()
         tryParse p = do { toks <- lexContents
                         ; print . fst . runState (p toks) $ emptyState }
@@ -44,7 +43,7 @@ runPreprocessor fp =
      ; print prog
      ; putStr "\nEvaluates:\n"
      ; print (case prog of
-                D.Program _ t -> D.evalStart t)
+                D.Pgm _ t -> D.evalStart t)
      ; putStr "\nTranslation:\n"
      ; putStrLn . H.ppProgram . translateProgram $ prog
      }
