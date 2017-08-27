@@ -4,7 +4,7 @@ module Translation where
 -- import Control.Arrow ((***))
 
 import qualified DualSyn as D
-import qualified HsSyn as H
+import qualified HsSyn as Hs
 
 {- A lot of the translation is boilerplate. We use separate syntax for DualSyn
    and HsSyn to make explicit what is happening even though the former is a
@@ -15,39 +15,35 @@ import qualified HsSyn as H
 -- Top Level --
 ---------------
 
-translateProgram :: D.Program -> H.Program
-translateProgram (D.Pgm _ term) = H.Program [] (translateTerm term)
-  -- H.Program (map translateDecl decls)
+translateProgram :: D.Program -> Hs.Program
+translateProgram dpgm = Hs.Pgm (map translateDecl . D.pgmDecls $ dpgm)
+                               (translateTerm . D.pgmTerm $ dpgm)
 
--- translateNegativeTyCons :: D. -> H.Decl
--- translateDecl decl =
---   case D.polarity decl of
---     D.Positive -> H.Decl (translateTySymbol (D.tySymbol decl))
---                          (map translateTyVariable (D.freeTyVars decl))
---                          (map translateData (D.datas decl))
---     D.Negative -> let num = length . D.datas $ decl in
---                   error "translateDecl{Negative}"
+translateDecl :: D.Decl -> Hs.DataTyCons
+translateDecl (Right d) = Hs.DataTyCons (D.posTyName d)
+                                        (D.posTyFVars d)
+                                        (map translateInj . D.injections $ d)
+translateDecl (Left d) = error "translateDecl{NegTyCons}"
 
--- translateData :: D.Data -> H.Data
--- translateData (D.Data s ty) = H.Data (translateSymbol s) (translateType ty)
+translateInj :: D.Injection -> Hs.DataCon
+translateInj dinj = Hs.DataCon (D.injName dinj) (translateType . D.injCod $ dinj)
 
 -----------
 -- Types --
 -----------
 
-translateType :: D.Type -> H.Type
-translateType = error "translateType"
--- translateType D.TyInt = H.TyInt
--- translateType (D.TyArr a b) = H.TyArr (translateType a) (translateType b)
--- translateType (D.TyVar v) = H.TyVar (translateTyVariable v)
--- translateType (D.TyCons s tys) = H.TyCons (translateTySymbol s)
---                                           (map translateType tys)
+translateType :: D.Type -> Hs.Type
+translateType D.TyInt = Hs.TyInt
+translateType (D.TyArr a b) = Hs.TyArr (translateType a) (translateType b)
+translateType (D.TyVar v) = Hs.TyVar v
+translateType (D.TyCons k) = Hs.TyCons k
+translateType (D.TyApp a b) = Hs.TyApp (translateType a) (translateType b)
 
 -----------
 -- Terms --
 -----------
 
-translateTerm :: D.Term -> H.Term
+translateTerm :: D.Term -> Hs.Term
 translateTerm = error "translateTerm"
 -- translateTerm (D.Lit i) = H.Lit i
 -- translateTerm (D.Add a b) = H.Add (translateTerm a) (translateTerm b)

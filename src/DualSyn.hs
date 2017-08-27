@@ -3,7 +3,7 @@ module DualSyn where
 
 data Program
   = Pgm
-  { pgmDecl :: [Decl]
+  { pgmDecls :: [Decl]
   , pgmTerm  :: Term }
   deriving (Show,Eq)
 
