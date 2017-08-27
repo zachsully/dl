@@ -51,8 +51,12 @@ program :: { Program }
 program : decls term                           { Pgm $1 $2 }
 
 decl :: { Decl }
-decl : 'codata' str strs '{' projs '}'         { Left (NegTyCons $2 $3 $5) }
-     | 'data'   str strs '{' injs  '}'         { Right (PosTyCons $2 $3 $5) }
+decl : 'codata' str strs '{' projs '}'         { Left (NegTyCons $2
+                                                        (reverse $3)
+                                                        (reverse $5)) }
+     | 'data'   str strs '{' injs  '}'         { Right (PosTyCons $2
+                                                          (reverse $3)
+                                                          (reverse $5)) }
 
 decls :: { [Decl] }
 decls : decl decls                             { $1 : $2 }
@@ -153,7 +157,7 @@ coalts : coalt                      { [$1] }
 
 pattern :: { Pattern }
 pattern : '_'                       { PWild }
-        | str patterns              { PCons $1 $2 }
+        | str patterns              { PCons $1 (reverse $2) }
         | str                       { PVar $1 }
 
 patterns :: { [Pattern] }
