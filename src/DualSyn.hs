@@ -9,6 +9,10 @@ data Program
 
 type Decl = Either NegativeTyCons PositiveTyCons
 
+declArity :: Decl -> Int
+declArity (Left d)  = length . negTyFVars $ d
+declArity (Right d) = length . posTyFVars $ d
+
 {- There is a special polarity type because positive and negative types are
    declared with the same structure, but we still need to keep them separate. -}
 data Polarity = Positive | Negative
@@ -25,6 +29,14 @@ data Type where
   TyCons :: TyVariable -> Type
   TyApp  :: Type -> Type -> Type
   deriving (Eq,Show)
+
+collectTyArgs :: Type -> Maybe (TyVariable,[Type])
+collectTyArgs (TyApp e t) = collectTyArgs e >>= \(k,ts) -> return (k,t:ts)
+collectTyArgs (TyCons k)  = return (k,[])
+collectTyArgs _           = Nothing
+
+distributeTyArgs :: (TyVariable,[Type]) -> Type
+distributeTyArgs (k,ts) = foldl TyApp (TyCons k) ts
 
 {- TyVariable are bound inside of the types in a declaration -}
 type TyVariable = String
@@ -45,16 +57,16 @@ negTyArity = length . negTyFVars
 
 data Projection
   = Proj
-  { projSymbol :: Variable
-  , projDom    :: Type
-  , projCod    :: Type   }
+  { projName :: Variable
+  , projDom  :: Type
+  , projCod  :: Type   }
   deriving (Eq, Show)
 
 data PositiveTyCons
   = PosTyCons
-  { posTySymbol :: TyVariable
-  , posTyFVars  :: [TyVariable]
-  , injections  :: [Injection]  }
+  { posTyName  :: TyVariable
+  , posTyFVars :: [TyVariable]
+  , injections :: [Injection]  }
   deriving (Eq, Show)
 
 posTyArity :: PositiveTyCons -> Int
@@ -62,8 +74,8 @@ posTyArity = length . posTyFVars
 
 data Injection
   = Inj
-  { injSymbol :: Variable
-  , injCod    :: Type }
+  { injName :: Variable
+  , injCod  :: Type }
   deriving (Eq, Show)
   {- the domain is a maybe value because unary constructors do not take
      arguments, e.g. () : Unit -}

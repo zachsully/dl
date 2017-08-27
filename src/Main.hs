@@ -41,10 +41,12 @@ runPreprocessor fp =
      ; let prog = fst . runState (parseProgram tokens) $ emptyState
      ; putStr "\nProgram:\n"
      ; print prog
-     ; putStr "\nEvaluates:\n"
+     ; putStr "\nEvaluates to\n"
      ; print (case prog of
                 D.Pgm _ t -> D.evalStart t)
-     ; putStr "\nTranslation:\n"
+     ; putStr "\nhas type "
+     ; print (typeOfProgram prog)
+     ; putStr "\nTranslation to\n"
      ; putStrLn . H.ppProgram . translateProgram $ prog
      }
 
