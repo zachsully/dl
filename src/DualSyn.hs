@@ -100,14 +100,6 @@ data Term where
   CoCase :: [(CoPattern,Term)] -> Term
   deriving (Eq,Show)
 
-collectArgs :: Term -> Maybe (Variable,[Term])
-collectArgs (App e t) = collectArgs e >>= \(k,ts) -> return (k,t:ts)
-collectArgs (Cons k)  = return (k,[])
-collectArgs _         = Nothing
-
-distributeArgs :: (Variable,[Term]) -> Term
-distributeArgs (k,ts) = foldl App (Cons k) ts
-
 data Pattern where
   PWild :: Pattern
   PVar  :: Variable -> Pattern
@@ -133,6 +125,44 @@ data Result where
 
 {- Vars are introduced and consumed by pattern matching within terms. -}
 type Variable = String
+
+
+------------------------
+-- Term Manipulations --
+------------------------
+
+{- `collectArgs` will recur down an application to find the constructor and its
+   arguments -}
+collectArgs :: Term -> Maybe (Variable,[Term])
+collectArgs (App e t) = collectArgs e >>= \(k,ts) -> return (k,t:ts)
+collectArgs (Cons k)  = return (k,[])
+collectArgs _         = Nothing
+
+{- `distributeArgs` will take a constructor and its arguments and construct a
+   term applying the constructor to all of its arguments -}
+distributeArgs :: (Variable,[Term]) -> Term
+distributeArgs (k,ts) = foldl App (Cons k) ts
+
+
+{- `flattenCopattern` will traverse a term, turning CoCases with nested
+   co-patterns in ones nesting cocase expressions instead. For example,
+
+   ```
+   cocase { Fst # -> 0
+          , Fst (Snd #) -> 1
+          , Snd (Snd #) -> 2 }
+   ```
+   ===>
+   ```
+   cocase { Fst # -> 0
+          , Snd # -> cocase { Fst # -> 1
+                            , Snd # -> 2 } }
+   ```
+-}
+
+flattenCoCase :: Term -> Term
+flattenCoCase (CoCase coalts) = undefined
+flattenCoCase x = x
 
 --------------------------------------------------------------------------------
 --                              Evaluation                                    --

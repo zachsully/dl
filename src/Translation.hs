@@ -1,7 +1,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Translation where
 
-import Control.Arrow ((***))
+import Control.Monad.State
+import Data.Monoid ((<>))
+import Data.Foldable (foldrM)
 
 import qualified DualSyn as D
 import qualified HsSyn as Hs
@@ -9,34 +11,101 @@ import qualified HsSyn as Hs
 {- A lot of the translation is boilerplate. We use separate syntax for DualSyn
    and HsSyn to make explicit what is happening even though the former is a
    subset of the latter.
+
+   Translation is done in the context of a translation monad which keeps track
+   of unique identifiers.
 -}
+
+data TransST
+  = TransST
+  { num     :: Int -- ^ tracks unique variable creation
+
+    -- ^ maps freevars to freevars
+  , tyMap   :: [(D.TyVariable,Hs.TyVariable)]
+
+    -- ^ maps destructors to contructors, their arity, and the index of the
+    --   destructor in the constructor
+  , destMap :: [(D.Variable,(Hs.Variable,Int,Int))]}
+  deriving (Show,Eq)
+
+startState :: TransST
+startState = TransST 0 [] []
+
+type TransM a = State TransST a
+
+uniquify :: String -> TransM String
+uniquify s =
+  do { st <- get
+     ; put (st { num = succ (num st) })
+     ; return (s <> "_" <> show (num st)) }
+
+addDestAssoc :: D.Variable -> Hs.Variable -> TransM ()
+addDestAssoc h k =
+  do { st <- get
+     ; put (st { destMap = (h,(k,0,0)):(destMap st)}) }
 
 ---------------
 -- Top Level --
 ---------------
 
 translateProgram :: D.Program -> Hs.Program
-translateProgram dpgm = Hs.Pgm (map translateDecl . D.pgmDecls $ dpgm)
-                               (translateTerm [] . D.pgmTerm $ dpgm)
+translateProgram dpgm = fst $ runState
+                        (do { decls <- mapM translateDecl (D.pgmDecls dpgm)
+                            ; term  <- translateTerm (D.pgmTerm dpgm)
+                            ; return (Hs.Pgm decls term) })
+                        startState
 
-translateDecl :: D.Decl -> Hs.DataTyCons
-translateDecl (Right d) = Hs.DataTyCons (D.posTyName d)
-                                        (D.posTyFVars d)
-                                        (map translateInj . D.injections $ d)
-translateDecl (Left d) = Hs.DataTyCons (D.negTyName d)
-                                       (D.negTyFVars d)
-                                       [ collectProjs (D.negTyName d)
-                                                      (D.negTyFVars d)
-                                         . D.projections $ d]
+{- Translating positive data is just the identity function.
 
-translateInj :: D.Injection -> Hs.DataCon
-translateInj dinj = Hs.DataCon (D.injName dinj) (translateType . D.injCod $ dinj)
+   Translating negative data generates a new positive type with a single
+   constructor containing fields for each projection. Condsider the negative
+   pair type:
 
-collectProjs :: Hs.TyVariable -> [Hs.TyVariable] -> [D.Projection] -> Hs.DataCon
-collectProjs tc fvars ps =
-    Hs.DataCon tc
-               (foldr Hs.TyArr into (map (translateType . D.projCod) ps))
-  where into = foldl Hs.TyApp (Hs.TyVar tc) (map Hs.TyVar fvars)
+   ```
+   codata NegPair A B
+     { Fst : NegPair A B -> A
+     , Snd : NegPair A B -> B }
+   ```
+   ===>
+   ```
+   data NegPair A B
+     { mkNegPair : A -> B -> NegPair A B }
+   ```
+
+   We need to keep track of which index in the new positive datatype which
+   projection from the old type is associated with for use with destructors. We
+   need to keep track of the constructor for use with cocase.
+
+   ```
+   cocase { Fst # -> 0, Snd # -> 1 }
+   ```
+   ===>
+   ```
+   mkNegPair 0 1
+   ```
+-}
+translateDecl :: D.Decl -> TransM Hs.DataTyCons
+translateDecl (Right d) =
+  Hs.DataTyCons (D.posTyName d) (D.posTyFVars d)
+     <$> mapM translateInj (D.injections d)
+
+translateDecl (Left d) =
+  do { tn <- uniquify (D.negTyName d)
+     ; let tnCons = "mk" <> tn
+           ty = foldl Hs.TyApp (Hs.TyVar tn) (map Hs.TyVar . D.negTyFVars $ d)
+     ; inj <- foldrM (\p accTy ->
+                       do { ty1 <- translateType . D.projCod $ p
+                          ; return (Hs.TyArr ty1 accTy) })
+                     ty
+                     (D.projections d)
+     ; return (Hs.DataTyCons tn (D.negTyFVars d) [Hs.DataCon tnCons inj]) }
+  --   Hs.DataCon tc
+  --              (foldr Hs.TyArr into (map (translateType . D.projCod) ps))
+  -- where into = foldl Hs.TyApp (Hs.TyVar tc) (map Hs.TyVar fvars)
+
+translateInj :: D.Injection -> TransM Hs.DataCon
+translateInj dinj = Hs.DataCon (D.injName dinj)
+                <$> (translateType . D.injCod $ dinj)
 
 data Proj'
   = Proj'
@@ -50,30 +119,40 @@ data Proj'
 -- Types --
 -----------
 
-translateType :: D.Type -> Hs.Type
-translateType D.TyInt = Hs.TyInt
-translateType (D.TyArr a b) = Hs.TyArr (translateType a) (translateType b)
-translateType (D.TyVar v) = Hs.TyVar v
-translateType (D.TyCons k) = Hs.TyCons k
-translateType (D.TyApp a b) = Hs.TyApp (translateType a) (translateType b)
+translateType :: D.Type -> TransM Hs.Type
+translateType D.TyInt       = return Hs.TyInt
+translateType (D.TyArr a b) = Hs.TyArr <$> translateType a <*> translateType b
+translateType (D.TyVar v)   = Hs.TyVar <$> uniquify v
+translateType (D.TyCons k)  = Hs.TyCons <$> uniquify k
+translateType (D.TyApp a b) = Hs.TyApp <$> translateType a <*> translateType b
 
 -----------
 -- Terms --
 -----------
 
-translateTerm :: [(Hs.Variable,Proj')] -> D.Term -> Hs.Term
-translateTerm _ (D.Lit i) = Hs.Lit i
-translateTerm env (D.Add a b) = Hs.Add (translateTerm env a)
-                                       (translateTerm env b)
-translateTerm _ (D.Var v) = Hs.Var v
-translateTerm env (D.Fix v t) = Hs.Fix v (translateTerm env t)
-translateTerm _ (D.Cons k) = Hs.Cons k
-translateTerm env (D.Case t alts) = Hs.Case (translateTerm env t)
-                                            (map (translatePattern *** translateTerm env) alts)
-translateTerm env (D.App a b) = Hs.App (translateTerm env a) (translateTerm env b)
+translateTerm :: D.Term -> TransM Hs.Term
+translateTerm (D.Lit i)       = return (Hs.Lit i)
+translateTerm (D.Add a b)     = Hs.Add <$> translateTerm a
+                                       <*> translateTerm b
+translateTerm (D.Var v)       = Hs.Var <$> uniquify v
+translateTerm (D.Fix v t)     = Hs.Fix <$> uniquify v
+                                       <*> translateTerm t
+translateTerm (D.Cons k)      = Hs.Cons <$> uniquify k
+translateTerm (D.Case t alts) = Hs.Case <$> translateTerm t
+                                        <*> mapM (\(p,e) ->
+                                                   do { p' <- translatePattern p
+                                                      ; e' <- translateTerm e
+                                                      ; return (p',e') })
+                                                 alts
+  where translatePattern :: D.Pattern -> TransM Hs.Pattern
+        translatePattern D.PWild        = return Hs.PWild
+        translatePattern (D.PVar v)     = Hs.PVar <$> uniquify v
+        translatePattern (D.PCons k ps) = Hs.PCons <$> uniquify k
+                                                   <*> mapM translatePattern ps
+translateTerm (D.App a b)     = Hs.App <$> translateTerm a
+                                       <*> translateTerm b
 
--- The interesting cases
-{-
+{- THE INTERESTING CASES
 Consider the following example:
 
 ```
@@ -99,16 +178,17 @@ the variable we want to project and using wildcards for the other patterns. We
 just return the bound variable.
 
 ```
-case x of
-  Pair _ x' ->
-    case x' of
-      Pair x'' _ -> x''
+(\x -> case x of
+         Pair _ x' ->
+           case x' of
+             Pair x'' _ -> x'')
+(Pair 0 (Pair 1 2))
 ```
 
 -}
 
-translateTerm env (D.Dest s) =
-  case lookup s env of
+translateTerm (D.Dest s) = return $
+  case lookup s (error "translateTerm{Dest}") of
     Just proj' -> Hs.Lam "x" (Hs.Case (Hs.Var "x")
                                       [( Hs.PCons (name proj')
                                                   (mkPatterns (index proj')
@@ -122,9 +202,17 @@ translateTerm env (D.Dest s) =
                            False -> Hs.PWild    : mkPatterns i (pred a)
 
 
-translateTerm _ (D.CoCase _) = undefined
-
-translatePattern :: D.Pattern -> Hs.Pattern
-translatePattern D.PWild = Hs.PWild
-translatePattern (D.PVar v) = Hs.PVar v
-translatePattern (D.PCons k ps) = Hs.PCons k (map translatePattern ps)
+{- [Translating CoCase]
+   Cocases get turned into constructors.
+-}
+translateTerm (D.CoCase coalts) = (getCons coalts)
+  where getCons :: [(D.CoPattern,D.Term)] -> TransM (Hs.Term)
+        getCons [] = error "cannot determine the type of empty cocase"
+        getCons ((q,t):_) =
+          case q of
+            D.Hash -> error "translateTerm{CoCase.QHash}"
+            D.QDest h _ -> do { dmap <- destMap <$> get
+                              ; case lookup h dmap of
+                                  Just (k,_,_) -> return (Hs.Cons k)
+                                  Nothing -> error ("cannot find destructor " <> h) }
+            D.QPat _ _ -> error "translateTerm{CoCase.QPat}"
