@@ -23,12 +23,12 @@ data TransST
     -- ^ maps source type vars to target type vars
   , tyMap   :: [(D.TyVariable,Hs.TyVariable)]
 
+    -- ^ maps source vars to target vars
+  , vMap    :: [(D.Variable,Hs.Variable)]
+
     -- ^ maps destructors to contructors, their arity, and the index of the
     --   destructor in the constructor
   , destMap :: [(D.Variable,(Hs.Variable,Int,Int))]
-
-    -- ^ maps source vars to target vars
-  , vMap    :: [(D.Variable,Hs.Variable)]
   }
   deriving (Show,Eq)
 
@@ -118,9 +118,6 @@ translateDecl (Left d) =
                          (ty,0)
                          (D.projections d)
      ; return (Hs.DataTyCons tn (D.negTyFVars d) [Hs.DataCon tnCons inj]) }
-  --   Hs.DataCon tc
-  --              (foldr Hs.TyArr into (map (translateType . D.projCod) ps))
-  -- where into = foldl Hs.TyApp (Hs.TyVar tc) (map Hs.TyVar fvars)
 
 translateInj :: D.Injection -> TransM Hs.DataCon
 translateInj dinj = Hs.DataCon (D.injName dinj)

@@ -80,13 +80,20 @@ infixr 1 <->
 (<->) :: String -> String -> String
 a <-> b = a <> "\n" <> b
 
+indent :: Int -> String -> String
+indent lvl s = replicate (lvl*2) ' ' <> s
+
 {- concatenates terms with a space between them -}
 smconcat :: [String] -> String
-smconcat = foldr (<+>) mempty
+smconcat []     = []
+smconcat (x:[]) = x
+smconcat (x:xs) = x <+> smconcat xs
 
 {- concatenates terms with a newline between them -}
 vmconcat :: [String] -> String
-vmconcat = foldr (\a b -> a <> "\n" <> b) mempty
+vmconcat []     = []
+vmconcat (x:[]) = x
+vmconcat (x:xs) = x <-> vmconcat xs
 
 parens :: String -> String
 parens s = "(" <> s <> ")"
@@ -94,7 +101,7 @@ parens s = "(" <> s <> ")"
 ppProgram :: Program -> String
 ppProgram pgm = "{-# LANGUAGE GADTs #-}"
             <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
-            <-> ("main = print" <+> (parens . ppTerm . pgmTerm $ pgm))
+            <-> ("main = print $" <-> indent 1 (parens . flip ppTerm 2 . pgmTerm $ pgm))
 
 ppDecl :: DataTyCons -> String
 ppDecl tc =
@@ -112,20 +119,20 @@ ppType (TyVar s) = s
 ppType (TyCons s) = s
 ppType (TyApp a b) = "(" <> ppType a <+> ppType b <> ")"
 
-
-ppTerm :: Term -> String
-ppTerm (Lit i) = show i
-ppTerm (Add a b) = "(" <> ppTerm a <+> "+" <+> ppTerm b <> ")"
-ppTerm (Var s) = s
-ppTerm (Fix s t) = smconcat ["let",s,"=",ppTerm t,"in",s]
-ppTerm (Lam s t) = smconcat ["\\",s,"->",ppTerm t]
-ppTerm (App a b) = smconcat ["(",ppTerm a,")",ppTerm b]
-ppTerm (Cons s) = s
-ppTerm (Case t alts) =
-  "case" <+> ppTerm t <+> "of"
-    <-> (vmconcat . map ppAlt $ alts)
+{- The Int passed in is the indentation level -}
+ppTerm :: Term -> Int -> String
+ppTerm (Lit n) _ = show n
+ppTerm (Add a b) i = "(" <> ppTerm a i <+> "+" <+> ppTerm b i <> ")"
+ppTerm (Var s) _ = s
+ppTerm (Fix s t) i = smconcat ["let",s,"=",ppTerm t i,"in",s]
+ppTerm (Lam s t) i = smconcat ["\\",s,"->"] <-> indent i (ppTerm t (i+1))
+ppTerm (App a b) i = smconcat ["(",ppTerm a i,")"] <-> indent i (ppTerm b (i+1))
+ppTerm (Cons s) _ = s
+ppTerm (Case t alts) i =
+  "case" <+> ppTerm t i <+> "of"
+    <-> indent i (vmconcat . map ppAlt $ alts)
   where ppAlt :: (Pattern,Term) -> String
-        ppAlt (p,t') = ppPattern p <+> "->" <+> ppTerm t'
+        ppAlt (p,t') = ppPattern p <+> "->" <+> ppTerm t' (i+1)
 
         ppPattern :: Pattern -> String
         ppPattern PWild = "_"
