@@ -160,9 +160,16 @@ distributeArgs (k,ts) = foldl App (Cons k) ts
    ```
 -}
 
-flattenCoCase :: Term -> Term
-flattenCoCase (CoCase coalts) = undefined
-flattenCoCase x = x
+flattenCoCase :: [(CoPattern,Term)] -> [(CoPattern,Term)]
+flattenCoCase [] = []
+flattenCoCase (coalt:coalts) =
+  let coalt' = case coalt of
+                 (QHash            , t) -> coalt
+                 (QDest h     QHash, t) -> coalt
+                 (QDest h     q    , t) -> error "flattenCoCase{}"
+                 (QPat  QHash p    , t) -> coalt
+                 (QPat  q     p    , t) -> error "flattenCoCase{}"
+  in coalt':(flattenCoCase coalts)
 
 --------------------------------------------------------------------------------
 --                              Evaluation                                    --
