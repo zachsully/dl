@@ -219,7 +219,7 @@ translateTerm (D.Dest h) =
               }
          Nothing -> error ("cannot find destructor " <> h) }
   where mkPatterns :: Int -> Int -> Hs.Variable -> [Hs.Pattern]
-        mkPatterns 0 i _ = []
+        mkPatterns 0 _ _ = []
         mkPatterns a i x = case i == a of
                              True  -> Hs.PVar "x" : mkPatterns (pred a) i x
                              False -> Hs.PWild    : mkPatterns (pred a) i x
@@ -238,12 +238,16 @@ translateTerm (D.Dest h) =
 -}
 
 translateTerm (D.CoCase coalts) = translateCoAlt (head coalts)
+    -- do { v <- uniquify "cont"
+    --    ; alts <- mapM translateCoAlt coalts
+    --    ; return (Hs.Lam v (Hs.Case (Hs.Var v) alts))
+    --    }
   where translateCoAlt :: (D.CoPattern,D.Term) -> TransM (Hs.Term)
         translateCoAlt (q,t) =
           case q of
             D.QHash -> translateTerm t
-            D.QDest h q' -> error "translateTerm{CoCase.QDest}"
-            D.QPat q' p ->
+            D.QDest _ _ -> undefined
+            D.QPat _ p ->
               do { v <- uniquify "v"
                  ; p' <- translatePattern p
                  ; t' <- translateTerm t

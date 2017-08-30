@@ -1,6 +1,8 @@
 {-# LANGUAGE GADTs #-}
 module DualSyn where
 
+import Debug.Trace
+
 data Program
   = Pgm
   { pgmDecls :: [Decl]
@@ -164,11 +166,11 @@ flattenCoCase :: [(CoPattern,Term)] -> [(CoPattern,Term)]
 flattenCoCase [] = []
 flattenCoCase (coalt:coalts) =
   let coalt' = case coalt of
-                 (QHash            , t) -> coalt
-                 (QDest h     QHash, t) -> coalt
-                 (QDest h     q    , t) -> error "flattenCoCase{}"
-                 (QPat  QHash p    , t) -> coalt
-                 (QPat  q     p    , t) -> error "flattenCoCase{}"
+                 (QHash            , _) -> coalt
+                 (QDest _     QHash, _) -> coalt
+                 (QDest _     _    , _) -> error "flattenCoCase{}"
+                 (QPat  QHash _    , _) -> coalt
+                 (QPat  _     _    , _) -> error "flattenCoCase{}"
   in coalt':(flattenCoCase coalts)
 
 --------------------------------------------------------------------------------
@@ -192,11 +194,13 @@ evalStart t = case run evalMachine (t,Empty,[]) of
 
 evalMachine :: Machine
 evalMachine = Machine $ \(t,qc,env) ->
+  trace (show (t,qc,env)) $
   case t of
     Lit i -> (RInt i,qc,env)
     Add t1 t2 ->
       case (run evalMachine (t1,qc,env), run evalMachine (t2,qc,env)) of
         ((RInt t1',_,_),(RInt t2',_,_)) -> (RInt (t1' + t2'),qc,env)
+        _ -> error "both arguments to an addition must be integers"
 
     Var v ->
       case lookup v env of
@@ -213,7 +217,10 @@ evalMachine = Machine $ \(t,qc,env) ->
         (RConsApp k ts,qc',env')  -> (RConsApp k (t2:ts),qc',env')
 
         (RDest d,qc',env')        ->
-          run evalMachine (t2, Destructee d qc', env')
+          case run evalMachine (t2, qc, env) of
+            (RCoCase coalts,_,_) ->
+              run evalMachine (CoCase coalts,Destructee d qc', env')
+            _ -> error "can only apply destructors to cocase"
 
         (RCoCase coalts,qc',env') ->
           run evalMachine (CoCase coalts,Destructor qc' t2,env')
@@ -227,21 +234,24 @@ evalMachine = Machine $ \(t,qc,env) ->
               Just subs -> run evalMachine (t'',qc,(subs++env))
               Nothing -> tryAlts r alts'
       in case run evalMachine (t',qc,env) of
-           (RInt i,qc',env')         -> tryAlts (Lit i) alts
-           (RConsApp k ts,qc',env')  -> tryAlts (distributeArgs (k,ts)) alts
-           (RDest h,qc',env')        -> tryAlts (Dest h) alts
-           (RCoCase coalts,qc',env') -> tryAlts (CoCase coalts) alts
+           (RInt i,_,_)         -> tryAlts (Lit i) alts
+           (RConsApp k ts,_,_)  -> tryAlts (distributeArgs (k,ts)) alts
+           (RDest h,_,_)        -> tryAlts (Dest h) alts
+           (RCoCase coalts,_,_) -> tryAlts (CoCase coalts) alts
 
 
     CoCase coalts ->
-      let tryCoAlts :: [(CoPattern,Term)] -> (Result, QCtx, Env)
-          tryCoAlts [] = error (concat ["no copattern context match:\nQ = "
-                                       ,show qc,"\nt = ",show t])
+      let tryCoAlts :: [(CoPattern,Term)] -> Maybe (Result, QCtx, Env)
+          tryCoAlts [] = Nothing
+          -- tryCoAlts [] = error (concat ["no copattern context match:\nQ = "
+          --                              ,show qc,"\nt = ",show t])
           tryCoAlts ((q,t'):coalts') =
             case matchCoPattern qc  q of
-              Just (qc',subs) -> run evalMachine (t',qc',(subs++env))
+              Just (qc',subs) -> Just (run evalMachine (t',qc',(subs++env)))
               Nothing -> tryCoAlts coalts'
-      in tryCoAlts coalts
+      in case tryCoAlts coalts of
+           Just r  -> r
+           Nothing -> (RCoCase coalts,qc,env)
 
 --------------------
 -- Matching Rules --
@@ -255,7 +265,7 @@ matchPattern t (PVar v) = Just [(v,t)]
 matchPattern t (PCons k' ps) =
   do { (k,ts) <- collectArgs t
      ; case k == k' of
-         True -> concat <$> mapM (\(t,p) -> matchPattern t p) (zip ts ps)
+         True -> concat <$> mapM (\(t',p') -> matchPattern t' p') (zip ts ps)
          False -> Nothing
      }
 

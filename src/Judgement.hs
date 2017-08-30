@@ -18,17 +18,17 @@ isType :: [Decl]              -- ^ A set of type signatures
        -> [(TyVariable,Type)] -- ^ A context of bindings of type variables
        -> Type
        -> Bool
-isType _ ctx TyInt         = True
+isType _ _   TyInt         = True
 isType s ctx (TyArr a b)   = isType s ctx a && isType s ctx b
 isType s ctx (TyVar v)     = case lookup v ctx of
                                Just t -> isType s ctx t
                                Nothing -> False
 
 {- A standalone type constructor is only valid if its arity is 0 -}
-isType s ctx (TyCons tc)   = case lookupDecl tc s of
+isType s _   (TyCons tc)   = case lookupDecl tc s of
                                Just d -> declArity d == 0
                                Nothing -> False
-isType s ctx ty@(TyApp a b) = case collectTyArgs ty of
+isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
                                Just (tc,tys) ->
                                  case lookupDecl tc s of
                                    Just d -> (all (isType s ctx) tys)
@@ -78,10 +78,10 @@ infer _ c (Var v) =
     Just t -> t
     Nothing -> error ("variable " ++ show v ++ " not bound")
 
-infer s c (Fix x t) = infer s c t
+infer s c (Fix _ t) = infer s c t
 
-infer s c (Cons k) = error "infer{Cons}"
-infer s c (Dest h) = error "infer{Dest}"
+infer _ _ (Cons _) = error "infer{Cons}"
+infer _ _ (Dest _) = error "infer{Dest}"
 
 infer s c (App a b) =
   case infer s c a of
@@ -108,7 +108,7 @@ check _ c (Var v)   ty    = case lookup v c of
 check s c (Fix v t)  ty   = check s ((v,ty):c) t ty
 check _ _ (Cons _)   _    = error "check{Cons}"
 check _ _ (Dest _)   _    = error "check{Dest}"
-check _ _ (App _ _)  ty   = undefined
+check _ _ (App _ _)  _   = undefined
 check _ _ (Case _ _) _    = undefined
 check _ _ (CoCase _) _    = undefined
 check _ _ _ _ = False

@@ -79,7 +79,10 @@ runCompile inFp outFp =
      }
 
 runEvaluate :: FilePath -> IO ()
-runEvaluate inFp = getProgram inFp >>= (print . D.evalStart . D.pgmTerm)
+runEvaluate inFp =
+  do { term <- D.pgmTerm <$> getProgram inFp
+     -- ; print term
+     ; print . D.evalStart $ term }
 
 runTypeOf :: FilePath -> IO ()
 runTypeOf inFp = getProgram inFp >>= (print . typeOfProgram)

@@ -120,8 +120,8 @@ term1 :  term  termA              { App $1 $2 }
 term2 :: { Term }
 term2 :  termA '+' termA          { Add $1 $3 }
       |  'fix' str 'in' term      { Fix $2 $4 }
-      |  'case' term '{' alts '}' { Case $2 $4 }
-      |  'cocase' '{' coalts '}'  { CoCase $3 }
+      |  'case' term '{' alts '}' { Case $2 (reverse $4) }
+      |  'cocase' '{' coalts '}'  { CoCase (reverse $3) }
       |  termA                    { $1 }
 
 {- We lookup to see if the string is defined as a symbol and a singleton

@@ -4,7 +4,7 @@ codata NegPair a b
 
 Fst (Snd
       (cocase { Fst #       -> 1
-      	      , Snd (Fst #) -> 2
+      	      , Fst (Snd #) -> 2
 	      , Snd (Snd #) -> 3
 	      }
       )
