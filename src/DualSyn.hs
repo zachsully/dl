@@ -166,10 +166,12 @@ flattenCoCase :: [(CoPattern,Term)] -> [(CoPattern,Term)]
 flattenCoCase [] = []
 flattenCoCase (coalt:coalts) =
   let coalt' = case coalt of
+                 -- the aready flatten cases
                  (QHash            , _) -> coalt
                  (QDest _     QHash, _) -> coalt
-                 (QDest _     _    , _) -> error "flattenCoCase{}"
                  (QPat  QHash _    , _) -> coalt
+
+                 (QDest _     _    , _) -> error "flattenCoCase{}"
                  (QPat  _     _    , _) -> error "flattenCoCase{}"
   in coalt':(flattenCoCase coalts)
 
@@ -219,7 +221,7 @@ evalMachine = Machine $ \(t,qc,env) ->
         (RDest d,qc',env')        ->
           case run evalMachine (t2, qc, env) of
             (RCoCase coalts,_,_) ->
-              run evalMachine (CoCase coalts,Destructee d qc', env')
+              run evalMachine (CoCase coalts,Destructee d qc',env')
             _ -> error "can only apply destructors to cocase"
 
         (RCoCase coalts,qc',env') ->
@@ -250,7 +252,7 @@ evalMachine = Machine $ \(t,qc,env) ->
               Just (qc',subs) -> Just (run evalMachine (t',qc',(subs++env)))
               Nothing -> tryCoAlts coalts'
       in case tryCoAlts coalts of
-           Just r  -> r
+           Just r  -> trace "fail comatch" r
            Nothing -> (RCoCase coalts,qc,env)
 
 --------------------
