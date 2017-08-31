@@ -121,4 +121,4 @@ runTypeOf :: TypeMode -> IO ()
 runTypeOf tm =
   do { pgm <- getProgram (tmInput tm)
      ; when (tmDebug tm) $ print pgm
-     ; print . typeOfProgram $ pgm }
+     ; print . inferTSProgram $ pgm }

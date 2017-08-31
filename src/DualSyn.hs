@@ -167,11 +167,11 @@ flattenCoCase [] = []
 flattenCoCase (coalt:coalts) =
   let coalt' = case coalt of
                  -- the aready flatten cases
-                 (QHash            , _) -> coalt
-                 (QDest _     QHash, _) -> coalt
-                 (QPat  QHash _    , _) -> coalt
+                 (QHash            , t) -> (QHash,t)
+                 (QDest h     QHash, t) -> (QDest h QHash,t)
+                 (QPat  QHash p    , t) -> (QPat QHash p,t)
 
-                 (QDest _     _    , _) -> error "flattenCoCase{}"
+                 (QDest _     q    , t) -> head (flattenCoCase [(q,t)])
                  (QPat  _     _    , _) -> error "flattenCoCase{}"
   in coalt':(flattenCoCase coalts)
 

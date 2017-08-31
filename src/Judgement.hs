@@ -1,6 +1,14 @@
+{-# LANGUAGE GADTs #-}
 module Judgement where
 
+import Data.Monoid
+
 import DualSyn
+
+data TypeScheme where
+  TyMono   :: Type -> TypeScheme
+  TyForall :: TyVariable -> Type -> TypeScheme
+  deriving (Show,Eq)
 
 --------------------------------------------------------------------------------
 --                              Top Level                                     --
@@ -36,32 +44,79 @@ isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
                                    Nothing -> False
                                Nothing -> False
 
-lookupDecl :: TyVariable -> [Decl] -> Maybe Decl
-lookupDecl _ [] = Nothing
-lookupDecl v ((Left d):ds) = case v == negTyName d of
-                               True -> Just (Left d)
-                               False -> lookupDecl v ds
-lookupDecl v ((Right d):ds) = case v == posTyName d of
-                               True -> Just (Right d)
-                               False -> lookupDecl v ds
+--------------------------------------------------------------------------------
+--                              Infer TypeScheme                              --
+--------------------------------------------------------------------------------
+{- Type scheme inference with algorithm W. -}
+
+inferTSProgram :: Program -> TypeScheme
+inferTSProgram pgm = inferTS (mkContext . pgmDecls $ pgm)
+                             (pgmTerm pgm)
+
+inferTS :: [(Variable,Type)] -> Term -> TypeScheme
+inferTS _ (Lit _)    = TyMono TyInt
+inferTS c (Add a b)  = case (inferTS c a,inferTS c b) of
+                         (TyMono TyInt, TyMono TyInt) -> TyMono TyInt
+                         _ -> error "(+) requires it's arguments to be of type Int"
+inferTS c (Var v)    = case lookup v c of
+                         Just t -> TyMono t
+                         Nothing -> error ("unbound variable " <> v)
+inferTS c (Fix _ t)  = inferTS c t
+inferTS c (App a b)  = undefined c a b
+inferTS c (Cons k)   = case lookup k c of
+                         Just t -> TyMono t
+                         Nothing -> error ("unbound constructor " <> k)
+inferTS c (Case e a) = let _ = inferTS c e
+                           tyAlts = map inferTSAlt a
+                       in case tyAlts of
+                            [] -> error "cannot infer empty case"
+                            (t:ts) -> case all (== t) ts of
+                                        True -> t
+                                        False -> error "all case branches must have the same type"
+  where inferTSAlt :: (Pattern,Term) -> TypeScheme
+        inferTSAlt (_,t) = inferTS c t
+
+        -- inferTSPattern :: Pattern -> TypeScheme
+        -- inferTSPattern PWild        = TyForall "x" (TyVar "x")
+        -- inferTSPattern (PVar _)     = TyForall "x" (TyVar "x")
+        -- inferTSPattern (PCons _ _)  = undefined
+
+inferTS c (Dest h)   = case lookup h c of
+                         Just t -> TyMono t
+                         Nothing -> error ("unbound destructor " <> h)
+inferTS c (CoCase a) = undefined c a
+
+occurs :: TyVariable -> Type -> Bool
+occurs _ TyInt       = False
+occurs v (TyArr a b) = occurs v a || occurs v b
+occurs v (TyVar v')  = v == v'
+occurs v (TyCons k)  = v == k
+occurs v (TyApp a b) = occurs v a || occurs v b
+
+unify :: Type -> Type -> [(TyVariable,Type)]
+unify a@(TyVar a') b@(TyVar b') = case a' == b' of
+                                    True -> [(a',b)]
+                                    False -> error (unwords ["cannot unify"
+                                                            ,show a,"and"
+                                                            ,show b])
+unify (TyVar a') b = case occurs a' b of
+                       True -> error "recursion in type"
+                       False -> [(a',b)]
+unify b (TyVar a') = case occurs a' b of
+                       True -> error "recursion in type"
+                       False -> [(a',b)]
+unify (TyCons a) (TyCons b) = case a == b of
+                                True -> []
+                                False -> error ("unify tyCons" <> a <> " and " <> b)
+unify (TyApp a b) (TyApp a' b') = unify a b <> unify a' b'
+unify (TyArr a b) (TyArr a' b') = unify a b <> unify a' b'
+unify a b = error (unwords ["cannot unify",show a,"and",show b])
 
 --------------------------------------------------------------------------------
---                              Check Type                                    --
+--                              Bidirectional Tc                              --
 --------------------------------------------------------------------------------
-
-type Ctx = [(Variable,Type)]
-
--- lookupCons :: Symbol -> [Decl] -> Maybe (Decl,Injection)
--- lookupCons sym [] = Nothing
--- lookupCons sym (d:ds) = case lookupCons' (datas d) of
---                           Just dat -> Just (d,dat)
---                           Nothing -> lookupCons sym ds
---   where lookupCons' :: [Data] -> Maybe Data
---         lookupCons' []  = Nothing
---         lookupCons' (dat:dats) = case sym == dataSymbol dat of
---                                    True -> Just dat
---                                    False -> lookupCons' dats
-
+{- Attempt at a bidirectional typechecker. Not complete and maybe not even
+   necessary. -}
 -----------
 -- infer --
 -----------
@@ -80,8 +135,21 @@ infer _ c (Var v) =
 
 infer s c (Fix _ t) = infer s c t
 
-infer _ _ (Cons _) = error "infer{Cons}"
-infer _ _ (Dest _) = error "infer{Dest}"
+infer s _ (Cons k) = case do { d <- lookupDatum k s
+                             ; case d of
+                                 Left _ -> error "constructor as destructor"
+                                 Right d' -> lookupInjection k . injections $ d'
+                             } of
+                       Just i -> injCod i
+                       Nothing -> error ("unknown constructor " <> k)
+
+infer s _ (Dest h) = case do { d <- lookupDatum h s
+                             ; case d of
+                                 Left d' -> lookupProjection h . projections $ d'
+                                 Right _ -> error "destructor as constructor"
+                             } of
+                       Just p -> TyArr (projDom p) (projCod p)
+                       Nothing -> error ("unknown destructor " <> h)
 
 infer s c (App a b) =
   case infer s c a of
@@ -108,7 +176,57 @@ check _ c (Var v)   ty    = case lookup v c of
 check s c (Fix v t)  ty   = check s ((v,ty):c) t ty
 check _ _ (Cons _)   _    = error "check{Cons}"
 check _ _ (Dest _)   _    = error "check{Dest}"
-check _ _ (App _ _)  _   = undefined
-check _ _ (Case _ _) _    = undefined
-check _ _ (CoCase _) _    = undefined
+check _ _ (App _ _)  _    = error "check{App}"
+check _ _ (Case _ _) _    = error "check{Case}"
+check _ _ (CoCase _) _    = error "check{CoCase}"
 check _ _ _ _ = False
+
+--------------------------------------------------------------------------------
+--                                 Utils                                      --
+--------------------------------------------------------------------------------
+
+mkTyContext :: [Decl] -> [(TyVariable,Type)]
+mkTyContext = undefined
+
+mkContext :: [Decl] -> [(Variable,Type)]
+mkContext [] = []
+mkContext (d:ds) =
+  (case d of
+     Left neg -> map (\p -> (projName p, TyArr (projDom p) (projCod p)))
+                    (projections neg)
+     Right pos -> map (\i -> (injName i, injCod i)) (injections pos)
+  ) <> (mkContext ds)
+
+lookupDecl :: TyVariable -> [Decl] -> Maybe Decl
+lookupDecl _ [] = Nothing
+lookupDecl v ((Left d):ds) = case v == negTyName d of
+                               True -> Just (Left d)
+                               False -> lookupDecl v ds
+lookupDecl v ((Right d):ds) = case v == posTyName d of
+                               True -> Just (Right d)
+                               False -> lookupDecl v ds
+
+type Ctx = [(Variable,Type)]
+
+lookupDatum :: Variable -> [Decl] -> Maybe Decl
+lookupDatum _ [] = Nothing
+lookupDatum h (Left  d:ds) =
+  case lookupProjection h (projections d) of
+    Just _ -> Just (Left d)
+    Nothing -> lookupDatum h ds
+lookupDatum k (Right d:ds) =
+  case lookupInjection k (injections d) of
+    Just _ -> Just (Right d)
+    Nothing -> lookupDatum k ds
+
+lookupProjection :: Variable -> [Projection] -> Maybe Projection
+lookupProjection _ [] = Nothing
+lookupProjection h (p:ps) = case projName p == h of
+                             True -> Just p
+                             False -> lookupProjection h ps
+
+lookupInjection :: Variable -> [Injection] -> Maybe Injection
+lookupInjection _ [] = Nothing
+lookupInjection k (i:is) = case injName i == k of
+                             True -> Just i
+                             False -> lookupInjection k is
