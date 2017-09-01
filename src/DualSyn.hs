@@ -1,8 +1,6 @@
 {-# LANGUAGE GADTs #-}
 module DualSyn where
 
-import Debug.Trace
-
 data Program
   = Pgm
   { pgmDecls :: [Decl]
@@ -196,7 +194,6 @@ evalStart t = case run evalMachine (t,Empty,[]) of
 
 evalMachine :: Machine
 evalMachine = Machine $ \(t,qc,env) ->
-  trace (show (t,qc,env)) $
   case t of
     Lit i -> (RInt i,qc,env)
     Add t1 t2 ->
@@ -218,11 +215,7 @@ evalMachine = Machine $ \(t,qc,env) ->
       case run evalMachine (t1,qc,env) of
         (RConsApp k ts,qc',env')  -> (RConsApp k (t2:ts),qc',env')
 
-        (RDest d,qc',env')        ->
-          case run evalMachine (t2, qc, env) of
-            (RCoCase coalts,_,_) ->
-              run evalMachine (CoCase coalts,Destructee d qc',env')
-            _ -> error "can only apply destructors to cocase"
+        (RDest d,_,_)        -> run evalMachine (t2,Destructee d qc, env)
 
         (RCoCase coalts,qc',env') ->
           run evalMachine (CoCase coalts,Destructor qc' t2,env')
@@ -248,11 +241,11 @@ evalMachine = Machine $ \(t,qc,env) ->
           -- tryCoAlts [] = error (concat ["no copattern context match:\nQ = "
           --                              ,show qc,"\nt = ",show t])
           tryCoAlts ((q,t'):coalts') =
-            case matchCoPattern qc  q of
+            case matchCoPattern qc (innerMostCoPattern q) of
               Just (qc',subs) -> Just (run evalMachine (t',qc',(subs++env)))
               Nothing -> tryCoAlts coalts'
       in case tryCoAlts coalts of
-           Just r  -> trace "fail comatch" r
+           Just r  -> r
            Nothing -> (RCoCase coalts,qc,env)
 
 --------------------
@@ -331,3 +324,10 @@ matchCoPattern (Destructee s qc) (QDest s' q) =
     False -> Nothing
 
 matchCoPattern _ _ = Nothing
+
+innerMostCoPattern :: CoPattern -> CoPattern
+innerMostCoPattern QHash           = QHash
+innerMostCoPattern (QPat QHash p)  = QPat QHash p
+innerMostCoPattern (QDest h QHash) = QDest h QHash
+innerMostCoPattern (QDest _ q)     = innerMostCoPattern q
+innerMostCoPattern (QPat q _)     = innerMostCoPattern q
