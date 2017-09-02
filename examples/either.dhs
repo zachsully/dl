@@ -2,4 +2,6 @@ data Either a b
   { Inl : a -> Either a b
   | Inr : b -> Either a b }
 
-Inl 42
+case (Inr 42)
+  { Inl _ -> 0
+  | Inr x -> x }

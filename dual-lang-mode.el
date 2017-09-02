@@ -13,10 +13,10 @@
   ;;   variables
   ;; use type-face for negative syntax and constant-face for negative variables
   (setq font-lock-defaults
-  	'((("codata\\|cocase\s"
-	    . font-lock-warning-face)
-	   ("data\\|case\s"
-	    . font-lock-constant-face)
+  	'((("codata\s" . font-lock-warning-face)
+	   ("cocase\s" . font-lock-variable-name-face)
+	   ("data\s"   . font-lock-constant-face)
+	   ("case\s"   . font-lock-type-face)
 	   )))
   (set-syntax-table dual-lang-mode-syntax-table)
   (setq mode-name "dual"))

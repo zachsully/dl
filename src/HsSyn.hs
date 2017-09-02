@@ -95,48 +95,56 @@ vmconcat []     = []
 vmconcat (x:[]) = x
 vmconcat (x:xs) = x <-> vmconcat xs
 
+ppPrec :: Int -> Int -> String -> String
+ppPrec p p' s = case p > p' of
+                  True -> parens s
+                  False -> s
+
 parens :: String -> String
 parens s = "(" <> s <> ")"
 
 ppProgram :: Program -> String
 ppProgram pgm = "{-# LANGUAGE GADTs #-}"
             <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
-            <-> ("\nmain = print $" <-> indent 1 (parens . flip ppTerm 2 . pgmTerm $ pgm))
+            <-> ("\nmain = print $" <-> indent 1 (parens . (\t -> ppTerm t 2 0) . pgmTerm $ pgm))
 
 ppDecl :: DataTyCons -> String
 ppDecl tc =
   (smconcat ["data",dataName tc,smconcat . dataFVars $ tc,"where"])
   <-> (vmconcat . fmap ppDataCon . dataCons $ tc)
+  <-> (indent 1 "deriving Show")
 
 ppDataCon :: DataCon -> String
 ppDataCon dc =
-  "  " <> conName dc <+> "::" <+> ppType . conType $ dc
+  indent 1 (conName dc <+> "::" <+> flip ppType 9 . conType $ dc)
 
-ppType :: Type -> String
-ppType TyInt = "Int"
-ppType (TyArr a b) = "(" <> ppType a <+> "->" <+> ppType b <> ")"
-ppType (TyVar s) = s
-ppType (TyCons s) = s
-ppType (TyApp a b) = "(" <> ppType a <+> ppType b <> ")"
+ppType :: Type -> Int -> String
+ppType TyInt       _ = "Int"
+ppType (TyArr a b) p = ppPrec 1 p (ppType a p <+> "->" <+> ppType b p)
+ppType (TyVar s)   _ = s
+ppType (TyCons s)  _ = s
+ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
 
-{- The Int passed in is the indentation level -}
-ppTerm :: Term -> Int -> String
-ppTerm (Lit n) _ = show n
-ppTerm (Add a b) i = "(" <> ppTerm a i <+> "+" <+> ppTerm b i <> ")"
-ppTerm (Var s) _ = s
-ppTerm (Fix s t) i = smconcat ["let",s,"=",ppTerm t i]
-                     <-> indent i ("in" <> s)
-ppTerm (Lam s t) i = smconcat ["\\",s,"->"] <-> indent i (ppTerm t (i+1))
-ppTerm (App a b) i = smconcat ["(",ppTerm a i,")"] <-> indent i (ppTerm b (i+1))
-ppTerm (Cons s) _ = s
-ppTerm (Case t alts) i =
-  "case" <+> ppTerm t i <+> "of"
+{- The Int passed in is the indentation level and precedence -}
+ppTerm :: Term -> Int -> Int -> String
+ppTerm (Lit n)       _ _ = show n
+ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
+ppTerm (Var s)       _ _ = s
+ppTerm (Fix s t)     i p = smconcat ["let",s,"=",ppTerm t i p]
+                           <-> indent i ("in" <> s)
+ppTerm (Lam s t)     i p = parens ( "\\" <> s <+> "->"
+                                  <-> indent i (ppTerm t (i+1) p))
+ppTerm (App a b)     i p = ppPrec 9 p ( ppTerm a i 9
+                                      <-> indent i (ppTerm b (i+1) p))
+ppTerm (Cons s)      _ _ = s
+ppTerm (Case t alts) i p =
+  "case" <+> ppTerm t i p <+> "of"
     <-> indent i (vmconcat . map ppAlt $ alts)
   where ppAlt :: (Pattern,Term) -> String
-        ppAlt (p,t') = ppPattern p <+> "->" <+> ppTerm t' (i+1)
+        ppAlt (pat,t') = ppPattern pat <+> "->" <+> (ppTerm t' (i+1) p)
 
         ppPattern :: Pattern -> String
         ppPattern PWild = "_"
         ppPattern (PVar s) = s
         ppPattern (PCons s ps) =
-          s <+> (smconcat . map (\p -> "(" <> ppPattern p <> ")") $ ps)
+          "(" <> s <+> (smconcat . map ppPattern $ ps) <> ")"

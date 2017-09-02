@@ -1,6 +1,8 @@
 {-# LANGUAGE GADTs #-}
 module DualSyn where
 
+import Debug.Trace
+
 data Program
   = Pgm
   { pgmDecls :: [Decl]
@@ -202,6 +204,7 @@ evalStart t = case run evalMachine (t,Empty,[]) of
 
 evalMachine :: Machine
 evalMachine = Machine $ \(t,qc,env) ->
+  trace (show (t,qc,env)) $
   case t of
     Lit i -> (RInt i,qc,env)
     Add t1 t2 ->
@@ -247,8 +250,6 @@ evalMachine = Machine $ \(t,qc,env) ->
     CoCase coalts ->
       let tryCoAlts :: [(CoPattern,Term)] -> Maybe (Result, QCtx, Env)
           tryCoAlts [] = Nothing
-          -- tryCoAlts [] = error (concat ["no copattern context match:\nQ = "
-          --                              ,show qc,"\nt = ",show t])
           tryCoAlts ((q,t'):coalts') =
             case matchCoPattern qc (innerMostCoPattern q) of
               Just (qc',subs) -> Just (run evalMachine (t',qc',(subs++env)))

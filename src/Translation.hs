@@ -41,17 +41,23 @@ uniquify :: String -> TransM String
 uniquify s =
   do { st <- get
      ; put (st { num = succ (num st) })
-     ; return (s <> "_" <> show (num st)) }
+     ; return (s <> show (num st)) }
 
 addTyAssoc :: D.TyVariable -> Hs.TyVariable -> TransM ()
 addTyAssoc a b =
  do { st <- get
     ; put (st { tyMap = (a,b):(tyMap st) }) }
 
+lookupTyAssoc :: D.TyVariable -> TransM (Maybe Hs.TyVariable)
+lookupTyAssoc v = lookup v . tyMap <$> get
+
 addDestAssoc :: D.Variable -> Hs.Variable -> Int -> Int -> TransM ()
 addDestAssoc h k a i =
   do { st <- get
      ; put (st { destMap = (h,(k,a,i)):(destMap st)}) }
+
+lookupDestAssoc :: D.Variable -> TransM (Maybe (Hs.Variable,Int,Int))
+lookupDestAssoc h = lookup h . destMap <$> get
 
 addVarAssoc :: D.Variable -> Hs.Variable -> TransM ()
 addVarAssoc s t =
@@ -103,21 +109,28 @@ translateProgram dpgm = fst $ runState
 
 translateDecl :: D.Decl -> TransM Hs.DataTyCons
 translateDecl (Right d) =
-  Hs.DataTyCons (D.posTyName d) (D.posTyFVars d)
-     <$> mapM translateInj (D.injections d)
+  do { tyvars <- translateTyVars (D.posTyFVars d)
+     ; injs <- mapM translateInj (D.injections d)
+     ; return (Hs.DataTyCons (D.posTyName d) tyvars injs) }
 
 translateDecl (Left d) =
   do { tn <- uniquify (D.negTyName d)
-     ; let tnCons = "mk" <> tn
-           ty = foldl Hs.TyApp (Hs.TyVar tn) (map Hs.TyVar . D.negTyFVars $ d)
+     ; tyvars <- translateTyVars (D.negTyFVars d)
+     ; let tnCons = "Mk" <> tn
+           ty = foldl Hs.TyApp (Hs.TyVar tn) (map Hs.TyVar tyvars)
            arity = length . D.projections $ d
      ; (inj,_) <- foldrM (\p (accTy,i) ->
                            do { ty1 <- translateType . D.projCod $ p
                               ; addDestAssoc (D.projName p) tnCons arity i
                               ; return (Hs.TyArr ty1 accTy,succ i) })
-                         (ty,0)
+                         (ty,1)
                          (D.projections d)
-     ; return (Hs.DataTyCons tn (D.negTyFVars d) [Hs.DataCon tnCons inj]) }
+     ; return (Hs.DataTyCons tn tyvars [Hs.DataCon tnCons inj]) }
+
+translateTyVars :: [D.TyVariable] -> TransM [Hs.TyVariable]
+translateTyVars = mapM (\v -> do { v' <- uniquify v
+                                 ; addTyAssoc v v'
+                                 ; return v' })
 
 translateInj :: D.Injection -> TransM Hs.DataCon
 translateInj dinj = Hs.DataCon (D.injName dinj)
@@ -133,18 +146,12 @@ translateType (D.TyArr a b) = Hs.TyArr <$> translateType a <*> translateType b
 translateType (D.TyVar v)   = do { tm <- tyMap <$> get
                                  ; case lookup v tm of
                                      Just v' -> return (Hs.TyVar v')
-                                     Nothing -> do { v' <- uniquify v
-                                                   ; addTyAssoc v v'
-                                                   ; return (Hs.TyVar v')
-                                                   }
+                                     Nothing -> error ("Type variable '" <> v <> "' not in scope.")
                                  }
 translateType (D.TyCons k)  = do { tm <- tyMap <$> get
                                  ; case lookup k tm of
                                      Just k' -> return (Hs.TyCons k')
-                                     Nothing -> do { k' <- uniquify k
-                                                   ; addTyAssoc k k'
-                                                   ; return (Hs.TyCons k')
-                                                   }
+                                     Nothing -> error ("Type constructor '" <> k <> "' not in scope.")
                                  }
 translateType (D.TyApp a b) = Hs.TyApp <$> translateType a <*> translateType b
 
@@ -221,8 +228,8 @@ translateTerm (D.Dest h) =
   where mkPatterns :: Int -> Int -> Hs.Variable -> [Hs.Pattern]
         mkPatterns 0 _ _ = []
         mkPatterns a i x = case i == a of
-                             True  -> Hs.PVar "x" : mkPatterns (pred a) i x
-                             False -> Hs.PWild    : mkPatterns (pred a) i x
+                             True  -> Hs.PVar x : mkPatterns (pred a) i x
+                             False -> Hs.PWild  : mkPatterns (pred a) i x
 
 
 {- [Translating CoCase]
@@ -238,25 +245,22 @@ translateTerm (D.Dest h) =
 -}
 
 translateTerm (D.CoCase coalts) = translateCoAlt (head coalts)
-    -- do { v <- uniquify "cont"
-    --    ; alts <- mapM translateCoAlt coalts
-    --    ; return (Hs.Lam v (Hs.Case (Hs.Var v) alts))
-    --    }
   where translateCoAlt :: (D.CoPattern,D.Term) -> TransM (Hs.Term)
         translateCoAlt (q,t) =
           case q of
             D.QHash -> translateTerm t
-            D.QDest _ _ -> error "translateCoAlt{QDest}"
+            D.QDest h _ ->
+              do { mk <- lookupDestAssoc h
+                 ; case mk of
+                     Just (k,_,_) ->
+                       do { t' <- translateTerm t
+                          ; return (Hs.App (Hs.Cons k) t') }
+                     Nothing -> error ("cannot find destructor" <> h)}
             D.QPat _ p ->
               do { v <- uniquify "v"
                  ; p' <- translatePattern p
                  ; t' <- translateTerm t
                  ; return (Hs.Lam v (Hs.Case (Hs.Var v) [(p',t')]))}
-
-        translateCoPattern :: D.CoPattern -> Hs.Term
-        translateCoPattern D.QHash = undefined
-        translateCoPattern (D.QDest h q) = let r = translateCoPattern q in undefined
-        translateCoPattern (D.QPat q p) = let r = translateCoPattern q in undefined
 
 translatePattern :: D.Pattern -> TransM Hs.Pattern
 translatePattern D.PWild        = return Hs.PWild
