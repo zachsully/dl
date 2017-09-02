@@ -173,6 +173,14 @@ flattenCoCase (coalt:coalts) =
                  (QPat  _     _    , _) -> error "flattenCoCase{}"
   in coalt':(flattenCoCase coalts)
 
+
+innerMostCoPattern :: CoPattern -> CoPattern
+innerMostCoPattern QHash           = QHash
+innerMostCoPattern (QPat QHash p)  = QPat QHash p
+innerMostCoPattern (QDest h QHash) = QDest h QHash
+innerMostCoPattern (QDest _ q)     = innerMostCoPattern q
+innerMostCoPattern (QPat q _)      = innerMostCoPattern q
+
 --------------------------------------------------------------------------------
 --                              Evaluation                                    --
 --------------------------------------------------------------------------------
@@ -219,7 +227,8 @@ evalMachine = Machine $ \(t,qc,env) ->
 
         (RCoCase coalts,qc',env') ->
           run evalMachine (CoCase coalts,Destructor qc' t2,env')
-        _ -> error $ show t1 ++ " is not a valid application term"
+
+        t1' -> error $ show t1' ++ " is not a valid application term"
 
     Case t' alts ->
       let tryAlts :: Term -> [(Pattern,Term)] -> (Result, QCtx, Env)
@@ -324,10 +333,3 @@ matchCoPattern (Destructee s qc) (QDest s' q) =
     False -> Nothing
 
 matchCoPattern _ _ = Nothing
-
-innerMostCoPattern :: CoPattern -> CoPattern
-innerMostCoPattern QHash           = QHash
-innerMostCoPattern (QPat QHash p)  = QPat QHash p
-innerMostCoPattern (QDest h QHash) = QDest h QHash
-innerMostCoPattern (QDest _ q)     = innerMostCoPattern q
-innerMostCoPattern (QPat q _)     = innerMostCoPattern q

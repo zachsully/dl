@@ -1,0 +1,11 @@
+codata Const a
+  { Const : Const a -> a }
+
+data Bool
+  { True  : Bool
+  | False : Bool }
+
+(Const (cocase { (Const #) True -> 42
+       	       , (Const #) False -> 0 }
+       ))
+True

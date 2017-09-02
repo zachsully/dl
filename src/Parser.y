@@ -6,7 +6,7 @@ import Lexer
 import DualSyn
 }
 -- All shift/reduce conflicts
-%expect 17
+%expect 19
 
 %name parseProgram program
 %name parseType type
@@ -42,6 +42,7 @@ import DualSyn
 strs :: { [String] }
 strs : strs str                                { $2 : $1 }
      | str                                     { [$1] }
+     | {- empty -}                             { [] }
 
 --------------------------------------------------------------------------------
 --                              Top Level                                     --

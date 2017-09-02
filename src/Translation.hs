@@ -246,12 +246,17 @@ translateTerm (D.CoCase coalts) = translateCoAlt (head coalts)
         translateCoAlt (q,t) =
           case q of
             D.QHash -> translateTerm t
-            D.QDest _ _ -> undefined
+            D.QDest _ _ -> error "translateCoAlt{QDest}"
             D.QPat _ p ->
               do { v <- uniquify "v"
                  ; p' <- translatePattern p
                  ; t' <- translateTerm t
                  ; return (Hs.Lam v (Hs.Case (Hs.Var v) [(p',t')]))}
+
+        translateCoPattern :: D.CoPattern -> Hs.Term
+        translateCoPattern D.QHash = undefined
+        translateCoPattern (D.QDest h q) = let r = translateCoPattern q in undefined
+        translateCoPattern (D.QPat q p) = let r = translateCoPattern q in undefined
 
 translatePattern :: D.Pattern -> TransM Hs.Pattern
 translatePattern D.PWild        = return Hs.PWild
