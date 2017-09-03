@@ -138,9 +138,11 @@ ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> ppTerm b i p)
 ppTerm (Cons s)      _ _ = s
 ppTerm (Case t alts) i p =
   "case" <+> ppTerm t i 0 <+> "of"
-    <-> indent i (vmconcat . map ppAlt $ alts)
+    <-> (vmconcat . map (indent i . ppAlt) $ alts)
   where ppAlt :: (Pattern,Term) -> String
-        ppAlt (pat,t') = ppPattern pat <+> "->" <+> (ppTerm t' (i+1) p)
+        ppAlt (pat,t') = ppPattern pat
+                         <+> "->"
+                         <-> indent (i+1) (ppTerm t' (i+2) p)
 
         ppPattern :: Pattern -> String
         ppPattern PWild = "_"

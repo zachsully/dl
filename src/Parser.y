@@ -6,7 +6,7 @@ import Lexer
 import DualSyn
 }
 -- All shift/reduce conflicts
-%expect 16
+%expect 14
 
 %name parseProgram program
 %name parseType type
@@ -169,10 +169,16 @@ patterns : patternA                 { [$1] }
          | patterns patternA        { $2 : $1 }
 
 copattern :: { CoPattern }
-copattern : '#'                     { QHash }
-          | str copattern           { QDest $1 $2 }
-          | copattern pattern       { QPat $1 $2 }
-          | '(' copattern ')'       { $2 }
+copattern : copatternA patternA     { QPat $1 $2 }
+          | copattern0              { $1 }
+
+copattern0 :: { CoPattern }
+copattern0 : str copatternA         { QDest $1 $2 }
+           | copatternA             { $1 }
+
+copatternA :: { CoPattern }
+copatternA : '#'                    { QHash }
+           | '(' copattern ')'      { $2 }
 
 {
 --------------------------------------------------------------------------------
