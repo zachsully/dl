@@ -106,7 +106,7 @@ parens s = "(" <> s <> ")"
 ppProgram :: Program -> String
 ppProgram pgm = "{-# LANGUAGE GADTs #-}"
             <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
-            <-> ("\nmain = print $" <-> indent 1 (parens . (\t -> ppTerm t 2 0) . pgmTerm $ pgm))
+            <-> ("\nmain = print $" <-> indent 1 ((\t -> ppTerm t 2 9) . pgmTerm $ pgm))
 
 ppDecl :: DataTyCons -> String
 ppDecl tc =
@@ -134,11 +134,10 @@ ppTerm (Fix s t)     i p = smconcat ["let",s,"=",ppTerm t i p]
                            <-> indent i ("in" <> s)
 ppTerm (Lam s t)     i p = parens ( "\\" <> s <+> "->"
                                   <-> indent i (ppTerm t (i+1) p))
-ppTerm (App a b)     i p = ppPrec 9 p ( ppTerm a i 9
-                                      <-> indent i (ppTerm b (i+1) p))
+ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> ppTerm b i p)
 ppTerm (Cons s)      _ _ = s
 ppTerm (Case t alts) i p =
-  "case" <+> ppTerm t i p <+> "of"
+  "case" <+> ppTerm t i 0 <+> "of"
     <-> indent i (vmconcat . map ppAlt $ alts)
   where ppAlt :: (Pattern,Term) -> String
         ppAlt (pat,t') = ppPattern pat <+> "->" <+> (ppTerm t' (i+1) p)

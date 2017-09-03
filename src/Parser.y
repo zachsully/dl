@@ -6,7 +6,7 @@ import Lexer
 import DualSyn
 }
 -- All shift/reduce conflicts
-%expect 19
+%expect 16
 
 %name parseProgram program
 %name parseType type
@@ -119,7 +119,7 @@ term1 :  term  termA              { App $1 $2 }
       |  term2                    { $1 }
 
 term2 :: { Term }
-term2 :  termA '+' termA          { Add $1 $3 }
+term2 :  term '+' termA          { Add $1 $3 }
       |  'fix' str 'in' term      { Fix $2 $4 }
       |  'case' term '{' alts '}' { Case $2 (reverse $4) }
       |  'cocase' '{' coalts '}'  { CoCase (reverse $3) }
@@ -157,13 +157,16 @@ coalts : coalt                      { [$1] }
        | coalts ',' coalt           { $3 : $1 }
 
 pattern :: { Pattern }
-pattern : '_'                       { PWild }
-        | str patterns              { PCons $1 (reverse $2) }
-        | str                       { PVar $1 }
+pattern : str patterns              { PCons $1 (reverse $2) }
+
+patternA :: { Pattern }
+patternA : '_'                      { PWild }
+         | str                      { PVar $1 }
+         | '(' pattern ')'          { $2 }
 
 patterns :: { [Pattern] }
-patterns : pattern                  { [$1] }
-         | patterns pattern         { $2 : $1 }
+patterns : patternA                 { [$1] }
+         | patterns patternA        { $2 : $1 }
 
 copattern :: { CoPattern }
 copattern : '#'                     { QHash }

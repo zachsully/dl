@@ -145,37 +145,6 @@ collectArgs _         = Nothing
 distributeArgs :: (Variable,[Term]) -> Term
 distributeArgs (k,ts) = foldl App (Cons k) ts
 
-
-{- `flattenCopattern` will traverse a term, turning CoCases with nested
-   co-patterns in ones nesting cocase expressions instead. For example,
-
-   ```
-   cocase { Fst # -> 0
-          , Fst (Snd #) -> 1
-          , Snd (Snd #) -> 2 }
-   ```
-   ===>
-   ```
-   cocase { Fst # -> 0
-          , Snd # -> cocase { Fst # -> 1
-                            , Snd # -> 2 } }
-   ```
--}
-
-flattenCoCase :: [(CoPattern,Term)] -> [(CoPattern,Term)]
-flattenCoCase [] = []
-flattenCoCase (coalt:coalts) =
-  let coalt' = case coalt of
-                 -- the aready flatten cases
-                 (QHash            , t) -> (QHash,t)
-                 (QDest h     QHash, t) -> (QDest h QHash,t)
-                 (QPat  QHash p    , t) -> (QPat QHash p,t)
-
-                 (QDest _     q    , t) -> head (flattenCoCase [(q,t)])
-                 (QPat  _     _    , _) -> error "flattenCoCase{}"
-  in coalt':(flattenCoCase coalts)
-
-
 innerMostCoPattern :: CoPattern -> CoPattern
 innerMostCoPattern QHash           = QHash
 innerMostCoPattern (QPat QHash p)  = QPat QHash p

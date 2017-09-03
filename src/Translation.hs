@@ -16,6 +16,11 @@ import qualified HsSyn as Hs
    of unique identifiers.
 -}
 
+
+--------------------------------------------------------------------------------
+--                            Translation Monad                               --
+--------------------------------------------------------------------------------
+
 data TransST
   = TransST
   { num     :: Int -- ^ tracks unique variable creation
@@ -66,17 +71,78 @@ addVarAssoc s t =
 
 
 
----------------
--- Top Level --
----------------
+--------------------------------------------------------------------------------
+--                                Top Level                                   --
+--------------------------------------------------------------------------------
 
 translateProgram :: D.Program -> Hs.Program
-translateProgram dpgm = fst $ runState
-                        (do { decls <- mapM translateDecl (D.pgmDecls dpgm)
-                            ; term  <- translateTerm (D.pgmTerm dpgm)
-                            ; return (Hs.Pgm decls term) })
-                        startState
+translateProgram dpgm =
+  fst $ runState
+  (do { decls <- mapM translateDecl (D.pgmDecls dpgm)
+      ; term  <- translateTerm =<< (flattenPatterns . D.pgmTerm $ dpgm)
+      ; return (Hs.Pgm decls term) })
+  startState
 
+{- `flattenPattern` will traverse a term, turning (co)case expressions with
+   nested (co-)patterns in ones nesting (co)case expressions instead. This
+   simplifies translation.
+
+   An example of flattening a case:
+   ```
+   case (Pair (Pair 0 1) (Pair 1 2))
+     { Pair (Pair w x) (Pair y z) -> w + x + y + z }
+   ```
+   ===>
+   ```
+   case (Pair 0 (Pair 1 2))
+     { Pair p0 p1 ->
+         case p0
+           { Pair w x ->
+               case p1
+                { Pair y z -> w + x + y + z
+                }
+           }
+     }
+   ```
+
+   An example of flattening a cocase:
+   ```
+   cocase { Fst # -> 0
+          , Fst (Snd #) -> 1
+          , Snd (Snd #) -> 2 }
+   ```
+   ===>
+   ```
+   cocase { Fst # -> 0
+          , Snd # -> cocase { Fst # -> 1
+                            , Snd # -> 2 } }
+   ```
+-}
+
+flattenPatterns :: D.Term -> TransM D.Term
+flattenPatterns (D.Lit i) = return (D.Lit i)
+flattenPatterns (D.Add a b) = D.Add <$> flattenPatterns a <*> flattenPatterns b
+flattenPatterns (D.Var v) = return (D.Var v)
+flattenPatterns (D.Fix v t) = D.Fix v <$> flattenPatterns t
+flattenPatterns (D.App a b) = D.App <$> flattenPatterns a <*> flattenPatterns b
+flattenPatterns (D.Cons k) = return (D.Cons k)
+flattenPatterns (D.Dest h) = return (D.Dest h)
+flattenPatterns (D.Case t alts) = D.Case t <$> mapM flattenAlt alts
+  where flattenAlt (D.PWild,u)      = return (D.PWild,u)
+        flattenAlt (D.PVar v,u)     = return (D.PVar v,u)
+        flattenAlt (D.PCons k [],u) = return (D.PCons k [],u)
+        flattenAlt (D.PCons k ps,u) =
+          do { ps' <- mapM (\p -> do { x <- uniquify "p"
+                                     ; return (p,(D.PVar x)) })
+                                     ps
+             ; return (D.PCons k (map snd ps'),u) }
+flattenPatterns (D.CoCase coalts) = return (D.CoCase coalts)
+
+
+
+--------------------------------------------------------------------------------
+--                              Declarations                                  --
+--------------------------------------------------------------------------------
 {- Translating positive data is just the identity function.
 
    Translating negative data generates a new positive type with a single
@@ -109,9 +175,11 @@ translateProgram dpgm = fst $ runState
 
 translateDecl :: D.Decl -> TransM Hs.DataTyCons
 translateDecl (Right d) =
-  do { tyvars <- translateTyVars (D.posTyFVars d)
+  do { tn <- uniquify (D.posTyName d)
+     ; addTyAssoc (D.posTyName d) tn
+     ; tyvars <- translateTyVars (D.posTyFVars d)
      ; injs <- mapM translateInj (D.injections d)
-     ; return (Hs.DataTyCons (D.posTyName d) tyvars injs) }
+     ; return (Hs.DataTyCons tn tyvars injs) }
 
 translateDecl (Left d) =
   do { tn <- uniquify (D.negTyName d)
@@ -133,31 +201,42 @@ translateTyVars = mapM (\v -> do { v' <- uniquify v
                                  ; return v' })
 
 translateInj :: D.Injection -> TransM Hs.DataCon
-translateInj dinj = Hs.DataCon (D.injName dinj)
-                <$> (translateType . D.injCod $ dinj)
+translateInj dinj =
+  do { n <- uniquify (D.injName dinj)
+     ; addVarAssoc (D.injName dinj) n
+     ; ty <- translateType . D.injCod $ dinj
+     ; return (Hs.DataCon n ty) }
 
------------
--- Types --
------------
+
+--------------------------------------------------------------------------------
+--                                 Types                                      --
+--------------------------------------------------------------------------------
+{- Type translation is trivial, the only note is that type variables and
+   constructors depend on the translation of declarations and must lookup their
+   value in the TransM monad.
+-}
 
 translateType :: D.Type -> TransM Hs.Type
 translateType D.TyInt       = return Hs.TyInt
 translateType (D.TyArr a b) = Hs.TyArr <$> translateType a <*> translateType b
-translateType (D.TyVar v)   = do { tm <- tyMap <$> get
-                                 ; case lookup v tm of
-                                     Just v' -> return (Hs.TyVar v')
-                                     Nothing -> error ("Type variable '" <> v <> "' not in scope.")
-                                 }
-translateType (D.TyCons k)  = do { tm <- tyMap <$> get
-                                 ; case lookup k tm of
-                                     Just k' -> return (Hs.TyCons k')
-                                     Nothing -> error ("Type constructor '" <> k <> "' not in scope.")
-                                 }
 translateType (D.TyApp a b) = Hs.TyApp <$> translateType a <*> translateType b
+translateType (D.TyVar v)   =
+  do { tm <- tyMap <$> get
+     ; case lookup v tm of
+         Just v' -> return (Hs.TyVar v')
+         Nothing -> error ("Type variable '" <> v <> "' not in scope.")
+     }
+translateType (D.TyCons k)  =
+  do { tm <- tyMap <$> get
+     ; case lookup k tm of
+         Just k' -> return (Hs.TyCons k')
+         Nothing -> error ("Type constructor '" <> k <> "' not in scope.")
+     }
 
------------
--- Terms --
------------
+
+--------------------------------------------------------------------------------
+--                                  Terms                                     --
+--------------------------------------------------------------------------------
 
 translateTerm :: D.Term -> TransM Hs.Term
 translateTerm (D.Lit i) = return (Hs.Lit i)
@@ -167,8 +246,15 @@ translateTerm (D.Var v) =
      ; case lookup v m of
          Just v' -> return (Hs.Var v')
          Nothing -> error ("untranslated variable " <> v) }
-translateTerm (D.Fix v t) = Hs.Fix <$> uniquify v  <*> translateTerm t
-translateTerm (D.Cons k)      = Hs.Cons <$> uniquify k
+translateTerm (D.Fix v t) =
+  do { v' <- uniquify v
+     ; addVarAssoc v v'
+     ; Hs.Fix v' <$> translateTerm t }
+translateTerm (D.Cons k) =
+  do { m <- vMap <$> get
+     ; case lookup k m of
+         Just k' -> return (Hs.Cons k')
+         Nothing -> error ("untranslated constructor " <> k) }
 translateTerm (D.Case t alts) = Hs.Case <$> translateTerm t
                                         <*> mapM (\(p,e) ->
                                                    do { p' <- translatePattern p
@@ -263,9 +349,13 @@ translateTerm (D.CoCase coalts) = translateCoAlt (head coalts)
                  ; return (Hs.Lam v (Hs.Case (Hs.Var v) [(p',t')]))}
 
 translatePattern :: D.Pattern -> TransM Hs.Pattern
-translatePattern D.PWild        = return Hs.PWild
-translatePattern (D.PVar v)     = do { v' <- uniquify v
-                                     ; addVarAssoc v v'
-                                     ; return (Hs.PVar v') }
-translatePattern (D.PCons k ps) = Hs.PCons <$> uniquify k
-                                           <*> mapM translatePattern ps
+translatePattern D.PWild = return Hs.PWild
+translatePattern (D.PVar v) =
+  do { v' <- uniquify v
+     ; addVarAssoc v v'
+     ; return (Hs.PVar v') }
+translatePattern (D.PCons k ps) =
+  do { m <- vMap <$> get
+     ; case lookup k m of
+         Just k' -> Hs.PCons k' <$> mapM translatePattern ps
+         Nothing -> error ("untranslated constructor " <> k <> " in pattern" <> show (D.PCons k ps)) }
