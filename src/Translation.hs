@@ -128,16 +128,21 @@ flattenPatterns (D.App a b) = D.App <$> flattenPatterns a <*> flattenPatterns b
 flattenPatterns (D.Cons k) = return (D.Cons k)
 flattenPatterns (D.Dest h) = return (D.Dest h)
 flattenPatterns (D.Case t alts) = D.Case t <$> mapM flattenAlt alts
-  where flattenAlt (D.PWild,u)      = return (D.PWild,u)
-        flattenAlt (D.PVar v,u)     = return (D.PVar v,u)
-        flattenAlt (D.PCons k [],u) = return (D.PCons k [],u)
-        flattenAlt (D.PCons k ps,u) =
-          do { ps' <- mapM (\p -> do { x <- uniquify "p"
-                                     ; return (p,(D.PVar x)) })
-                                     ps
-             ; return (D.PCons k (map snd ps'),u) }
+  where flattenAlt (D.PWild,u)          = return (D.PWild,u)
+        flattenAlt (D.PVar v,u)         = return (D.PVar v,u)
+        flattenAlt (D.PCons k [],u)     = return (D.PCons k [],u)
+        flattenAlt (D.PCons k (p:ps),u) =
+          do { u' <- flattenPatterns u
+             ; (p',v)  <- uniquify "p" >>= \v -> return (p,v)
+             ; ps' <- mapM (\p'' -> uniquify "p" >>= \v' -> return (p'',v'))
+                           ps
+             ; let u'' = foldl (\acc (p'',v'') ->
+                                 D.Case (D.Var v'') [(p'',acc)]
+                               )
+                               (D.Case (D.Var v) [(p',u')])
+                               ps'
+             ; return (D.PCons k ((D.PVar v):(map (D.PVar . snd) ps')),u'') }
 flattenPatterns (D.CoCase coalts) = return (D.CoCase coalts)
-
 
 
 --------------------------------------------------------------------------------
