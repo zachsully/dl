@@ -5,6 +5,8 @@ import Debug.Trace
 import Control.Monad.State
 import Data.Monoid ((<>))
 
+import Utils
+
 data Program
   = Pgm
   { pgmDecls :: [Decl]
@@ -33,6 +35,13 @@ data Type where
   TyCons :: TyVariable -> Type
   TyApp  :: Type -> Type -> Type
   deriving (Eq,Show)
+
+ppType :: Type -> String
+ppType TyInt = "Int"
+ppType (TyArr a b) = ppType a <+> "->" <+> ppType b
+ppType (TyVar v) = v
+ppType (TyCons k) = k
+ppType (TyApp a b) =  ppType a <+> ppType b
 
 collectTyArgs :: Type -> Maybe (TyVariable,[Type])
 collectTyArgs (TyApp e t) = collectTyArgs e >>= \(k,ts) -> return (k,t:ts)
@@ -240,7 +249,14 @@ flattenPatterns' (Case t alts) = Case <$> flattenPatterns' t
                       , \e -> Case (Var v) [(FPCons k vs,foldr ($) e fs)])
              }
 
-flattenPatterns' (CoCase coalts) = return (CoCase (undefined coalts))
+flattenPatterns' (CoCase coalts) =
+  let maxD = maximum . map (getDepth . fst) $ coalts in
+  do { error . show $ maxD }
+  where getDepth :: CoPattern -> Int
+        getDepth QHead       = 0
+        getDepth (QDest _ q) = 1 + getDepth q
+        getDepth (QPat q _)  = 1 + getDepth q
+
   -- where withInnerMostAndDepth :: (FlatQ -> Int -> r) -> CoPattern -> r
   --       withInnerMostAndDepth f q = wIMD f q 0
   --         where wIMD f D.QHead i -> f D.QHead i
@@ -276,13 +292,15 @@ data Machine
                   -> (Result, QCtx, Env)
             }
 
-evalStart :: Term Pattern CoPattern -> Result
-evalStart t = case run evalMachine (t,Empty,[]) of
-                (r,_,_) -> r
+evalEmpty :: Term Pattern CoPattern -> Result
+evalEmpty t = case run evalMachine (t,Empty,[]) of
+                (r,Empty,_) -> r
+                x -> error ("evaluation did not consume all of the evaluation context "
+                           <> show x)
 
 evalMachine :: Machine
 evalMachine = Machine $ \(t,qc,env) ->
-  trace (show (t,qc,env)) $
+  trace ("---------------\nt: " <> show t <> "\nQ: " <> show qc <> "\n") $
   case t of
     Lit i -> (RInt i,qc,env)
     Add t1 t2 ->
@@ -304,7 +322,7 @@ evalMachine = Machine $ \(t,qc,env) ->
       case run evalMachine (t1,qc,env) of
         (RConsApp k ts,qc',env')  -> (RConsApp k (t2:ts),qc',env')
 
-        (RDest d,_,_)        -> run evalMachine (t2,Destructee d qc, env)
+        (RDest d,qc',env') -> run evalMachine (t2,Destructee d qc',env')
 
         (RCoCase coalts,qc',env') ->
           run evalMachine (CoCase coalts,Destructor qc' t2,env')

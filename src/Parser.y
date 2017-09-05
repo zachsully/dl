@@ -169,7 +169,7 @@ patterns : patternA                 { [$1] }
          | patterns patternA        { $2 : $1 }
 
 copattern :: { CoPattern }
-copattern : copatternA patternA     { QPat $1 $2 }
+copattern : copattern patternA     { QPat $1 $2 }
           | copattern0              { $1 }
 
 copattern0 :: { CoPattern }

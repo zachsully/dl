@@ -3,12 +3,17 @@ module Judgement where
 
 import Data.Monoid
 
+import Utils
 import DualSyn
 
 data TypeScheme where
   TyMono   :: Type -> TypeScheme
   TyForall :: TyVariable -> Type -> TypeScheme
   deriving (Show,Eq)
+
+ppTypeScheme :: TypeScheme -> String
+ppTypeScheme (TyMono ty)     = ppType ty
+ppTypeScheme (TyForall v ty) = "forall" <+> v <> "." <+> ppType ty
 
 --------------------------------------------------------------------------------
 --                              Top Level                                     --
@@ -62,7 +67,15 @@ inferTS c (Var v)    = case lookup v c of
                          Just t -> TyMono t
                          Nothing -> error ("unbound variable " <> v)
 inferTS c (Fix _ t)  = inferTS c t
-inferTS c (App a b)  = undefined c a b
+inferTS c (App a b)  = case inferTS c a of
+                         (TyMono (TyArr aTy0 aTy1)) ->
+                           case inferTS c b of
+                             TyMono bTy ->
+                               case bTy == aTy0 of
+                                 True -> TyMono aTy1
+                                 False -> error ("expecting type" <+> ppType aTy1)
+                             t -> error ("must be a function type, given" <+> ppTypeScheme t)
+                         t -> error ("must be a function type, given" <+> ppTypeScheme t)
 inferTS c (Cons k)   = case lookup k c of
                          Just t -> TyMono t
                          Nothing -> error ("unbound constructor " <> k)

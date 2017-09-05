@@ -3,6 +3,8 @@ module HsSyn where
 
 import Data.Monoid
 
+import Utils
+
 data Program
   = Pgm
   { pgmDecls :: [DataTyCons]
@@ -73,39 +75,8 @@ type Variable = String
 --                              Pretty Print                                  --
 --------------------------------------------------------------------------------
 
-infixr 0 <+>
-(<+>) :: String -> String -> String
-a <+> b = a <> " " <> b
-
-infixr 1 <->
-(<->) :: String -> String -> String
-a <-> b = a <> "\n" <> b
-
-indent :: Int -> String -> String
-indent lvl s = replicate (lvl*2) ' ' <> s
-
-{- concatenates terms with a space between them -}
-smconcat :: [String] -> String
-smconcat []     = []
-smconcat (x:[]) = x
-smconcat (x:xs) = x <+> smconcat xs
-
-{- concatenates terms with a newline between them -}
-vmconcat :: [String] -> String
-vmconcat []     = []
-vmconcat (x:[]) = x
-vmconcat (x:xs) = x <-> vmconcat xs
-
-ppPrec :: Int -> Int -> String -> String
-ppPrec p p' s = case p > p' of
-                  True -> parens s
-                  False -> s
-
-parens :: String -> String
-parens s = "(" <> s <> ")"
-
 ppProgram :: Program -> String
-ppProgram pgm = "{-# LANGUAGE GADTs #-}"
+ppProgram pgm = "{-# LANGUAGE GADTs #-}\n"
             <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
             <-> ("\nmain = print $" <-> indent 1 ((\t -> ppTerm t 2 9) . pgmTerm $ pgm))
 
@@ -114,6 +85,7 @@ ppDecl tc =
   (smconcat ["data",dataName tc,smconcat . dataFVars $ tc,"where"])
   <-> (vmconcat . fmap ppDataCon . dataCons $ tc)
   <-> (indent 1 "deriving Show")
+  <> "\n"
 
 ppDataCon :: DataCon -> String
 ppDataCon dc =

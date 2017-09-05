@@ -1,0 +1,16 @@
+codata Stream a
+  { Head : Stream a -> a
+  , Tail : Stream a -> Stream a }
+
+data Nat
+  { Zero : Nat
+  | Succ : Nat -> Nat }
+
+Head ((fix cyc in
+         cocase { Head (# x) -> x
+	 	, Tail (# Zero) -> cyc 0
+		, Tail (# (Succ x)) -> cyc x
+                }
+      )
+      Zero
+     )

@@ -115,10 +115,11 @@ runEvaluate :: EvalMode -> IO ()
 runEvaluate em =
   do { term <- D.pgmTerm <$> getProgram (emInput em)
      ; when (emDebug em) $ print term
-     ; print . D.evalStart $ term }
+     ; putStr "> "
+     ; print . D.evalEmpty $ term }
 
 runTypeOf :: TypeMode -> IO ()
 runTypeOf tm =
   do { pgm <- getProgram (tmInput tm)
      ; when (tmDebug tm) $ print pgm
-     ; print . inferTSProgram $ pgm }
+     ; putStrLn . ppTypeScheme . inferTSProgram $ pgm }

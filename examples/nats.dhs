@@ -2,11 +2,15 @@ codata Stream a
   { Head : Stream a -> a
   , Tail : Stream a -> Stream a }
 
-(cocase { # succ ->
-	  fix s in
-	    cocase
-	      { Head # -> 0
-	      , Tail # -> succ (Head s) }
-	}
+data Nat
+  { Zero : Nat
+  | Succ : Nat -> Nat }
+
+Head (Tail (Tail
+(
+fix nats in
+cocase { Head (# x) -> x
+       , Tail (# x) -> nats (Succ x) }
 )
-(cocase { # x -> x + 1})
+Zero
+))
