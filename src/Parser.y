@@ -111,14 +111,14 @@ typeA : '(' type ')'                   { $2 }
 --                                 Terms                                      --
 --------------------------------------------------------------------------------
 
-term :: { Term }
+term :: { Term Pattern CoPattern }
 term : term1                      { $1 }
 
-term1 :: { Term }
+term1 :: { Term Pattern CoPattern }
 term1 :  term  termA              { App $1 $2 }
       |  term2                    { $1 }
 
-term2 :: { Term }
+term2 :: { Term Pattern CoPattern }
 term2 :  term '+' termA          { Add $1 $3 }
       |  'fix' str 'in' term      { Fix $2 $4 }
       |  'case' term '{' alts '}' { Case $2 (reverse $4) }
@@ -127,7 +127,7 @@ term2 :  term '+' termA          { Add $1 $3 }
 
 {- We lookup to see if the string is defined as a symbol and a singleton
    constructor, otherwise it is a variable. -}
-termA :: { Term }
+termA :: { Term Pattern CoPattern }
 termA :  num                      { Lit $1 }
       |  str                      {% do { mp <- getPolarity $1
                                         ; case mp of
@@ -142,17 +142,17 @@ termA :  num                      { Lit $1 }
 -- Matching --
 --------------
 
-alt :: { (Pattern,Term) }
+alt :: { (Pattern,Term Pattern CoPattern) }
 alt : pattern '->' term             { ($1,$3) }
 
-alts :: { [(Pattern,Term)] }
+alts :: { [(Pattern,Term Pattern CoPattern)] }
 alts : alt                          { [$1] }
      | alts '|' alt                 { $3 : $1 }
 
-coalt :: { (CoPattern,Term) }
+coalt :: { (CoPattern,Term Pattern CoPattern) }
 coalt : copattern '->' term         { ($1,$3) }
 
-coalts :: { [(CoPattern,Term)] }
+coalts :: { [(CoPattern,Term Pattern CoPattern)] }
 coalts : coalt                      { [$1] }
        | coalts ',' coalt           { $3 : $1 }
 
@@ -177,7 +177,7 @@ copattern0 : str copatternA         { QDest $1 $2 }
            | copatternA             { $1 }
 
 copatternA :: { CoPattern }
-copatternA : '#'                    { QHash }
+copatternA : '#'                    { QHead }
            | '(' copattern ')'      { $2 }
 
 {

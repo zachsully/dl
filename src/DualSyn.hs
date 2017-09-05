@@ -2,11 +2,13 @@
 module DualSyn where
 
 import Debug.Trace
+import Control.Monad.State
+import Data.Monoid ((<>))
 
 data Program
   = Pgm
   { pgmDecls :: [Decl]
-  , pgmTerm  :: Term }
+  , pgmTerm  :: Term Pattern CoPattern}
   deriving (Show,Eq)
 
 type Decl = Either NegativeTyCons PositiveTyCons
@@ -85,22 +87,44 @@ data Injection
 --------------------------------------------------------------------------------
 --                                 Terms                                      --
 --------------------------------------------------------------------------------
-
-data Term where
+{- Terms are parameterized over the type of pattern and copattern. This is
+   important because we only translate flat (co)patterns.
+-}
+data Term p q where
   -- ^ Number primitives
-  Lit :: Int -> Term
-  Add :: Term -> Term -> Term
+  Lit :: Int -> Term p q
+  Add :: Term p q -> Term p q -> Term p q
 
-  Var :: Variable -> Term
-  Fix :: Variable -> Term -> Term
-  App :: Term -> Term -> Term
+  Var :: Variable -> Term p q
+  Fix :: Variable -> Term p q -> Term p q
+  App :: Term p q -> Term p q -> Term p q
 
-  Cons :: Variable -> Term
-  Case :: Term -> [(Pattern,Term)] -> Term
+  Cons :: Variable -> Term p q
+  Case :: Term p q -> [(p,Term p q)] -> Term p q
 
-  Dest :: Variable -> Term
-  CoCase :: [(CoPattern,Term)] -> Term
+  Dest :: Variable -> Term p q
+  CoCase :: [(q,Term p q)] -> Term p q
   deriving (Eq,Show)
+
+{- Vars are introduced and consumed by pattern matching within terms. -}
+type Variable = String
+
+{- `collectArgs` will recur down an application to find the constructor and its
+   arguments -}
+collectArgs :: Term p q -> Maybe (Variable,[Term p q])
+collectArgs (App e t) = collectArgs e >>= \(k,ts) -> return (k,t:ts)
+collectArgs (Cons k)  = return (k,[])
+collectArgs _         = Nothing
+
+{- `distributeArgs` will take a constructor and its arguments and construct a
+   term applying the constructor to all of its arguments -}
+distributeArgs :: (Variable,[Term p q]) -> Term p q
+distributeArgs (k,ts) = foldl App (Cons k) ts
+
+
+------------------
+-- (Co)patterns --
+------------------
 
 data Pattern where
   PWild :: Pattern
@@ -108,66 +132,151 @@ data Pattern where
   PCons :: Variable -> [Pattern] -> Pattern
   deriving (Eq,Show)
 
+{- Atomic patterns are either wildcards or variables -}
+data FlatP where
+  FPWild :: FlatP
+  FPVar  :: Variable -> FlatP
+  FPCons :: Variable -> [Variable] -> FlatP
+  deriving (Eq,Show)
+
 {- NOTE: we often use 'q' for a copattern variables -}
 data CoPattern where
-  QHash  :: CoPattern                         -- ^ the copattern matching the context
+  QHead :: CoPattern                          -- ^ the copattern matching the context
   QDest :: Variable -> CoPattern -> CoPattern -- ^ a specific destructor
   QPat  :: CoPattern -> Pattern -> CoPattern  -- ^ a copattern applied ot a pattern
   deriving (Eq,Show)
+
+data FlatQ where
+  FQHead :: FlatQ
+  FQDest :: Variable -> FlatQ
+  FQPat  :: FlatP    -> FlatQ
+  deriving (Eq,Show)
+
+--------------------------------------------------------------------------------
+--                        Term Manipulations --
+--------------------------------------------------------------------------------
+
+innerMostCoPattern :: CoPattern -> CoPattern
+innerMostCoPattern QHead           = QHead
+innerMostCoPattern (QPat QHead p)  = QPat QHead p
+innerMostCoPattern (QDest h QHead) = QDest h QHead
+innerMostCoPattern (QDest _ q)     = innerMostCoPattern q
+innerMostCoPattern (QPat q _)      = innerMostCoPattern q
+
+{- `flattenPattern` will traverse a term, turning (co)case expressions with
+   nested (co-)patterns in ones nesting (co)case expressions instead. This
+   simplifies translation.
+
+   An example of flattening a case:
+   ```
+   case (Pair (Pair 0 1) (Pair 1 2))
+     { Pair (Pair w x) (Pair y z) -> w + x + y + z }
+   ```
+   ===>
+   ```
+   case (Pair 0 (Pair 1 2))
+     { Pair p0 p1 ->
+         case p0
+           { Pair w x ->
+               case p1
+                { Pair y z -> w + x + y + z
+                }
+           }
+     }
+   ```
+
+   An example of flattening a cocase:
+   ```
+   cocase { Fst # -> 0
+          , Fst (Snd #) -> 1
+          , Snd (Snd #) -> 2 }
+   ```
+   ===>
+   ```
+   cocase { Fst # -> 0
+          , Snd # -> cocase { Fst # -> 1
+                            , Snd # -> 2 } }
+   ```
+-}
+
+fresh :: Variable -> State Int Variable
+fresh v = do { n <- get
+             ; put (succ n)
+             ; return (v <> show n) }
+
+flattenPatterns :: Term Pattern CoPattern -> Term FlatP FlatQ
+flattenPatterns t = fst . runState (flattenPatterns' t) $ 0
+
+flattenPatterns' :: Term Pattern CoPattern -> State Int (Term FlatP FlatQ)
+flattenPatterns' (Lit i) = return (Lit i)
+flattenPatterns' (Add a b) = Add <$> flattenPatterns' a <*> flattenPatterns' b
+flattenPatterns' (Var v) = return (Var v)
+flattenPatterns' (Fix v t) = Fix v <$> flattenPatterns' t
+flattenPatterns' (App a b) = App <$> flattenPatterns' a <*> flattenPatterns' b
+flattenPatterns' (Cons k) = return (Cons k)
+flattenPatterns' (Dest h) = return (Dest h)
+flattenPatterns' (Case t alts) = Case <$> flattenPatterns' t
+                                      <*> mapM flattenAlt alts
+  where flattenAlt :: (Pattern,Term Pattern CoPattern)
+                   -> State Int (FlatP,Term FlatP FlatQ)
+        flattenAlt (p,u) =
+          do { u' <- flattenPatterns' u
+             ; case p of
+                 PWild -> return (FPWild, u')
+                 PVar v -> return (FPVar v, u')
+                 PCons k ps -> do { (vs,fs) <- unzip <$> mapM flattenPattern ps
+                                  ; return (FPCons k vs, foldr ($) u' fs) }
+             }
+
+        flattenPattern :: Pattern
+                       -> State Int (Variable, Term FlatP FlatQ -> Term FlatP FlatQ)
+        flattenPattern PWild = do { v <- fresh "p"
+                                  ; return (v, id) }
+        flattenPattern (PVar v) = return (v,id)
+        flattenPattern (PCons k ps) =
+          do { v <- fresh "p"
+             ; (vs,fs) <- unzip <$> mapM flattenPattern ps
+             ; return ( v
+                      , \e -> Case (Var v) [(FPCons k vs,foldr ($) e fs)])
+             }
+
+flattenPatterns' (CoCase coalts) = return (CoCase (undefined coalts))
+  -- where withInnerMostAndDepth :: (FlatQ -> Int -> r) -> CoPattern -> r
+  --       withInnerMostAndDepth f q = wIMD f q 0
+  --         where wIMD f D.QHead i -> f D.QHead i
+  --               wIMD
+
+
+--------------------------------------------------------------------------------
+--                              Evaluation                                    --
+--------------------------------------------------------------------------------
+{- Evaluation is done over the more complex, recursive patterns and copatterns
+-}
+type Env = [(Variable,Term Pattern CoPattern)]
+
+{- An evaluation context for CoPatterns to match on -}
+data QCtx where
+  Empty      :: QCtx
+  Destructor :: QCtx -> Term Pattern CoPattern -> QCtx
+  Destructee :: Variable -> QCtx -> QCtx
+  deriving (Show,Eq)
 
 {- The machine returns results which can be of positive or negative types. We
    call this result instead of value (as is the common approach) because of the
    polarity of values. -}
 data Result where
   RInt     :: Int -> Result
-  RConsApp :: Variable -> [Term] -> Result
+  RConsApp :: Variable -> [Term Pattern CoPattern] -> Result
   RDest    :: Variable -> Result
-  RCoCase  :: [(CoPattern,Term)] -> Result
+  RCoCase  :: [(CoPattern,Term Pattern CoPattern)] -> Result
   deriving (Eq,Show)
 
-{- Vars are introduced and consumed by pattern matching within terms. -}
-type Variable = String
+data Machine
+  = Machine { run :: (Term Pattern CoPattern, QCtx, Env)
+                  -> (Result, QCtx, Env)
+            }
 
-
-------------------------
--- Term Manipulations --
-------------------------
-
-{- `collectArgs` will recur down an application to find the constructor and its
-   arguments -}
-collectArgs :: Term -> Maybe (Variable,[Term])
-collectArgs (App e t) = collectArgs e >>= \(k,ts) -> return (k,t:ts)
-collectArgs (Cons k)  = return (k,[])
-collectArgs _         = Nothing
-
-{- `distributeArgs` will take a constructor and its arguments and construct a
-   term applying the constructor to all of its arguments -}
-distributeArgs :: (Variable,[Term]) -> Term
-distributeArgs (k,ts) = foldl App (Cons k) ts
-
-innerMostCoPattern :: CoPattern -> CoPattern
-innerMostCoPattern QHash           = QHash
-innerMostCoPattern (QPat QHash p)  = QPat QHash p
-innerMostCoPattern (QDest h QHash) = QDest h QHash
-innerMostCoPattern (QDest _ q)     = innerMostCoPattern q
-innerMostCoPattern (QPat q _)      = innerMostCoPattern q
-
---------------------------------------------------------------------------------
---                              Evaluation                                    --
---------------------------------------------------------------------------------
-
-type Env = [(Variable,Term)]
-
-{- An evaluation context for CoPatterns to match on -}
-data QCtx where
-  Empty      :: QCtx
-  Destructor :: QCtx -> Term -> QCtx
-  Destructee :: Variable -> QCtx -> QCtx
-  deriving (Show,Eq)
-
-data Machine = Machine { run :: (Term, QCtx, Env) -> (Result, QCtx, Env) }
-
-evalStart :: Term -> Result
+evalStart :: Term Pattern CoPattern -> Result
 evalStart t = case run evalMachine (t,Empty,[]) of
                 (r,_,_) -> r
 
@@ -203,7 +312,9 @@ evalMachine = Machine $ \(t,qc,env) ->
         t1' -> error $ show t1' ++ " is not a valid application term"
 
     Case t' alts ->
-      let tryAlts :: Term -> [(Pattern,Term)] -> (Result, QCtx, Env)
+      let tryAlts :: Term Pattern CoPattern
+                  -> [(Pattern,Term Pattern CoPattern)]
+                  -> (Result, QCtx, Env)
           tryAlts _ [] = error "no matching alternative"
           tryAlts r ((p,t''):alts') =
             case matchPattern r p of
@@ -217,7 +328,8 @@ evalMachine = Machine $ \(t,qc,env) ->
 
 
     CoCase coalts ->
-      let tryCoAlts :: [(CoPattern,Term)] -> Maybe (Result, QCtx, Env)
+      let tryCoAlts :: [(CoPattern,Term Pattern CoPattern)]
+                    -> Maybe (Result, QCtx, Env)
           tryCoAlts [] = Nothing
           tryCoAlts ((q,t'):coalts') =
             case matchCoPattern qc (innerMostCoPattern q) of
@@ -233,7 +345,7 @@ evalMachine = Machine $ \(t,qc,env) ->
 
 {- Takes a term and a pattern and returns a set of substitutions if it succeeds.
    Note that the set of substitutions can be empty. This is pretty standard. -}
-matchPattern :: Term -> Pattern -> Maybe [(Variable,Term)]
+matchPattern :: Term Pattern q -> Pattern -> Maybe [(Variable,Term Pattern q)]
 matchPattern _ PWild    = Just []
 matchPattern t (PVar v) = Just [(v,t)]
 matchPattern t (PCons k' ps) =
@@ -285,10 +397,12 @@ matchPattern t (PCons k' ps) =
 
 -}
 
-matchCoPattern :: QCtx -> CoPattern -> Maybe (QCtx,[(Variable,Term)])
+matchCoPattern :: QCtx
+               -> CoPattern
+               -> Maybe (QCtx,[(Variable,Term Pattern CoPattern)])
 
 {- Q , # -}
-matchCoPattern qc QHash = Just (qc,[])
+matchCoPattern qc QHead = Just (qc,[])
 
 {- Q t , q p -}
 matchCoPattern (Destructor qc t) (QPat q p) =

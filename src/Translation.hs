@@ -69,7 +69,8 @@ addVarAssoc s t =
   do { st <- get
      ; put (st { vMap = (s,t):(vMap st)}) }
 
-
+lookupVar :: D.Variable -> TransM (Maybe Hs.Variable)
+lookupVar v = lookup v . vMap <$> get
 
 --------------------------------------------------------------------------------
 --                                Top Level                                   --
@@ -79,71 +80,9 @@ translateProgram :: D.Program -> Hs.Program
 translateProgram dpgm =
   fst $ runState
   (do { decls <- mapM translateDecl (D.pgmDecls dpgm)
-      ; term  <- translateTerm =<< (flattenPatterns . D.pgmTerm $ dpgm)
+      ; term  <- translateTerm . D.flattenPatterns . D.pgmTerm $ dpgm
       ; return (Hs.Pgm decls term) })
   startState
-
-{- `flattenPattern` will traverse a term, turning (co)case expressions with
-   nested (co-)patterns in ones nesting (co)case expressions instead. This
-   simplifies translation.
-
-   An example of flattening a case:
-   ```
-   case (Pair (Pair 0 1) (Pair 1 2))
-     { Pair (Pair w x) (Pair y z) -> w + x + y + z }
-   ```
-   ===>
-   ```
-   case (Pair 0 (Pair 1 2))
-     { Pair p0 p1 ->
-         case p0
-           { Pair w x ->
-               case p1
-                { Pair y z -> w + x + y + z
-                }
-           }
-     }
-   ```
-
-   An example of flattening a cocase:
-   ```
-   cocase { Fst # -> 0
-          , Fst (Snd #) -> 1
-          , Snd (Snd #) -> 2 }
-   ```
-   ===>
-   ```
-   cocase { Fst # -> 0
-          , Snd # -> cocase { Fst # -> 1
-                            , Snd # -> 2 } }
-   ```
--}
-
-flattenPatterns :: D.Term -> TransM D.Term
-flattenPatterns (D.Lit i) = return (D.Lit i)
-flattenPatterns (D.Add a b) = D.Add <$> flattenPatterns a <*> flattenPatterns b
-flattenPatterns (D.Var v) = return (D.Var v)
-flattenPatterns (D.Fix v t) = D.Fix v <$> flattenPatterns t
-flattenPatterns (D.App a b) = D.App <$> flattenPatterns a <*> flattenPatterns b
-flattenPatterns (D.Cons k) = return (D.Cons k)
-flattenPatterns (D.Dest h) = return (D.Dest h)
-flattenPatterns (D.Case t alts) = D.Case t <$> mapM flattenAlt alts
-  where flattenAlt (D.PWild,u)          = return (D.PWild,u)
-        flattenAlt (D.PVar v,u)         = return (D.PVar v,u)
-        flattenAlt (D.PCons k [],u)     = return (D.PCons k [],u)
-        flattenAlt (D.PCons k (p:ps),u) =
-          do { u' <- flattenPatterns u
-             ; (p',v)  <- uniquify "p" >>= \v -> return (p,v)
-             ; ps' <- mapM (\p'' -> uniquify "p" >>= \v' -> return (p'',v'))
-                           ps
-             ; let u'' = foldl (\acc (p'',v'') ->
-                                 D.Case (D.Var v'') [(p'',acc)]
-                               )
-                               (D.Case (D.Var v) [(p',u')])
-                               ps'
-             ; return (D.PCons k ((D.PVar v):(map (D.PVar . snd) ps')),u'') }
-flattenPatterns (D.CoCase coalts) = return (D.CoCase coalts)
-
 
 --------------------------------------------------------------------------------
 --                              Declarations                                  --
@@ -243,14 +182,17 @@ translateType (D.TyCons k)  =
 --                                  Terms                                     --
 --------------------------------------------------------------------------------
 
-translateTerm :: D.Term -> TransM Hs.Term
+translateTerm :: D.Term D.FlatP D.FlatQ -> TransM Hs.Term
 translateTerm (D.Lit i) = return (Hs.Lit i)
 translateTerm (D.Add a b) = Hs.Add <$> translateTerm a <*> translateTerm b
 translateTerm (D.Var v) =
-  do { m <- vMap <$> get
-     ; case lookup v m of
+  do { m <- lookupVar v
+     ; case m of
          Just v' -> return (Hs.Var v')
-         Nothing -> error ("untranslated variable " <> v) }
+         Nothing -> do { vm <- vMap <$> get
+                       ; error ("untranslated variable " <> v
+                               <> "\nin: " <> show vm) }
+     }
 translateTerm (D.Fix v t) =
   do { v' <- uniquify v
      ; addVarAssoc v v'
@@ -263,6 +205,7 @@ translateTerm (D.Cons k) =
 translateTerm (D.Case t alts) = Hs.Case <$> translateTerm t
                                         <*> mapM (\(p,e) ->
                                                    do { p' <- translatePattern p
+                                                      ; error  . show . vMap <$> get
                                                       ; e' <- translateTerm e
                                                       ; return (p',e') })
                                                  alts
@@ -316,11 +259,11 @@ translateTerm (D.Dest h) =
                                          ,(Hs.Var x))]))
               }
          Nothing -> error ("cannot find destructor " <> h) }
-  where mkPatterns :: Int -> Int -> Hs.Variable -> [Hs.Pattern]
+  where mkPatterns :: Int -> Int -> Hs.Variable -> [Hs.Variable]
         mkPatterns 0 _ _ = []
         mkPatterns a i x = case i == a of
-                             True  -> Hs.PVar x : mkPatterns (pred a) i x
-                             False -> Hs.PWild  : mkPatterns (pred a) i x
+                             True  -> x : mkPatterns (pred a) i x
+                             False -> "_"  : mkPatterns (pred a) i x -- this is a lazy,dirty,nasty,ugly hack
 
 
 {- [Translating CoCase]
@@ -336,31 +279,37 @@ translateTerm (D.Dest h) =
 -}
 
 translateTerm (D.CoCase coalts) = translateCoAlt (head coalts)
-  where translateCoAlt :: (D.CoPattern,D.Term) -> TransM (Hs.Term)
+  where translateCoAlt :: (D.FlatQ, D.Term D.FlatP D.FlatQ)
+                       -> TransM Hs.Term
         translateCoAlt (q,t) =
           case q of
-            D.QHash -> translateTerm t
-            D.QDest h _ ->
+            D.FQHead -> translateTerm t
+            D.FQDest h ->
               do { mk <- lookupDestAssoc h
                  ; case mk of
                      Just (k,_,_) ->
                        do { t' <- translateTerm t
                           ; return (Hs.App (Hs.Cons k) t') }
                      Nothing -> error ("cannot find destructor" <> h)}
-            D.QPat _ p ->
+            D.FQPat p ->
               do { v <- uniquify "v"
                  ; p' <- translatePattern p
                  ; t' <- translateTerm t
                  ; return (Hs.Lam v (Hs.Case (Hs.Var v) [(p',t')]))}
 
-translatePattern :: D.Pattern -> TransM Hs.Pattern
-translatePattern D.PWild = return Hs.PWild
-translatePattern (D.PVar v) =
+translatePattern :: D.FlatP -> TransM Hs.Pattern
+translatePattern D.FPWild = return Hs.PWild
+translatePattern (D.FPVar v) =
   do { v' <- uniquify v
      ; addVarAssoc v v'
      ; return (Hs.PVar v') }
-translatePattern (D.PCons k ps) =
+translatePattern (D.FPCons k vs) =
   do { m <- vMap <$> get
      ; case lookup k m of
-         Just k' -> Hs.PCons k' <$> mapM translatePattern ps
-         Nothing -> error ("untranslated constructor " <> k <> " in pattern" <> show (D.PCons k ps)) }
+         Just k' -> do { vs' <- forM vs $ \v ->
+                                  do { v' <- uniquify v
+                                     ; addVarAssoc v v'
+                                     ; return v' }
+                       ; return (Hs.PCons k' vs') }
+         Nothing -> error (  "untranslated constructor " <> k
+                          <> " in pattern" <> show (D.FPCons k vs)) }

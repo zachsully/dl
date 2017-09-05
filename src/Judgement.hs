@@ -53,7 +53,7 @@ inferTSProgram :: Program -> TypeScheme
 inferTSProgram pgm = inferTS (mkContext . pgmDecls $ pgm)
                              (pgmTerm pgm)
 
-inferTS :: [(Variable,Type)] -> Term -> TypeScheme
+inferTS :: [(Variable,Type)] -> Term Pattern CoPattern -> TypeScheme
 inferTS _ (Lit _)    = TyMono TyInt
 inferTS c (Add a b)  = case (inferTS c a,inferTS c b) of
                          (TyMono TyInt, TyMono TyInt) -> TyMono TyInt
@@ -73,7 +73,7 @@ inferTS c (Case e a) = let _ = inferTS c e
                             (t:ts) -> case all (== t) ts of
                                         True -> t
                                         False -> error "all case branches must have the same type"
-  where inferTSAlt :: (Pattern,Term) -> TypeScheme
+  where inferTSAlt :: (Pattern,Term Pattern CoPattern) -> TypeScheme
         inferTSAlt (_,t) = inferTS c t
 
         -- inferTSPattern :: Pattern -> TypeScheme
@@ -120,7 +120,7 @@ unify a b = error (unwords ["cannot unify",show a,"and",show b])
 -----------
 -- infer --
 -----------
-infer :: [Decl] -> Ctx -> Term -> Type
+infer :: [Decl] -> Ctx -> Term Pattern CoPattern -> Type
 infer _ _ (Lit _) = TyInt
 
 infer s c (Add a b) =
@@ -167,7 +167,7 @@ infer _ _ (CoCase _) = error "infer{CoCase}"
 -- check --
 -----------
 
-check :: [Decl] -> Ctx -> Term -> Type -> Bool
+check :: [Decl] -> Ctx -> Term Pattern CoPattern -> Type -> Bool
 check _ _ (Lit _)   TyInt = True
 check s c (Add a b) TyInt = check s c a TyInt && check s c b TyInt
 check _ c (Var v)   ty    = case lookup v c of

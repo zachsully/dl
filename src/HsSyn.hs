@@ -60,10 +60,11 @@ data Term where
   Case :: Term -> [(Pattern,Term)] -> Term
   deriving (Eq,Show)
 
+{- Only need flat patterns here -}
 data Pattern where
   PWild :: Pattern
   PVar  :: Variable -> Pattern
-  PCons :: Variable -> [Pattern] -> Pattern
+  PCons :: Variable -> [Variable] -> Pattern
   deriving (Eq,Show)
 
 type Variable = String
@@ -147,5 +148,4 @@ ppTerm (Case t alts) i p =
         ppPattern :: Pattern -> String
         ppPattern PWild = "_"
         ppPattern (PVar s) = s
-        ppPattern (PCons s ps) =
-          "(" <> s <+> (smconcat . map ppPattern $ ps) <> ")"
+        ppPattern (PCons s vs) = s <+> smconcat vs
