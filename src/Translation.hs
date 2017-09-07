@@ -205,7 +205,7 @@ translateTerm (D.Cons k) =
 translateTerm (D.Case t alts) = Hs.Case <$> translateTerm t
                                         <*> mapM (\(p,e) ->
                                                    do { p' <- translatePattern p
-                                                      ; error  . show . vMap <$> get
+                                                      ; _ <- error  . show . vMap <$> get
                                                       ; e' <- translateTerm e
                                                       ; return (p',e') })
                                                  alts

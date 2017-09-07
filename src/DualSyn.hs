@@ -272,9 +272,8 @@ type Env = [(Variable,Term Pattern CoPattern)]
 
 {- An evaluation context for CoPatterns to match on -}
 data QCtx where
-  Empty      :: QCtx
-  Destructor :: QCtx -> Term Pattern CoPattern -> QCtx
-  Destructee :: Variable -> QCtx -> QCtx
+  Empty :: QCtx
+  Push  :: Term Pattern CoPattern -> QCtx -> QCtx
   deriving (Show,Eq)
 
 {- The machine returns results which can be of positive or negative types. We
@@ -318,16 +317,16 @@ evalMachine = Machine $ \(t,qc,env) ->
     Cons k -> (RConsApp k [], qc, env)
     Dest d -> (RDest d, qc, env)
 
-    App t1 t2 ->
-      case run evalMachine (t1,qc,env) of
-        (RConsApp k ts,qc',env')  -> (RConsApp k (t2:ts),qc',env')
+    App t1 t2 -> run evalMachine (t1,Push t2 qc,env)
+      -- case run evalMachine (t1,Push t2 qc,env) of
+      --   (RConsApp k ts,qc',env')  -> (RConsApp k (t2:ts),qc',env')
 
-        (RDest d,qc',env') -> run evalMachine (t2,Destructee d qc',env')
+      --   (RDest d,qc',env') -> run evalMachine (t2,Destructee d qc',env')
 
-        (RCoCase coalts,qc',env') ->
-          run evalMachine (CoCase coalts,Destructor qc' t2,env')
+      --   (RCoCase coalts,qc',env') ->
+      --     run evalMachine (CoCase coalts,Destructor qc' t2,env')
 
-        t1' -> error $ show t1' ++ " is not a valid application term"
+      --   t1' -> error $ show t1' ++ " is not a valid application term"
 
     Case t' alts ->
       let tryAlts :: Term Pattern CoPattern
@@ -423,13 +422,13 @@ matchCoPattern :: QCtx
 matchCoPattern qc QHead = Just (qc,[])
 
 {- Q t , q p -}
-matchCoPattern (Destructor qc t) (QPat q p) =
+matchCoPattern (Push t qc) (QPat q p) =
   do { (qc',subs1) <- matchCoPattern qc q
      ; subs2 <-  matchPattern t p
      ; return (qc',(subs1++subs2)) }
 
 {- H Q , H q -}
-matchCoPattern (Destructee s qc) (QDest s' q) =
+matchCoPattern (Push (Dest s) qc) (QDest s' q) =
   case s == s' of
     True -> matchCoPattern qc q
     False -> Nothing

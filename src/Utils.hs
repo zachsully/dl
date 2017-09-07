@@ -2,6 +2,12 @@ module Utils where
 
 import Data.Monoid
 
+class Pretty a where
+  pp :: a -> String
+
+pprint :: Pretty a => a -> IO ()
+pprint = putStrLn . pp
+
 infixr 0 <+>
 (<+>) :: String -> String -> String
 a <+> b = a <> " " <> b
