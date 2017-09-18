@@ -286,12 +286,27 @@ flattenPatterns' (CoCase ((QDest h QHead,u):coalts)) =
      }
 -- R-Rec
 flattenPatterns' (CoCase ((q,u):coalts)) =
+  flattenPatterns' (CoCase coalts) >>= \cocase' ->
+  flattenPatterns' u >>= \u' ->
   case popInner q of
-    (Just r,QPat QHead p)   -> undefined
-    (Nothing,QPat QHead p)  -> undefined
-    (Just r,QDest h QHead)  -> undefined
-    (Nothing,QDest h QHead) -> undefined
-    (_,QHead) -> error "should be handdedl"
+    (Just rest, QDest h QHead) ->
+      do { u' <- flattenPatterns' ( CoCase [(rest,  u)
+                                           ,(QHead, App (Dest h) (CoCase coalts))
+                                           ]
+                                  )
+         ; return (CoCase [(FQDest h, u')
+                          ,(FQHead,cocase')]) }
+    (Just rest, QPat QHead p) ->
+      do { x <- fresh "x"
+         ; u' <- flattenPatterns' ( CoCase [(rest,  u)
+                                           ,(QHead, App (CoCase coalts) (Var x))
+                                           ]
+                                  )
+         ; return (CoCase [(FQPat (FPVar x), u')
+                          ,(FQHead,cocase')]) }
+    x -> error $ "todo{flattenPatterns'}" <+> show x
+
+-- R-Empty is id
 flattenPatterns' (CoCase []) = return (CoCase [])
 
 
@@ -467,3 +482,43 @@ matchCoPattern (Push (Dest s) qc) (QDest s' q) =
     False -> Nothing
 
 matchCoPattern _ _ = Nothing
+
+
+--------------------------------------------------------------------------------
+--                              Pretty Printing                               --
+--------------------------------------------------------------------------------
+
+instance (Pretty p, Pretty q) => Pretty (Term p q) where
+  ppInd _ (Lit i)         = show i
+  ppInd i (Add a b)       = (parens . ppInd i $ a)
+                        <+> "+"
+                        <+> (parens . ppInd i $ b)
+  ppInd _ (Var s)         = s
+  ppInd i (Fix s t)       = "fix" <+> s <+> "in" <-> indent i (ppInd (i+1) t)
+  ppInd i (App a b)       = (parens . ppInd i $ a) <+> (parens . ppInd i $ b)
+  ppInd _ (Cons k)        = k
+  ppInd i (Case t alts)   = "case"
+                        <+> ppInd i t
+                        <-> indent (i+1) "{"
+                        <-> ( stringmconcat ("\n" <> (indent i "| "))
+                            . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+2) u <> "\n")
+                            $ alts)
+                        <-> indent (i+1) "}"
+  ppInd _ (Dest h)        = h
+  ppInd i (CoCase [])     = "cocase {}"
+  ppInd i (CoCase coalts) = "cocase"
+                        <-> indent (i+1) "{ "
+                        <>  ( stringmconcat ("\n" <> (indent (i+1) ", "))
+                            . fmap (\(q,u) -> pp q <+> "->" <+> ppInd (i+2) u)
+                            $ coalts)
+                        <-> indent (i+1) "}"
+
+instance Pretty FlatP where
+  pp FPWild        = "_"
+  pp (FPVar s)     = s
+  pp (FPCons k vs) = k <+> smconcat vs
+
+instance Pretty FlatQ where
+  pp FQHead     = "#"
+  pp (FQDest h) = h <+> "#"
+  pp (FQPat p)  = "#" <+> pp p

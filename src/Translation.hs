@@ -4,9 +4,11 @@ module Translation where
 import Control.Monad.State
 import Data.Monoid ((<>))
 import Data.Foldable (foldrM)
+import Debug.Trace
 
 import qualified DualSyn as D
 import qualified HsSyn as Hs
+import Utils
 
 {- A lot of the translation is boilerplate. We use separate syntax for DualSyn
    and HsSyn to make explicit what is happening even though the former is a
@@ -80,7 +82,8 @@ translateProgram :: D.Program -> Hs.Program
 translateProgram dpgm =
   fst $ runState
   (do { decls <- mapM translateDecl (D.pgmDecls dpgm)
-      ; term  <- translateTerm . D.flattenPatterns . D.pgmTerm $ dpgm
+      ; let ft = D.flattenPatterns . D.pgmTerm $ dpgm
+      ; term  <- trace (pp ft) $ translateTerm ft
       ; return (Hs.Pgm decls term) })
   startState
 

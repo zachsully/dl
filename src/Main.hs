@@ -105,7 +105,7 @@ runCompile :: CompileMode -> IO ()
 runCompile cm =
   do { pgm <- getProgram (cmInput cm)
      ; when (cmDebug cm) $ print pgm
-     ; let prog' = H.ppProgram . translateProgram $ pgm
+     ; let !prog' = H.ppProgram . translateProgram $ pgm
      ; case cmOutput cm of
          "-" -> putStrLn prog'
          fp  -> writeFile fp prog'
