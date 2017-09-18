@@ -172,6 +172,21 @@ innerMostCoPattern (QDest h QHead) = QDest h QHead
 innerMostCoPattern (QDest _ q)     = innerMostCoPattern q
 innerMostCoPattern (QPat q _)      = innerMostCoPattern q
 
+{- Used in the context filling rules R-RecPat and R-RedDest -}
+popInner :: CoPattern -> (Maybe CoPattern,CoPattern)
+popInner QHead           = (Nothing, QHead)
+popInner (QPat QHead p)  = (Nothing, (QPat QHead p))
+popInner (QDest h QHead) = (Nothing, (QDest h QHead))
+popInner (QDest h q)     = let (m,i) = popInner q in
+                           case m of
+                             Nothing -> (Just (QDest h QHead), i)
+                             Just q' -> (Just (QDest h q'), i)
+popInner (QPat q p)      = let (m,i) = popInner q in
+                           case m of
+                             Nothing -> (Just (QPat QHead p), i)
+                             Just q' -> (Just (QPat q' p), i)
+
+
 {- `flattenPattern` will traverse a term, turning (co)case expressions with
    nested (co-)patterns in ones nesting (co)case expressions instead. This
    simplifies translation.
@@ -249,18 +264,36 @@ flattenPatterns' (Case t alts) = Case <$> flattenPatterns' t
                       , \e -> Case (Var v) [(FPCons k vs,foldr ($) e fs)])
              }
 
-flattenPatterns' (CoCase coalts) =
-  let maxD = maximum . map (getDepth . fst) $ coalts in
-  do { error . show $ maxD }
-  where getDepth :: CoPattern -> Int
-        getDepth QHead       = 0
-        getDepth (QDest _ q) = 1 + getDepth q
-        getDepth (QPat q _)  = 1 + getDepth q
+-- R-QHead
+flattenPatterns' (CoCase ((QHead,u):_)) = flattenPatterns' u
+-- R-QPVar
+flattenPatterns' (CoCase ((QPat QHead (PVar v),u):_)) =
+  do { u' <- flattenPatterns' u
+     ; return (CoCase [(FQPat (FPVar v), u')]) }
+-- R-QPat
+flattenPatterns' (CoCase ((QPat QHead p,u):coalts)) =
+  do { v <- fresh "p"
+     ; y <- fresh "y"
+     ; let t = Case (Var v) [(p,u),(PVar y,CoCase coalts)]
+     ; t' <- flattenPatterns' t
+     ; return (CoCase [(FQPat (FPVar v), t')])
+     }
+-- R-QDest
+flattenPatterns' (CoCase ((QDest h QHead,u):coalts)) =
+  do { u' <- flattenPatterns' u
+     ; coalts' <- flattenPatterns' (CoCase coalts)
+     ; return (CoCase [(FQDest h,u'),(FQHead,coalts')])
+     }
+-- R-Rec
+flattenPatterns' (CoCase ((q,u):coalts)) =
+  case popInner q of
+    (Just r,QPat QHead p)   -> undefined
+    (Nothing,QPat QHead p)  -> undefined
+    (Just r,QDest h QHead)  -> undefined
+    (Nothing,QDest h QHead) -> undefined
+    (_,QHead) -> error "should be handdedl"
+flattenPatterns' (CoCase []) = return (CoCase [])
 
-  -- where withInnerMostAndDepth :: (FlatQ -> Int -> r) -> CoPattern -> r
-  --       withInnerMostAndDepth f q = wIMD f q 0
-  --         where wIMD f D.QHead i -> f D.QHead i
-  --               wIMD
 
 
 --------------------------------------------------------------------------------
