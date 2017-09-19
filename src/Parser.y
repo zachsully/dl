@@ -6,7 +6,7 @@ import Lexer
 import DualSyn
 }
 -- All shift/reduce conflicts
-%expect 14
+%expect 18
 
 %name parseProgram program
 %name parseType type
@@ -25,6 +25,8 @@ import DualSyn
   'case'   { TokCase }
   'cocase' { TokCocase }
   'fix'    { TokFix }
+  'let'    { TokLet }
+  '='      { TokEq }
   'in'     { TokIn }
   '#'      { TokHash }
   '_'      { TokUnderscore }
@@ -119,11 +121,12 @@ term1 :  term  termA              { App $1 $2 }
       |  term2                    { $1 }
 
 term2 :: { Term Pattern CoPattern }
-term2 :  term '+' termA          { Add $1 $3 }
-      |  'fix' str 'in' term      { Fix $2 $4 }
-      |  'case' term '{' alts '}' { Case $2 (reverse $4) }
-      |  'cocase' '{' coalts '}'  { CoCase (reverse $3) }
-      |  termA                    { $1 }
+term2 :  term '+' termA                { Add $1 $3 }
+      |  'fix' str 'in' term           { Fix $2 $4 }
+      |  'let' str '=' term 'in' term  { Let $2 $4 $6 }
+      |  'case' term '{' alts '}'      { Case $2 (reverse $4) }
+      |  'cocase' '{' coalts '}'       { CoCase (reverse $3) }
+      |  termA                         { $1 }
 
 {- We lookup to see if the string is defined as a symbol and a singleton
    constructor, otherwise it is a variable. -}

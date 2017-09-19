@@ -13,7 +13,15 @@ data Program
   , pgmTerm  :: Term Pattern CoPattern}
   deriving (Show,Eq)
 
+instance Pretty Program where
+  pp pgm = (stringmconcat "\n\n" . fmap pp . pgmDecls $ pgm)
+        <> "\n\n"
+        <> (pp . pgmTerm $ pgm)
+
 type Decl = Either NegativeTyCons PositiveTyCons
+
+instance (Pretty a,Pretty b) => Pretty (Either a b) where
+  pp _ = ""
 
 declArity :: Decl -> Int
 declArity (Left d)  = length . negTyFVars $ d
@@ -65,6 +73,9 @@ data NegativeTyCons
   , projections :: [Projection] }
   deriving (Eq,Show)
 
+instance Pretty NegativeTyCons where
+  pp tc = "codata" <+> negTyName tc
+
 negTyArity :: NegativeTyCons -> Int
 negTyArity = length . negTyFVars
 
@@ -81,6 +92,9 @@ data PositiveTyCons
   , posTyFVars :: [TyVariable]
   , injections :: [Injection]  }
   deriving (Eq, Show)
+
+instance Pretty PositiveTyCons where
+  pp tc = "data" <+> posTyName tc
 
 posTyArity :: PositiveTyCons -> Int
 posTyArity = length . posTyFVars
@@ -100,6 +114,8 @@ data Injection
    important because we only translate flat (co)patterns.
 -}
 data Term p q where
+  Let :: Variable -> Term p q -> Term p q -> Term p q
+
   -- ^ Number primitives
   Lit :: Int -> Term p q
   Add :: Term p q -> Term p q -> Term p q
@@ -114,6 +130,33 @@ data Term p q where
   Dest :: Variable -> Term p q
   CoCase :: [(q,Term p q)] -> Term p q
   deriving (Eq,Show)
+
+instance (Pretty p, Pretty q) => Pretty (Term p q) where
+  ppInd _ (Lit i)         = show i
+  ppInd i (Add a b)       = (parens . ppInd i $ a)
+                        <+> "+"
+                        <+> (parens . ppInd i $ b)
+  ppInd _ (Var s)         = s
+  ppInd i (Fix s t)       = "fix" <+> s <+> "in" <-> indent i (ppInd (i+1) t)
+  ppInd i (Let s a b)     = "let" <+> s <+> "=" <+> ppInd (i+1) a
+                        <-> indent i ("in" <+> ppInd (i+1) b)
+  ppInd i (App a b)       = (parens . ppInd i $ a) <+> (parens . ppInd i $ b)
+  ppInd _ (Cons k)        = k
+  ppInd i (Case t alts)   = "case"
+                        <+> ppInd i t
+                        <-> indent (i+1) "{"
+                        <-> ( stringmconcat ("\n" <> (indent i "| "))
+                            . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+2) u <> "\n")
+                            $ alts)
+                        <-> indent (i+1) "}"
+  ppInd _ (Dest h)        = h
+  ppInd i (CoCase [])     = "cocase {}"
+  ppInd i (CoCase coalts) = "cocase"
+                        <-> indent (i+1) "{ "
+                        <>  ( stringmconcat ("\n" <> (indent (i+1) ", "))
+                            . fmap (\(q,u) -> pp q <+> "->" <+> ppInd (i+2) u)
+                            $ coalts)
+                        <-> indent (i+1) "}"
 
 {- Vars are introduced and consumed by pattern matching within terms. -}
 type Variable = String
@@ -135,19 +178,34 @@ distributeArgs (k,ts) = foldl App (Cons k) ts
 -- (Co)patterns --
 ------------------
 
+{- Pattern -}
 data Pattern where
   PWild :: Pattern
   PVar  :: Variable -> Pattern
   PCons :: Variable -> [Pattern] -> Pattern
   deriving (Eq,Show)
 
-{- Atomic patterns are either wildcards or variables -}
+instance Pretty Pattern where
+  pp PWild        = "_"
+  pp (PVar s)     = s
+  pp (PCons k ps) = k <+> (smconcat . fmap (parens . pp) $ ps)
+-----------
+
+{- Flat Patterns -}
 data FlatP where
   FPWild :: FlatP
   FPVar  :: Variable -> FlatP
   FPCons :: Variable -> [Variable] -> FlatP
   deriving (Eq,Show)
 
+instance Pretty FlatP where
+  pp FPWild        = "_"
+  pp (FPVar s)     = s
+  pp (FPCons k vs) = k <+> smconcat vs
+-----------
+
+
+{- Copatterns -}
 {- NOTE: we often use 'q' for a copattern variables -}
 data CoPattern where
   QHead :: CoPattern                          -- ^ the copattern matching the context
@@ -155,11 +213,24 @@ data CoPattern where
   QPat  :: CoPattern -> Pattern -> CoPattern  -- ^ a copattern applied ot a pattern
   deriving (Eq,Show)
 
+instance Pretty CoPattern where
+  pp QHead       = "#"
+  pp (QDest h q) = h <+> (parens . pp $ q)
+  pp (QPat q p)  = (parens . pp $ q) <+> (parens . pp $ p)
+--------------
+
+{- Flat Copatterns -}
 data FlatQ where
   FQHead :: FlatQ
   FQDest :: Variable -> FlatQ
   FQPat  :: FlatP    -> FlatQ
   deriving (Eq,Show)
+
+instance Pretty FlatQ where
+  pp FQHead     = "#"
+  pp (FQDest h) = h <+> "#"
+  pp (FQPat p)  = "#" <+> pp p
+
 
 --------------------------------------------------------------------------------
 --                        Term Manipulations --
@@ -349,6 +420,7 @@ evalMachine :: Machine
 evalMachine = Machine $ \(t,qc,env) ->
   trace ("---------------\nt: " <> show t <> "\nQ: " <> show qc <> "\n") $
   case t of
+    Let v a b -> run evalMachine (b,qc,(v,a):env)
     Lit i -> (RInt i,qc,env)
     Add t1 t2 ->
       case (run evalMachine (t1,qc,env), run evalMachine (t2,qc,env)) of
@@ -365,16 +437,13 @@ evalMachine = Machine $ \(t,qc,env) ->
     Cons k -> (RConsApp k [], qc, env)
     Dest d -> (RDest d, qc, env)
 
-    App t1 t2 -> run evalMachine (t1,Push t2 qc,env)
-      -- case run evalMachine (t1,Push t2 qc,env) of
-      --   (RConsApp k ts,qc',env')  -> (RConsApp k (t2:ts),qc',env')
-
-      --   (RDest d,qc',env') -> run evalMachine (t2,Destructee d qc',env')
-
-      --   (RCoCase coalts,qc',env') ->
-      --     run evalMachine (CoCase coalts,Destructor qc' t2,env')
-
-      --   t1' -> error $ show t1' ++ " is not a valid application term"
+    App t1 t2 ->
+      case run evalMachine (t1,qc,env) of
+        (RConsApp k ts,qc',env')  -> (RConsApp k (t2:ts),qc',env')
+        -- (RCoCase coalts,qc',env') ->
+        --   run evalMachine (CoCase coalts,Destructor qc' t2,env')
+        -- (RDest d,qc',env') -> run evalMachine (t2,qc,env')
+        t1' -> error $ show t1' ++ " is not a valid application term"
 
     Case t' alts ->
       let tryAlts :: Term Pattern CoPattern
@@ -482,43 +551,3 @@ matchCoPattern (Push (Dest s) qc) (QDest s' q) =
     False -> Nothing
 
 matchCoPattern _ _ = Nothing
-
-
---------------------------------------------------------------------------------
---                              Pretty Printing                               --
---------------------------------------------------------------------------------
-
-instance (Pretty p, Pretty q) => Pretty (Term p q) where
-  ppInd _ (Lit i)         = show i
-  ppInd i (Add a b)       = (parens . ppInd i $ a)
-                        <+> "+"
-                        <+> (parens . ppInd i $ b)
-  ppInd _ (Var s)         = s
-  ppInd i (Fix s t)       = "fix" <+> s <+> "in" <-> indent i (ppInd (i+1) t)
-  ppInd i (App a b)       = (parens . ppInd i $ a) <+> (parens . ppInd i $ b)
-  ppInd _ (Cons k)        = k
-  ppInd i (Case t alts)   = "case"
-                        <+> ppInd i t
-                        <-> indent (i+1) "{"
-                        <-> ( stringmconcat ("\n" <> (indent i "| "))
-                            . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+2) u <> "\n")
-                            $ alts)
-                        <-> indent (i+1) "}"
-  ppInd _ (Dest h)        = h
-  ppInd i (CoCase [])     = "cocase {}"
-  ppInd i (CoCase coalts) = "cocase"
-                        <-> indent (i+1) "{ "
-                        <>  ( stringmconcat ("\n" <> (indent (i+1) ", "))
-                            . fmap (\(q,u) -> pp q <+> "->" <+> ppInd (i+2) u)
-                            $ coalts)
-                        <-> indent (i+1) "}"
-
-instance Pretty FlatP where
-  pp FPWild        = "_"
-  pp (FPVar s)     = s
-  pp (FPCons k vs) = k <+> smconcat vs
-
-instance Pretty FlatQ where
-  pp FQHead     = "#"
-  pp (FQDest h) = h <+> "#"
-  pp (FQPat p)  = "#" <+> pp p

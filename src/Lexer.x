@@ -19,6 +19,8 @@ tokens :-
   cocase     { const TokCocase }
   case       { const TokCase }
   fix        { const TokFix }
+  let        { const TokLet }
+  =          { const TokEq }
   in         { const TokIn }
   \#         { const TokHash }
   _          { const TokUnderscore }
@@ -43,6 +45,8 @@ data Token
   | TokCase
   | TokCocase
   | TokFix
+  | TokLet
+  | TokEq
   | TokIn
   | TokHash
   | TokUnderscore

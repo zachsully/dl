@@ -13,6 +13,7 @@ import Lexer
 import Parser
 import Translation
 import Judgement
+import Utils
 
 
 --------------------------------------------------------------------------------
@@ -104,7 +105,7 @@ getProgram fp =
 runCompile :: CompileMode -> IO ()
 runCompile cm =
   do { pgm <- getProgram (cmInput cm)
-     ; when (cmDebug cm) $ print pgm
+     ; when (cmDebug cm) $ pprint pgm
      ; let !prog' = H.ppProgram . translateProgram $ pgm
      ; case cmOutput cm of
          "-" -> putStrLn prog'
@@ -114,12 +115,12 @@ runCompile cm =
 runEvaluate :: EvalMode -> IO ()
 runEvaluate em =
   do { term <- D.pgmTerm <$> getProgram (emInput em)
-     ; when (emDebug em) $ print term
+     ; when (emDebug em) $ pprint term
      ; putStr "> "
      ; print . D.evalEmpty $ term }
 
 runTypeOf :: TypeMode -> IO ()
 runTypeOf tm =
   do { pgm <- getProgram (tmInput tm)
-     ; when (tmDebug tm) $ print pgm
+     ; when (tmDebug tm) $ pprint pgm
      ; putStrLn . ppTypeScheme . inferTSProgram $ pgm }
