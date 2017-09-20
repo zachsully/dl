@@ -52,10 +52,10 @@ data DataCon
 -}
 
 data Term where
+  Let  :: Variable -> Term -> Term -> Term
   Lit  :: Int -> Term
   Add  :: Term -> Term -> Term
   Var  :: Variable -> Term
-  Fix  :: Variable -> Term -> Term
   Lam  :: Variable -> Term -> Term
   App  :: Term -> Term -> Term
   Cons :: Variable -> Term
@@ -100,11 +100,11 @@ ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
 
 {- The Int passed in is the indentation level and precedence -}
 ppTerm :: Term -> Int -> Int -> String
+ppTerm (Let s a b)   i p = smconcat ["let",s,"=",ppTerm a i p,"in"]
+                           <-> indent i (ppTerm b i p)
 ppTerm (Lit n)       _ _ = show n
 ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
 ppTerm (Var s)       _ _ = s
-ppTerm (Fix s t)     i p = smconcat ["let",s,"=",ppTerm t i p]
-                           <-> indent i ("in" <> s)
 ppTerm (Lam s t)     i p = parens ( "\\" <> s <+> "->"
                                   <-> indent i (ppTerm t (i+1) p))
 ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> ppTerm b i p)

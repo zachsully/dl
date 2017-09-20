@@ -11,11 +11,11 @@ import qualified HsSyn as Hs
 import Utils
 
 {- A lot of the translation is boilerplate. We use separate syntax for DualSyn
-   and HsSyn to make explicit what is happening even though the former is a
-   subset of the latter.
+and HsSyn to make explicit what is happening even though the former is a subset
+of the latter.
 
    Translation is done in the context of a translation monad which keeps track
-   of unique identifiers.
+of unique identifiers.
 -}
 
 
@@ -196,10 +196,10 @@ translateTerm (D.Var v) =
                        ; error ("untranslated variable " <> v
                                <> "\nin: " <> show vm) }
      }
-translateTerm (D.Fix v t) =
-  do { v' <- uniquify v
-     ; addVarAssoc v v'
-     ; Hs.Fix v' <$> translateTerm t }
+translateTerm (D.Fix v t) = undefined
+  -- do { v' <- uniquify v
+  --    ; addVarAssoc v v'
+  --    ; Hs.Fix v' <$> translateTerm t }
 translateTerm (D.Cons k) =
   do { m <- vMap <$> get
      ; case lookup k m of
