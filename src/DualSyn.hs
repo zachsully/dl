@@ -236,26 +236,28 @@ instance Pretty FlatQ where
 --                        Term Manipulations --
 --------------------------------------------------------------------------------
 
-innerMostCoPattern :: CoPattern -> CoPattern
-innerMostCoPattern QHead           = QHead
-innerMostCoPattern (QPat QHead p)  = QPat QHead p
-innerMostCoPattern (QDest h QHead) = QDest h QHead
-innerMostCoPattern (QDest _ q)     = innerMostCoPattern q
-innerMostCoPattern (QPat q _)      = innerMostCoPattern q
+{- Used in the context filling rules R-RecPat and R-RedDest, Takes a copattern and
+returns (an optional new copattern with the inner most matchable pattern pulled
+out and replace by head) and the inner most copattern -}
 
-{- Used in the context filling rules R-RecPat and R-RedDest -}
-popInner :: CoPattern -> (Maybe CoPattern,CoPattern)
-popInner QHead           = (Nothing, QHead)
-popInner (QPat QHead p)  = (Nothing, (QPat QHead p))
-popInner (QDest h QHead) = (Nothing, (QDest h QHead))
-popInner (QDest h q)     = let (m,i) = popInner q in
-                           case m of
-                             Nothing -> (Just (QDest h QHead), i)
-                             Just q' -> (Just (QDest h q'), i)
-popInner (QPat q p)      = let (m,i) = popInner q in
-                           case m of
-                             Nothing -> (Just (QPat QHead p), i)
-                             Just q' -> (Just (QPat q' p), i)
+unplugCopattern :: CoPattern -> (Maybe CoPattern,CoPattern)
+unplugCopattern QHead           = (Nothing, QHead)
+unplugCopattern (QPat QHead p)  = (Nothing, (QPat QHead p))
+unplugCopattern (QDest h QHead) = (Nothing, (QDest h QHead))
+unplugCopattern (QDest h q)     = let (m,i) = unplugCopattern q in
+                                  case m of
+                                    Nothing -> (Just (QDest h QHead), i)
+                                    Just q' -> (Just (QDest h q'), i)
+unplugCopattern (QPat q p)      = let (m,i) = unplugCopattern q in
+                                  case m of
+                                    Nothing -> (Just (QPat QHead p), i)
+                                    Just q' -> (Just (QPat q' p), i)
+
+-- replace head with copattern in copattern
+plugCopattern :: CoPattern -> CoPattern -> CoPattern
+plugCopattern QHead       q' = q'
+plugCopattern (QDest h q) q' = QDest h (plugCopattern q q')
+plugCopattern (QPat q p)  q' = QPat (plugCopattern q q') p
 
 
 {- `flattenPattern` will traverse a term, turning (co)case expressions with
@@ -359,7 +361,7 @@ flattenPatterns' (CoCase ((QDest h QHead,u):coalts)) =
 flattenPatterns' (CoCase ((q,u):coalts)) =
   flattenPatterns' (CoCase coalts) >>= \cocase' ->
   flattenPatterns' u >>= \u' ->
-  case popInner q of
+  case unplugCopattern q of
     (Just rest, QDest h QHead) ->
       do { u' <- flattenPatterns' ( CoCase [(rest,  u)
                                            ,(QHead, App (Dest h) (CoCase coalts))
@@ -390,96 +392,126 @@ flattenPatterns' (CoCase []) = return (CoCase [])
 type Env = [(Variable,Term Pattern CoPattern)]
 
 {- An evaluation context for CoPatterns to match on -}
-data QCtx where
-  Empty :: QCtx
-  Push  :: Term Pattern CoPattern -> QCtx -> QCtx
+data ObsCtx where
+  ObsHead :: ObsCtx
+  ObsApp  :: ObsCtx -> Term Pattern CoPattern -> ObsCtx
+  ObsDest :: Variable -> ObsCtx -> ObsCtx
   deriving (Show,Eq)
 
 {- The machine returns results which can be of positive or negative types. We
    call this result instead of value (as is the common approach) because of the
    polarity of values. -}
 data Result where
-  RInt     :: Int -> Result
-  RConsApp :: Variable -> [Term Pattern CoPattern] -> Result
-  RDest    :: Variable -> Result
-  RCoCase  :: [(CoPattern,Term Pattern CoPattern)] -> Result
+  RInt       :: Int -> Result
+  RConsApp   :: Variable -> [Term Pattern CoPattern] -> Result
+  RDest      :: Variable -> Result
+  RCoCase    :: [(CoPattern,Term Pattern CoPattern)] -> Result
+  RMatchFail :: Result
   deriving (Eq,Show)
 
 data Machine
-  = Machine { run :: (Term Pattern CoPattern, QCtx, Env)
-                  -> (Result, QCtx, Env)
+  = Machine { run :: (Term Pattern CoPattern, ObsCtx, Env)
+                  -> (Result, ObsCtx, Env)
             }
 
 evalEmpty :: Term Pattern CoPattern -> Result
-evalEmpty t = case run evalMachine (t,Empty,[]) of
-                (r,Empty,_) -> r
+evalEmpty t = case run evalMachine (t,ObsHead,[]) of
+                (r,ObsHead,_) -> r
                 x -> error ("evaluation did not consume all of the evaluation context "
                            <> show x)
 
 evalMachine :: Machine
-evalMachine = Machine $ \(t,qc,env) ->
-  trace ("---------------\nt: " <> show t <> "\nQ: " <> show qc <> "\n") $
+evalMachine = Machine $ \(t,obsctx,env) ->
+  trace (   "---------------\nt:"
+        <+> pp t
+        <>  "\nEnv:" <+> show env <> "\n") $
   case t of
-    Let v a b -> run evalMachine (b,qc,(v,a):env)
-    Lit i -> (RInt i,qc,env)
+    Let v a b -> trace "M-Let" $ run evalMachine (b,obsctx,(v,a):env)
+    Lit i -> (RInt i,obsctx,env)
     Add t1 t2 ->
-      case (run evalMachine (t1,qc,env), run evalMachine (t2,qc,env)) of
-        ((RInt t1',_,_),(RInt t2',_,_)) -> (RInt (t1' + t2'),qc,env)
+      case ( trace "M-Add1" $ run evalMachine (t1,obsctx,env)
+           , trace "M-Add2" $ run evalMachine (t2,obsctx,env)) of
+        ((RInt t1',_,_),(RInt t2',_,_)) -> (RInt (t1' + t2'),obsctx,env)
         _ -> error "both arguments to an addition must be integers"
 
     Var v ->
       case lookup v env of
-        Just t' -> run evalMachine (t',qc,env)
+        Just t' -> trace "M-Subs" $ run evalMachine (t',obsctx,env)
         Nothing -> error $ "unbound variable" ++ show v
 
-    Fix x t' -> run evalMachine (t',qc,(x,t):env)
+    Fix x t' -> trace "M-Fix" $ run evalMachine (t',obsctx,(x,t):env)
 
-    Cons k -> (RConsApp k [], qc, env)
-    Dest d -> (RDest d, qc, env)
+    Cons k -> (RConsApp k [], obsctx, env)
+    Dest h -> (RDest h, obsctx, env)
 
     App t1 t2 ->
-      case run evalMachine (t1,qc,env) of
-        (RConsApp k ts,qc',env')  -> (RConsApp k (t2:ts),qc',env')
-        -- (RCoCase coalts,qc',env') ->
-        --   run evalMachine (CoCase coalts,Destructor qc' t2,env')
-        -- (RDest d,qc',env') -> run evalMachine (t2,qc,env')
+      case trace "M-App1" $ run evalMachine (t1,obsctx,env) of
+        (RConsApp k ts,obsctx',env')  -> (RConsApp k (t2:ts),obsctx',env')
+
+        (RCoCase coalts,_,_) ->
+          case matchCoalts (ObsApp obsctx t2) coalts of
+            Just (u,obsctx',subs) -> trace "M-AppCoCaseMatch"
+                                   $ run evalMachine (u,obsctx',subs <> env)
+            Nothing -> (RMatchFail,obsctx,env)
+
+        (RDest h,_,_) ->
+          case trace "M-AppDest" $ run evalMachine (t2,obsctx,env) of
+            (RCoCase coalts,_,_) ->
+              case matchCoalts (ObsDest h obsctx) coalts of
+                Just (u,obsctx',subs) -> trace "M-DestMatch"
+                                       $ run evalMachine (u,obsctx',subs <> env)
+                Nothing -> (RMatchFail,obsctx,env)
+
+            (RMatchFail,_,_) -> (RMatchFail,obsctx,env)
+
+            mach -> error ("Can only apply destructors to codata."
+                          <-> " Given arugment:" <+> show mach)
+
+        (RMatchFail,_,_) -> (RMatchFail,obsctx,env)
+
         t1' -> error $ show t1' ++ " is not a valid application term"
 
     Case t' alts ->
-      let tryAlts :: Term Pattern CoPattern
-                  -> [(Pattern,Term Pattern CoPattern)]
-                  -> (Result, QCtx, Env)
-          tryAlts _ [] = error "no matching alternative"
-          tryAlts r ((p,t''):alts') =
-            case matchPattern r p of
-              Just subs -> run evalMachine (t'',qc,(subs++env))
-              Nothing -> tryAlts r alts'
-      in case run evalMachine (t',qc,env) of
-           (RInt i,_,_)         -> tryAlts (Lit i) alts
-           (RConsApp k ts,_,_)  -> tryAlts (distributeArgs (k,ts)) alts
-           (RDest h,_,_)        -> tryAlts (Dest h) alts
-           (RCoCase coalts,_,_) -> tryAlts (CoCase coalts) alts
+      let mt'' = case trace "M-Case" $ run evalMachine (t',obsctx,env) of
+                   (RInt i,_,_)         -> Just (Lit i)
+                   (RConsApp k ts,_,_)  -> Just (distributeArgs (k,ts))
+                   (RDest h,_,_)        -> Just (Dest h)
+                   (RCoCase coalts,_,_) -> Just (CoCase coalts)
+                   (RMatchFail,_,_)     -> Nothing
+      in case mt'' of
+           Just t'' ->
+             case matchAlts t'' alts of
+               Just (u,subs) -> trace "M-CaseMatch"
+                              $ run evalMachine (u,obsctx,subs <> env)
+               Nothing -> (RMatchFail,obsctx,env)
+           Nothing -> (RMatchFail,obsctx,env)
 
-
+    -- if this is the head copattern then return righthand side
     CoCase coalts ->
-      let tryCoAlts :: [(CoPattern,Term Pattern CoPattern)]
-                    -> Maybe (Result, QCtx, Env)
-          tryCoAlts [] = Nothing
-          tryCoAlts ((q,t'):coalts') =
-            case matchCoPattern qc (innerMostCoPattern q) of
-              Just (qc',subs) -> Just (run evalMachine (t',qc',(subs++env)))
-              Nothing -> tryCoAlts coalts'
-      in case tryCoAlts coalts of
-           Just r  -> r
-           Nothing -> (RCoCase coalts,qc,env)
+      case matchCoalts obsctx coalts of
+        Just (u,obsctx',subs) -> run evalMachine (u,obsctx',subs <> env)
+        Nothing -> (RCoCase coalts,obsctx,env)
 
 --------------------
 -- Matching Rules --
 --------------------
 
+matchAlts
+  :: Term Pattern CoPattern
+  -> [(Pattern,Term Pattern CoPattern)]
+  -> Maybe (Term Pattern CoPattern,[(Variable,Term Pattern CoPattern)])
+matchAlts _ []           = Nothing
+matchAlts r ((p,u):alts) =
+  case matchPattern r p of
+    Just subs -> Just (u,subs)
+    Nothing   -> matchAlts r alts
+
 {- Takes a term and a pattern and returns a set of substitutions if it succeeds.
    Note that the set of substitutions can be empty. This is pretty standard. -}
-matchPattern :: Term Pattern q -> Pattern -> Maybe [(Variable,Term Pattern q)]
+matchPattern
+  :: Term Pattern q
+  -> Pattern
+  -> Maybe [(Variable,Term Pattern q)]
 matchPattern _ PWild    = Just []
 matchPattern t (PVar v) = Just [(v,t)]
 matchPattern t (PCons k' ps) =
@@ -490,64 +522,46 @@ matchPattern t (PCons k' ps) =
      }
 
 {- Takes a copattern context and copattern and returns just a list of
-   substitutions if it succeeds. The reason there can be substitutions
-   is because patterns can be in copatterns which may bind variables.
+substitutions if it succeeds. The reason there can be substitutions is because
+patterns can be in copatterns which may bind variables. -}
+matchCoalts
+  :: ObsCtx
+  -> [(CoPattern,Term Pattern CoPattern)]
+  -> Maybe (Term Pattern CoPattern,ObsCtx,[(Variable,Term Pattern CoPattern)])
+matchCoalts _      []             = Nothing
+matchCoalts obsctx ((q,u):coalts) =
+  trace (show obsctx <-> pp q) $
+  case unplugCopattern q of
+    (mrest,inner) ->
+      case matchCoPattern obsctx inner of
+        Just (obsctx',subs) ->
+          case mrest of
+            Just rest -> Just (CoCase [(rest, u)
+                                      ,(QHead,CoCase coalts)]
+                              ,obsctx'
+                              ,subs)
+            Nothing -> Just (u,obsctx',subs)
+        Nothing -> matchCoalts obsctx coalts
 
-   [Problem] Consider the two instances of NegPair Int Int, which I (Zach) think
-   should be equal. I give their traces as well in the context of the
-   observation `fst (snd f)`:
-
-   ```
-   f1 = cocase { fst #       -> 1
-               , fst (snd #) -> 2
-               , snd (snd #) -> 3 }
-
-   f2 = cocase { fst # -> 1
-               , snd # -> cocase { fst # -> 2
-                                 , snd # -> 3 }
-               }
-   ```
-
-   0 : < fst (snd f1) , # >
-   1 : < snd f1       , fst # >
-   2 : < f1           , snd (fst #) >
-   3 : 2
-
-   0 : < fst (snd f2) , # >
-   1 : < snd f2       , fst # >
-   2 : < f2           , snd (fst #) >
-     -- error : `snd #` does not match `snd (fst #)`
-
-   Solution:
-
-   Instead of having a copattern for matching the top of the context with
-   `QWild` and a copattern to exactly match the remaining environment `QEmpty`,
-   We will just use `QWild` which will be denoted hash `#`
-
-   f2 = cocase { fst # -> 1
-               , snd # -> cocase { fst # -> 2
-                                 , snd # -> 3 }
-               }
-
--}
-
-matchCoPattern :: QCtx
-               -> CoPattern
-               -> Maybe (QCtx,[(Variable,Term Pattern CoPattern)])
+{- returns the new observation context as well as a sequence of substitutions -}
+matchCoPattern
+  :: ObsCtx
+  -> CoPattern
+  -> Maybe (ObsCtx,[(Variable,Term Pattern CoPattern)])
 
 {- Q , # -}
-matchCoPattern qc QHead = Just (qc,[])
+matchCoPattern obsctx QHead = Just (obsctx,[])
 
 {- Q t , q p -}
-matchCoPattern (Push t qc) (QPat q p) =
-  do { (qc',subs1) <- matchCoPattern qc q
+matchCoPattern (ObsApp obsctx t) (QPat q p) =
+  do { (obsctx',subs1) <- matchCoPattern obsctx q
      ; subs2 <-  matchPattern t p
-     ; return (qc',(subs1++subs2)) }
+     ; return (obsctx',(subs1++subs2)) }
 
 {- H Q , H q -}
-matchCoPattern (Push (Dest s) qc) (QDest s' q) =
-  case s == s' of
-    True -> matchCoPattern qc q
+matchCoPattern (ObsDest h obsctx) (QDest h' q) =
+  case h == h' of
+    True -> matchCoPattern obsctx q
     False -> Nothing
 
 matchCoPattern _ _ = Nothing

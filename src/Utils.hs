@@ -5,7 +5,7 @@ import Data.Monoid
 class Pretty a where
   {-# MINIMAL pp #-}
   pp :: a -> String
-  ppInd :: Int -> a -> String
+  ppInd     :: Int -> a -> String
   pp = ppInd 0
 
 pprint :: Pretty a => a -> IO ()
