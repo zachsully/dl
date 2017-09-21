@@ -8,6 +8,7 @@ import Debug.Trace
 
 import qualified DualSyn as D
 import qualified HsSyn as Hs
+import qualified MLSyn as ML
 import Utils
 
 {- A lot of the translation is boilerplate. We use separate syntax for DualSyn
@@ -44,8 +45,8 @@ startState = TransST 0 [] [] []
 
 type TransM a = State TransST a
 
-uniquify :: String -> TransM String
-uniquify s =
+freshen :: String -> TransM String
+freshen s =
   do { st <- get
      ; put (st { num = succ (num st) })
      ; return (s <> show (num st)) }
@@ -98,6 +99,9 @@ translateProgramLocal dpgm = Hs.Pgm (fmap transDeclL . D.pgmDecls $ dpgm)
                                     ( transTermL . D.flattenPatterns . D.pgmTerm
                                     $ dpgm )
 
+translateProgramCBV :: D.Program -> ML.Program
+translateProgramCBV = error "translateProgramCBV{*}"
+
 --------------------------------------------------------------------------------
 --                              Declarations                                  --
 --------------------------------------------------------------------------------
@@ -137,14 +141,14 @@ translateProgramLocal dpgm = Hs.Pgm (fmap transDeclL . D.pgmDecls $ dpgm)
 
 transDeclST :: D.Decl -> TransM Hs.DataTyCons
 transDeclST (Right d) =
-  do { tn <- uniquify (D.posTyName d)
+  do { tn <- freshen (D.posTyName d)
      ; addTyAssoc (D.posTyName d) tn
      ; tyvars <- transTyVarsST (D.posTyFVars d)
      ; injs <- mapM transInjST (D.injections d)
      ; return (Hs.DataTyCons tn tyvars injs) }
 
 transDeclST (Left d) =
-  do { tn <- uniquify (D.negTyName d)
+  do { tn <- freshen (D.negTyName d)
      ; tyvars <- transTyVarsST (D.negTyFVars d)
      ; let tnCons = "Mk" <> tn
            ty = foldl Hs.TyApp (Hs.TyVar tn) (map Hs.TyVar tyvars)
@@ -158,13 +162,13 @@ transDeclST (Left d) =
      ; return (Hs.DataTyCons tn tyvars [Hs.DataCon tnCons inj]) }
 
 transTyVarsST :: [D.TyVariable] -> TransM [Hs.TyVariable]
-transTyVarsST = mapM (\v -> do { v' <- uniquify v
+transTyVarsST = mapM (\v -> do { v' <- freshen v
                                ; addTyAssoc v v'
                                ; return v' })
 
 transInjST :: D.Injection -> TransM Hs.DataCon
 transInjST dinj =
-  do { n <- uniquify (D.injName dinj)
+  do { n <- freshen (D.injName dinj)
      ; addVarAssoc (D.injName dinj) n
      ; ty <- transTypeST . D.injCod $ dinj
      ; return (Hs.DataCon n ty) }
@@ -215,6 +219,13 @@ transTypeST (D.TyCons k)  =
 --------------
 
 transTermST :: D.Term D.FlatP D.FlatQ -> TransM Hs.Term
+transTermST (D.Let v a b) =
+  do { v' <- freshen v
+     ; addVarAssoc  v v'
+     ; a' <- transTermST a
+     ; b' <- transTermST b
+     ; return (Hs.Let v' a' b') }
+
 transTermST (D.Lit i) = return (Hs.Lit i)
 transTermST (D.Add a b) = Hs.Add <$> transTermST a <*> transTermST b
 transTermST (D.Var v) =
@@ -226,7 +237,7 @@ transTermST (D.Var v) =
                                <> "\nin: " <> show vm) }
      }
 transTermST (D.Fix v t) = undefined
-  -- do { v' <- uniquify v
+  -- do { v' <- freshen v
   --    ; addVarAssoc v v'
   --    ; Hs.Fix v' <$> translateTerm t }
 transTermST (D.Cons k) =
@@ -283,8 +294,8 @@ transTermST (D.Dest h) =
   do { dmap <- destMap <$> get
      ; case lookup h dmap of
          Just (k,a,i) ->
-           do { v <- uniquify "v"
-              ; x <- uniquify "x"
+           do { v <- freshen "v"
+              ; x <- freshen "x"
               ; return (Hs.Lam v
                                (Hs.Case (Hs.Var v)
                                         [(Hs.PCons k (mkPatterns a i x)
@@ -324,7 +335,7 @@ transTermST (D.CoCase coalts) = translateCoAlt (head coalts)
                           ; return (Hs.App (Hs.Cons k) t') }
                      Nothing -> error ("cannot find destructor" <> h)}
             D.FQPat p ->
-              do { v <- uniquify "v"
+              do { v <- freshen "v"
                  ; p' <- transPatternST p
                  ; t' <- transTermST t
                  ; return (Hs.Lam v (Hs.Case (Hs.Var v) [(p',t')]))}
@@ -332,14 +343,14 @@ transTermST (D.CoCase coalts) = translateCoAlt (head coalts)
 transPatternST :: D.FlatP -> TransM Hs.Pattern
 transPatternST D.FPWild = return Hs.PWild
 transPatternST (D.FPVar v) =
-  do { v' <- uniquify v
+  do { v' <- freshen v
      ; addVarAssoc v v'
      ; return (Hs.PVar v') }
 transPatternST (D.FPCons k vs) =
   do { m <- vMap <$> get
      ; case lookup k m of
          Just k' -> do { vs' <- forM vs $ \v ->
-                                  do { v' <- uniquify v
+                                  do { v' <- freshen v
                                      ; addVarAssoc v v'
                                      ; return v' }
                        ; return (Hs.PCons k' vs') }
@@ -351,4 +362,21 @@ transPatternST (D.FPCons k vs) =
 -----------
 
 transTermL :: D.Term D.FlatP D.FlatQ -> Hs.Term
-transTermL = undefined
+transTermL (D.Let v a b) = Hs.Let v (transTermL a) (transTermL b)
+transTermL (D.Lit i) = Hs.Lit i
+transTermL (D.Add a b) = Hs.Add (transTermL a) (transTermL b)
+transTermL (D.Var v) = Hs.Var v
+transTermL (D.Fix v a) = let a' = transTermL a in Hs.Let v a' a'
+transTermL (D.App a b) = Hs.App (transTermL a) (transTermL b)
+transTermL (D.Cons k) = Hs.Cons k
+transTermL (D.Case t alts) = Hs.Case (transTermL t) (fmap transAltL alts)
+transTermL (D.Dest h) = Hs.Var ("obs" <> h)
+transTermL (D.CoCase coalts) = Hs.distributeArgs ("constructor",fmap transCoaltL coalts)
+
+transAltL :: (D.FlatP,D.Term D.FlatP D.FlatQ) -> (Hs.Pattern,Hs.Term)
+transAltL = error "transAltL{*}"
+
+transCoaltL :: (D.FlatQ,D.Term D.FlatP D.FlatQ) -> Hs.Term
+transCoaltL (D.FQHead,u) = transTermL u
+transCoaltL (D.FQDest _,u) = transTermL u
+transCoaltL (D.FQPat _,u) = transTermL u

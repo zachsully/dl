@@ -9,6 +9,7 @@ import Control.Monad (when)
 -- local
 import qualified DualSyn as D
 import qualified HsSyn as H
+import qualified MLSyn as ML
 import Lexer
 import Parser
 import Translation
@@ -23,6 +24,8 @@ import Utils
 data CompileMode
   = CompileMode
   { cmDebug  :: Bool
+  , cmLocal  :: Bool
+  , cmML     :: Bool
   , cmInput  :: FilePath
   , cmOutput :: FilePath }
 
@@ -49,6 +52,11 @@ parseCompile = CompileMode
            <$> switch (  long "debug"
                       <> short 'D'
                       <> help "debug mode" )
+           <*> switch (  long "local"
+                      <> short 'L'
+                      <> help "local compile, that is using a naming convention." )
+           <*> switch (  long "ocaml"
+                      <> help "compile to Ocaml." )
            <*> inputFp
            <*> strArgument (metavar "OUTPUT" <> help "output Haskell file")
 
@@ -106,7 +114,11 @@ runCompile :: CompileMode -> IO ()
 runCompile cm =
   do { pgm <- getProgram (cmInput cm)
      ; when (cmDebug cm) $ pprint pgm
-     ; let !prog' = H.ppProgram . translateProgramST $ pgm
+     ; let !prog' = case cmML cm of
+                      True -> ML.ppProgram . translateProgramCBV $ pgm
+                      False -> H.ppProgram . (case cmLocal cm of
+                                               True -> translateProgramLocal
+                                               False -> translateProgramST) $ pgm
      ; case cmOutput cm of
          "-" -> putStrLn prog'
          fp  -> writeFile fp prog'

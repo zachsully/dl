@@ -111,8 +111,7 @@ data Injection
 --                                 Terms                                      --
 --------------------------------------------------------------------------------
 {- Terms are parameterized over the type of pattern and copattern. This is
-   important because we only translate flat (co)patterns.
--}
+important because we only translate flat (co)patterns. -}
 data Term p q where
   Let :: Variable -> Term p q -> Term p q -> Term p q
 
@@ -305,6 +304,8 @@ flattenPatterns :: Term Pattern CoPattern -> Term FlatP FlatQ
 flattenPatterns t = fst . runState (flattenPatterns' t) $ 0
 
 flattenPatterns' :: Term Pattern CoPattern -> State Int (Term FlatP FlatQ)
+flattenPatterns' (Let v a b) = Let v <$> flattenPatterns' a
+                                     <*> flattenPatterns' b
 flattenPatterns' (Lit i) = return (Lit i)
 flattenPatterns' (Add a b) = Add <$> flattenPatterns' a <*> flattenPatterns' b
 flattenPatterns' (Var v) = return (Var v)

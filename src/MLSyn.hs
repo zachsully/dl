@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-module HsSyn where
+module MLSyn where
 
 import Data.Monoid
 
@@ -15,9 +15,8 @@ data Program
 --                                 Types                                      --
 --------------------------------------------------------------------------------
 {- Most of the type level is the same as in DualSyn. The notable difference is
-   that all of the types are positive so there is no polarity in the data
-   declaration.
--}
+that all of the types are positive so there is no polarity in the data
+declaration. -}
 
 data Type where
   TyInt  :: Type
@@ -25,6 +24,7 @@ data Type where
   TyVar  :: TyVariable -> Type
   TyCons :: TyVariable -> Type
   TyApp  :: Type -> Type -> Type
+  TyLazy :: Type -> Type
   deriving (Eq,Show)
 
 type TyVariable = String
@@ -47,19 +47,20 @@ data DataCon
 --                                 Terms                                      --
 --------------------------------------------------------------------------------
 {- This is mostly the same as DualSyn. A lambda term has been introduced to be
-   used as an application. The destructor and cocase terms are not present. The
-   `fix` term is actually a let
--}
+used as an application. The destructor and cocase terms are not present. The
+`fix` term is actually a let. For ML we also introduct Lazy and Force. -}
 
 data Term where
-  Let  :: Variable -> Term -> Term -> Term
-  Lit  :: Int -> Term
-  Add  :: Term -> Term -> Term
-  Var  :: Variable -> Term
-  Lam  :: Variable -> Term -> Term
-  App  :: Term -> Term -> Term
-  Cons :: Variable -> Term
-  Case :: Term -> [(Pattern,Term)] -> Term
+  Let   :: Variable -> Term -> Term -> Term
+  Lazy  :: Term -> Term
+  Force :: Term -> Term
+  Lit   :: Int -> Term
+  Add   :: Term -> Term -> Term
+  Var   :: Variable -> Term
+  Lam   :: Variable -> Term -> Term
+  App   :: Term -> Term -> Term
+  Cons  :: Variable -> Term
+  Case  :: Term -> [(Pattern,Term)] -> Term
   deriving (Eq,Show)
 
 {- `distributeArgs` will take a constructor and its arguments and construct a
@@ -82,20 +83,19 @@ type Variable = String
 --------------------------------------------------------------------------------
 
 ppProgram :: Program -> String
-ppProgram pgm = "{-# LANGUAGE GADTs #-}\n"
+ppProgram pgm = "open Lazy\n"
             <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
             <-> ("\nmain = print $" <-> indent 1 ((\t -> ppTerm t 2 9) . pgmTerm $ pgm))
 
 ppDecl :: DataTyCons -> String
 ppDecl tc =
-  (smconcat ["data",dataName tc,smconcat . dataFVars $ tc,"where"])
+  (smconcat ["type",dataName tc,smconcat . dataFVars $ tc])
   <-> (vmconcat . fmap ppDataCon . dataCons $ tc)
-  <-> (indent 1 "deriving Show")
   <> "\n"
 
 ppDataCon :: DataCon -> String
 ppDataCon dc =
-  indent 1 (conName dc <+> "::" <+> flip ppType 9 . conType $ dc)
+  indent 1 (conName dc <+> ":" <+> flip ppType 9 . conType $ dc)
 
 ppType :: Type -> Int -> String
 ppType TyInt       _ = "Int"
