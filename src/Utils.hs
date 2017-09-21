@@ -3,10 +3,12 @@ module Utils where
 import Data.Monoid
 
 class Pretty a where
-  {-# MINIMAL pp #-}
+  {-# MINIMAL ppInd | pp #-}
   pp :: a -> String
-  ppInd     :: Int -> a -> String
   pp = ppInd 0
+
+  ppInd :: Int -> a -> String
+  ppInd = const pp
 
 pprint :: Pretty a => a -> IO ()
 pprint = putStrLn . pp
