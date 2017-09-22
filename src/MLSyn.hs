@@ -85,7 +85,8 @@ type Variable = String
 ppProgram :: Program -> String
 ppProgram pgm = "open Lazy\n"
             <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
-            <-> ("\nmain = print $" <-> indent 1 ((\t -> ppTerm t 2 9) . pgmTerm $ pgm))
+            <-> ("\nlet prog =" <+> ((\t -> ppTerm t 2 9) . pgmTerm $ pgm) <> ";;")
+            <-> "\nprint_int prog;;\nprint_newline ();;\n"
 
 ppDecl :: DataTyCons -> String
 ppDecl tc =
@@ -98,7 +99,7 @@ ppDataCon dc =
   indent 1 (conName dc <+> ":" <+> flip ppType 9 . conType $ dc)
 
 ppType :: Type -> Int -> String
-ppType TyInt       _ = "Int"
+ppType TyInt       _ = "int"
 ppType (TyArr a b) p = ppPrec 1 p (ppType a p <+> "->" <+> ppType b p)
 ppType (TyVar s)   _ = s
 ppType (TyCons s)  _ = s

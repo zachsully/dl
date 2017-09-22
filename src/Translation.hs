@@ -100,7 +100,11 @@ translateProgramLocal dpgm = Hs.Pgm (fmap transDeclL . D.pgmDecls $ dpgm)
                                     $ dpgm )
 
 translateProgramCBV :: D.Program -> ML.Program
-translateProgramCBV = error "translateProgramCBV{*}"
+translateProgramCBV dpgm = ML.Pgm ( fmap transDeclCBV . D.pgmDecls $ dpgm )
+                                  ( transTermCBV
+                                  . D.flattenPatterns
+                                  . D.pgmTerm
+                                  $ dpgm )
 
 --------------------------------------------------------------------------------
 --                              Declarations                                  --
@@ -179,6 +183,14 @@ transInjST dinj =
 
 transDeclL :: D.Decl -> Hs.DataTyCons
 transDeclL = undefined
+
+
+-------------------
+-- Call-by-value --
+-------------------
+
+transDeclCBV :: D.Decl -> ML.DataTyCons
+transDeclCBV = undefined
 
 --------------------------------------------------------------------------------
 --                                 Types                                      --
@@ -380,3 +392,10 @@ transCoaltL :: (D.FlatQ,D.Term D.FlatP D.FlatQ) -> Hs.Term
 transCoaltL (D.FQHead,u) = transTermL u
 transCoaltL (D.FQDest _,u) = transTermL u
 transCoaltL (D.FQPat _,u) = transTermL u
+
+-------------------
+-- Call-by-value --
+-------------------
+
+transTermCBV :: D.Term D.FlatP D.FlatQ -> ML.Term
+transTermCBV (D.Lit i) = ML.Lit i
