@@ -50,7 +50,7 @@ strs : strs str                                { $2 : $1 }
 --                              Top Level                                     --
 --------------------------------------------------------------------------------
 
-program :: { Program }
+program :: { Program Term }
 program : decls term                           { Pgm $1 $2 }
 
 decl :: { Decl }
@@ -113,14 +113,14 @@ typeA : '(' type ')'                   { $2 }
 --                                 Terms                                      --
 --------------------------------------------------------------------------------
 
-term :: { Term Pattern CoPattern }
+term :: { Term }
 term : term1                      { $1 }
 
-term1 :: { Term Pattern CoPattern }
+term1 :: { Term }
 term1 :  term  termA              { App $1 $2 }
       |  term2                    { $1 }
 
-term2 :: { Term Pattern CoPattern }
+term2 :: { Term }
 term2 :  term '+' termA                { Add $1 $3 }
       |  'fix' str 'in' term           { Fix $2 $4 }
       |  'let' str '=' term 'in' term  { Let $2 $4 $6 }
@@ -130,7 +130,7 @@ term2 :  term '+' termA                { Add $1 $3 }
 
 {- We lookup to see if the string is defined as a symbol and a singleton
    constructor, otherwise it is a variable. -}
-termA :: { Term Pattern CoPattern }
+termA :: { Term }
 termA :  num                      { Lit $1 }
       |  str                      {% do { mp <- getPolarity $1
                                         ; case mp of
@@ -145,22 +145,23 @@ termA :  num                      { Lit $1 }
 -- Matching --
 --------------
 
-alt :: { (Pattern,Term Pattern CoPattern) }
+alt :: { (Pattern,Term) }
 alt : pattern '->' term             { ($1,$3) }
 
-alts :: { [(Pattern,Term Pattern CoPattern)] }
+alts :: { [(Pattern,Term)] }
 alts : alt                          { [$1] }
      | alts '|' alt                 { $3 : $1 }
 
-coalt :: { (CoPattern,Term Pattern CoPattern) }
+coalt :: { (CoPattern,Term) }
 coalt : copattern '->' term         { ($1,$3) }
 
-coalts :: { [(CoPattern,Term Pattern CoPattern)] }
+coalts :: { [(CoPattern,Term)] }
 coalts : coalt                      { [$1] }
        | coalts ',' coalt           { $3 : $1 }
 
 pattern :: { Pattern }
 pattern : str patterns              { PCons $1 (reverse $2) }
+        | str                       { PCons $1 [] }
 
 patternA :: { Pattern }
 patternA : '_'                      { PWild }

@@ -85,21 +85,23 @@ declaration. `translateProgramLocal` infers a naming convention to avoid the
 dependence of terms on declarations.
 -}
 
-translateProgramST :: D.Program -> Hs.Program
+translateProgramST :: D.Program D.Term -> Hs.Program
 translateProgramST dpgm =
   fst $ runState
   (do { decls <- mapM transDeclST (D.pgmDecls dpgm)
       ; let ft = D.flattenPatterns . D.pgmTerm $ dpgm
-      ; term  <- trace (pp ft) $ transTermST ft
+      ; term  <- transTermST ft
       ; return (Hs.Pgm decls term) })
   startState
 
-translateProgramLocal :: D.Program -> Hs.Program
+translateProgramLocal :: D.Program D.Term -> Hs.Program
 translateProgramLocal dpgm = Hs.Pgm (fmap transDeclL . D.pgmDecls $ dpgm)
-                                    ( transTermL . D.flattenPatterns . D.pgmTerm
+                                    ( transTermL
+                                    . D.flattenPatterns
+                                    . D.pgmTerm
                                     $ dpgm )
 
-translateProgramCBV :: D.Program -> ML.Program
+translateProgramCBV :: D.Program D.Term -> ML.Program
 translateProgramCBV dpgm = ML.Pgm ( fmap transDeclCBV . D.pgmDecls $ dpgm )
                                   ( transTermCBV
                                   . D.flattenPatterns
@@ -182,7 +184,8 @@ transInjST dinj =
 -----------
 
 transDeclL :: D.Decl -> Hs.DataTyCons
-transDeclL = undefined
+transDeclL (Right d) = Hs.DataTyCons (D.posTyName d) (D.posTyFVars d) undefined
+transDeclL (Left d)  = Hs.DataTyCons (D.negTyName d) (D.negTyFVars d) undefined
 
 
 -------------------
@@ -230,17 +233,17 @@ transTypeST (D.TyCons k)  =
 -- Stateful --
 --------------
 
-transTermST :: D.Term D.FlatP D.FlatQ -> TransM Hs.Term
-transTermST (D.Let v a b) =
+transTermST :: D.FlatTerm -> TransM Hs.Term
+transTermST (D.FLet v a b) =
   do { v' <- freshen v
      ; addVarAssoc  v v'
      ; a' <- transTermST a
      ; b' <- transTermST b
      ; return (Hs.Let v' a' b') }
 
-transTermST (D.Lit i) = return (Hs.Lit i)
-transTermST (D.Add a b) = Hs.Add <$> transTermST a <*> transTermST b
-transTermST (D.Var v) =
+transTermST (D.FLit i) = return (Hs.Lit i)
+transTermST (D.FAdd a b) = Hs.Add <$> transTermST a <*> transTermST b
+transTermST (D.FVar v) =
   do { m <- lookupVar v
      ; case m of
          Just v' -> return (Hs.Var v')
@@ -248,24 +251,24 @@ transTermST (D.Var v) =
                        ; error ("untranslated variable " <> v
                                <> "\nin: " <> show vm) }
      }
-transTermST (D.Fix v t) = undefined
+transTermST (D.FFix v t) = undefined
   -- do { v' <- freshen v
   --    ; addVarAssoc v v'
   --    ; Hs.Fix v' <$> translateTerm t }
-transTermST (D.Cons k) =
+transTermST (D.FCons k) =
   do { m <- vMap <$> get
      ; case lookup k m of
          Just k' -> return (Hs.Cons k')
          Nothing -> error ("untranslated constructor " <> k) }
-transTermST (D.Case t alts) =
+transTermST (D.FCase t alt _) =
   Hs.Case <$> transTermST t
-          <*> mapM (\(p,e) ->
+          <*> ((\(p,e) ->
                       do { p' <- transPatternST p
                          ; _ <- error  . show . vMap <$> get
                          ; e' <- transTermST e
-                         ; return (p',e') })
-                                                 alts
-transTermST (D.App a b) = Hs.App <$> transTermST a <*> transTermST b
+                         ; return [(p',e')] })
+              $  alt )
+transTermST (D.FApp a b) = Hs.App <$> transTermST a <*> transTermST b
 
 {- THE INTERESTING CASES
 Consider the following example:
@@ -302,7 +305,7 @@ just return the bound variable.
 
 -}
 
-transTermST (D.Dest h) =
+transTermST (D.FDest h) =
   do { dmap <- destMap <$> get
      ; case lookup h dmap of
          Just (k,a,i) ->
@@ -333,32 +336,30 @@ transTermST (D.Dest h) =
    ```
 -}
 
-transTermST (D.CoCase coalts) = translateCoAlt (head coalts)
-  where translateCoAlt :: (D.FlatQ, D.Term D.FlatP D.FlatQ)
+transTermST (D.FCoCase coalt _) = translateCoAlt coalt
+  where translateCoAlt :: (D.FlatCopattern, D.FlatTerm)
                        -> TransM Hs.Term
         translateCoAlt (q,t) =
           case q of
-            D.FQHead -> transTermST t
-            D.FQDest h ->
+            D.FlatCopDest h ->
               do { mk <- lookupDestAssoc h
                  ; case mk of
                      Just (k,_,_) ->
                        do { t' <- transTermST t
                           ; return (Hs.App (Hs.Cons k) t') }
                      Nothing -> error ("cannot find destructor" <> h)}
-            D.FQPat p ->
+            D.FlatCopPat p ->
               do { v <- freshen "v"
                  ; p' <- transPatternST p
                  ; t' <- transTermST t
                  ; return (Hs.Lam v (Hs.Case (Hs.Var v) [(p',t')]))}
 
-transPatternST :: D.FlatP -> TransM Hs.Pattern
-transPatternST D.FPWild = return Hs.PWild
-transPatternST (D.FPVar v) =
+transPatternST :: D.FlatPattern -> TransM Hs.Pattern
+transPatternST (D.FlatPatVar v) =
   do { v' <- freshen v
      ; addVarAssoc v v'
      ; return (Hs.PVar v') }
-transPatternST (D.FPCons k vs) =
+transPatternST (D.FlatPatCons k vs) =
   do { m <- vMap <$> get
      ; case lookup k m of
          Just k' -> do { vs' <- forM vs $ \v ->
@@ -367,35 +368,34 @@ transPatternST (D.FPCons k vs) =
                                      ; return v' }
                        ; return (Hs.PCons k' vs') }
          Nothing -> error (  "untranslated constructor " <> k
-                          <> " in pattern" <> show (D.FPCons k vs)) }
+                          <> " in pattern" <> show (D.FlatPatCons k vs)) }
 
 -----------
 -- Local --
 -----------
 
-transTermL :: D.Term D.FlatP D.FlatQ -> Hs.Term
-transTermL (D.Let v a b) = Hs.Let v (transTermL a) (transTermL b)
-transTermL (D.Lit i) = Hs.Lit i
-transTermL (D.Add a b) = Hs.Add (transTermL a) (transTermL b)
-transTermL (D.Var v) = Hs.Var v
-transTermL (D.Fix v a) = let a' = transTermL a in Hs.Let v a' a'
-transTermL (D.App a b) = Hs.App (transTermL a) (transTermL b)
-transTermL (D.Cons k) = Hs.Cons k
-transTermL (D.Case t alts) = Hs.Case (transTermL t) (fmap transAltL alts)
-transTermL (D.Dest h) = Hs.Var ("obs" <> h)
-transTermL (D.CoCase coalts) = Hs.distributeArgs ("constructor",fmap transCoaltL coalts)
+transTermL :: D.FlatTerm -> Hs.Term
+transTermL (D.FLet v a b) = Hs.Let v (transTermL a) (transTermL b)
+transTermL (D.FLit i) = Hs.Lit i
+transTermL (D.FAdd a b) = Hs.Add (transTermL a) (transTermL b)
+transTermL (D.FVar v) = Hs.Var v
+transTermL (D.FFix v a) = let a' = transTermL a in Hs.Let v a' a'
+transTermL (D.FApp a b) = Hs.App (transTermL a) (transTermL b)
+transTermL (D.FCons k) = Hs.Cons k
+transTermL (D.FCase t alts _) = undefined
+transTermL (D.FDest h) = Hs.Var ("obs" <> h)
+transTermL (D.FCoCase coalts _) = undefined
 
-transAltL :: (D.FlatP,D.Term D.FlatP D.FlatQ) -> (Hs.Pattern,Hs.Term)
+transAltL :: (D.FlatPattern,D.FlatTerm) -> (Hs.Pattern,Hs.Term)
 transAltL = error "transAltL{*}"
 
-transCoaltL :: (D.FlatQ,D.Term D.FlatP D.FlatQ) -> Hs.Term
-transCoaltL (D.FQHead,u) = transTermL u
-transCoaltL (D.FQDest _,u) = transTermL u
-transCoaltL (D.FQPat _,u) = transTermL u
+transCoaltL :: (D.FlatCopattern, D.FlatTerm) -> Hs.Term
+transCoaltL (D.FlatCopDest _,u) = transTermL u
+transCoaltL (D.FlatCopPat _,u) = transTermL u
 
 -------------------
 -- Call-by-value --
 -------------------
 
-transTermCBV :: D.Term D.FlatP D.FlatQ -> ML.Term
-transTermCBV (D.Lit i) = ML.Lit i
+transTermCBV :: D.FlatTerm -> ML.Term
+transTermCBV (D.FLit i) = ML.Lit i

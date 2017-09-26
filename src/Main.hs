@@ -21,6 +21,9 @@ import Utils
 --                              Cmdline Options                               --
 --------------------------------------------------------------------------------
 
+data FlattenMode
+  = FlattenMode { fm :: FilePath }
+
 data CompileMode
   = CompileMode
   { cmDebug  :: Bool
@@ -40,12 +43,16 @@ data TypeMode
   , tmInput  :: FilePath }
 
 data Mode
-  = Compile  CompileMode
+  = Flatten  FlattenMode
+  | Compile  CompileMode
   | Evaluate EvalMode
   | TypeOf   TypeMode
 
 inputFp :: Parser FilePath
 inputFp = strArgument (metavar "INPUT" <> help "input dual language file")
+
+parseFlatten :: Parser FlattenMode
+parseFlatten = FlattenMode <$> inputFp
 
 parseCompile :: Parser CompileMode
 parseCompile = CompileMode
@@ -75,14 +82,15 @@ parseTypeOf = TypeMode
            <*> inputFp
 
 selectMode :: Parser Mode
-selectMode =
-  subparser $
-    (command "compile" (info (helper <*> (Compile <$> parseCompile))
-                             (progDesc "compile a dual language program to Haskell")))
-           <> (command "eval" (info (helper <*> (Evaluate <$> parseEvaluate))
-                              (progDesc "evaluate a dual language program")))
-           <> (command "type" (info (helper <*> (TypeOf <$> parseTypeOf))
-                                    (progDesc "infer the type of a dual language program")))
+selectMode = subparser
+  $  (command "flatten" (info (helper <*> (Flatten <$> parseFlatten))
+                              (progDesc "run flattening rewrite rules.")))
+  <> (command "compile" (info (helper <*> (Compile <$> parseCompile))
+                              (progDesc "compile a dual language program to Haskell.")))
+  <> (command "eval" (info (helper <*> (Evaluate <$> parseEvaluate))
+                           (progDesc "evaluate a dual language program.")))
+  <> (command "type" (info (helper <*> (TypeOf <$> parseTypeOf))
+                           (progDesc "infer the type of a dual language program.")))
 
 parseMode :: IO Mode
 parseMode = execParser
@@ -102,7 +110,7 @@ main = do { mode <- parseMode
               TypeOf tm -> runTypeOf tm
           }
 
-getProgram :: FilePath -> IO D.Program
+getProgram :: FilePath -> IO (D.Program D.Term)
 getProgram fp =
   do { !tokens <- case fp of
                     "-" -> lexContents
@@ -113,7 +121,13 @@ getProgram fp =
 runCompile :: CompileMode -> IO ()
 runCompile cm =
   do { pgm <- getProgram (cmInput cm)
-     ; when (cmDebug cm) $ pprint pgm
+     ; when (cmDebug cm) $
+         do { putStrLn "Source Program\n"
+            ; pprint pgm
+            ; putStrLn "--------------------------------\\"
+            ; putStrLn "Flattened Program\n"
+            ; pprint . D.flattenPatterns . D.pgmTerm $ pgm
+            ; putStrLn "--------------------------------\\" }
      ; let !prog' = case cmML cm of
                       True -> ML.ppProgram . translateProgramCBV $ pgm
                       False -> H.ppProgram . (case cmLocal cm of

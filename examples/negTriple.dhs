@@ -1,0 +1,48 @@
+codata NegTriple a b c
+  { Fst : NegTriple a b c -> a
+  , Snd : NegTriple a b c -> b
+  , Trd : NegTriple a b c -> c }
+
+codata NegConst a
+  { Out : NegConst a -> a }
+
+data NegTriple' a b c
+  { MkTriple : a -> b -> c -> NegTriple' a b c }
+
+data NegConst' a
+  { MkConst : a -> NegConst' a }
+
+
+--------------------------------------------------------------------------------
+cocase { Fst # -> 0
+       , Snd # -> 1
+       , Trd # -> 2 }
+
+-->>
+cocase { Fst # -> 0
+       , # -> cocase { Snd # -> 1
+       	      	     , # -> cocase { Trd # -> 2 } } }
+
+==>
+(\fst -> (\snd -> (\trd -> MkTriple fst snd trd))) 0 1 2
+--------------------------------------------------------------------------------
+
+cocase { Snd # -> 0
+       , Trd # -> 1
+       , Out (Fst #) -> 2 }
+-->>
+cocase { Snd # -> 0
+       , # -> cocase { Trd # -> 1
+       	      	     , # -> cocase { Fst # -> cocase { Out # -> 2
+		       	    	     	      	     , # -> Fst (cocase {}) }
+		       	    	   , # -> cocase {} }}}
+
+==>
+\snd ->
+\trd ->
+\fst ->
+  MkTriple fst snd trd
+$
+0
+1
+((\out -> MkConst out) 2)

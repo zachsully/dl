@@ -84,7 +84,8 @@ type Variable = String
 ppProgram :: Program -> String
 ppProgram pgm = "{-# LANGUAGE GADTs #-}\n"
             <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
-            <-> ("\nmain = print $" <-> indent 1 ((\t -> ppTerm t 2 9) . pgmTerm $ pgm))
+            <-> ("\nmain = print $")
+            <-> indent 1 ((\t -> ppTerm t 1 9) . pgmTerm $ pgm)
 
 ppDecl :: DataTyCons -> String
 ppDecl tc =
@@ -106,13 +107,13 @@ ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
 
 {- The Int passed in is the indentation level and precedence -}
 ppTerm :: Term -> Int -> Int -> String
-ppTerm (Let s a b)   i p = smconcat ["let",s,"=",ppTerm a i p,"in"]
-                           <-> indent i (ppTerm b i p)
+ppTerm (Let s a b)   i p = (smconcat ["let",s,"=",ppTerm a (i+2) p])
+                           <-> (indent i ("in" <+> (ppTerm b (i+1) p)))
 ppTerm (Lit n)       _ _ = show n
 ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
 ppTerm (Var s)       _ _ = s
 ppTerm (Lam s t)     i p = parens ( "\\" <> s <+> "->"
-                                  <-> indent i (ppTerm t (i+1) p))
+                                  <-> indent (i+2) (ppTerm t (i+3) p))
 ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> ppTerm b i p)
 ppTerm (Cons s)      _ _ = s
 ppTerm (Case t alts) i p =
