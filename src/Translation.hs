@@ -89,7 +89,7 @@ translateProgramST :: D.Program D.Term -> Hs.Program
 translateProgramST dpgm =
   fst $ runState
   (do { decls <- mapM transDeclST (D.pgmDecls dpgm)
-      ; let ft = D.flattenPatterns . D.pgmTerm $ dpgm
+      ; let ft = D.flatten . D.pgmTerm $ dpgm
       ; term  <- transTermST ft
       ; return (Hs.Pgm decls term) })
   startState
@@ -97,14 +97,14 @@ translateProgramST dpgm =
 translateProgramLocal :: D.Program D.Term -> Hs.Program
 translateProgramLocal dpgm = Hs.Pgm (fmap transDeclL . D.pgmDecls $ dpgm)
                                     ( transTermL
-                                    . D.flattenPatterns
+                                    . D.flatten
                                     . D.pgmTerm
                                     $ dpgm )
 
 translateProgramCBV :: D.Program D.Term -> ML.Program
 translateProgramCBV dpgm = ML.Pgm ( fmap transDeclCBV . D.pgmDecls $ dpgm )
                                   ( transTermCBV
-                                  . D.flattenPatterns
+                                  . D.flatten
                                   . D.pgmTerm
                                   $ dpgm )
 

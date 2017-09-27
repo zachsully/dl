@@ -22,7 +22,7 @@ import Utils
 --------------------------------------------------------------------------------
 
 data FlattenMode
-  = FlattenMode { fm :: FilePath }
+  = FlattenMode { fmInput :: FilePath }
 
 data CompileMode
   = CompileMode
@@ -105,9 +105,10 @@ parseMode = execParser
 main :: IO ()
 main = do { mode <- parseMode
           ; case mode of
-              Compile cm -> runCompile cm
+              Flatten fm  -> runFlatten fm
+              Compile cm  -> runCompile cm
               Evaluate em -> runEvaluate em
-              TypeOf tm -> runTypeOf tm
+              TypeOf tm   -> runTypeOf tm
           }
 
 getProgram :: FilePath -> IO (D.Program D.Term)
@@ -118,6 +119,14 @@ getProgram fp =
      ; return . fst . runState (parseProgram tokens) $ emptyState
      }
 
+runFlatten :: FlattenMode -> IO ()
+runFlatten fm =
+  do { pgm <- getProgram (fmInput fm)
+     ; pprint pgm
+     ; putStrLn "\n->R\n"
+     ; pprint . D.flatten . D.pgmTerm $ pgm
+     }
+
 runCompile :: CompileMode -> IO ()
 runCompile cm =
   do { pgm <- getProgram (cmInput cm)
@@ -126,7 +135,7 @@ runCompile cm =
             ; pprint pgm
             ; putStrLn "--------------------------------\\"
             ; putStrLn "Flattened Program\n"
-            ; pprint . D.flattenPatterns . D.pgmTerm $ pgm
+            ; pprint . D.flatten . D.pgmTerm $ pgm
             ; putStrLn "--------------------------------\\" }
      ; let !prog' = case cmML cm of
                       True -> ML.ppProgram . translateProgramCBV $ pgm

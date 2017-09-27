@@ -271,71 +271,66 @@ fresh v = do { n <- get
              ; put (succ n)
              ; return (v <> show n) }
 
-flattenPatterns :: Term -> FlatTerm
-flattenPatterns = undefined
--- flattenPatterns t = fst . runState (flattenPatterns' t) $ 0
+flatten :: Term -> FlatTerm
+flatten t = fst . runState (flatten' t) $ 0
 
--- flattenPatterns' :: Term -> State Int FlatTerm
--- flattenPatterns' (Let v a b) = Let v <$> flattenPatterns' a
---                                      <*> flattenPatterns' b
--- flattenPatterns' (Lit i) = return (Lit i)
--- flattenPatterns' (Add a b) = Add <$> flattenPatterns' a <*> flattenPatterns' b
--- flattenPatterns' (Var v) = return (Var v)
--- flattenPatterns' (Fix v t) = Fix v <$> flattenPatterns' t
--- flattenPatterns' (App a b) = App <$> flattenPatterns' a <*> flattenPatterns' b
--- flattenPatterns' (Cons k) = return (Cons k)
--- flattenPatterns' (Dest h) = return (Dest h)
--- flattenPatterns' (Case t alts) = Case <$> flattenPatterns' t
---                                       <*> mapM flattenAlt alts
---   where flattenAlt :: (Pattern,Term) -> State Int (FlatPattern,FlatTerm)
---         flattenAlt (p,u) =
---           do { u' <- flattenPatterns' u
---              ; case p of
---                  PWild -> return (FPWild, u')
---                  PVar v -> return (FPVar v, u')
---                  PCons k ps -> do { (vs,fs) <- unzip <$> mapM flattenPattern ps
---                                   ; return (FPCons k vs, foldr ($) u' fs) }
---              }
+flatten' :: Term -> State Int FlatTerm
+flatten' (Let v a b) =
+  FLet v <$> flatten' a <*> flatten' b
+flatten' (Lit i) = return (FLit i)
+flatten' (Add a b) = FAdd <$> flatten' a <*> flatten' b
+flatten' (Var v) = return (FVar v)
+flatten' (Fix v t) = FFix v <$> flatten' t
+flatten' (App a b) = FApp <$> flatten' a <*> flatten' b
+flatten' (Cons k) = return (FCons k)
+flatten' (Dest h) = return (FDest h)
+flatten' (Case t alts) =
+  FCase <$> flatten' t <*> (flattenAlt . head $ alts) <*> return FFail
+  where flattenAlt :: (Pattern,Term) -> State Int (FlatPattern,FlatTerm)
+        flattenAlt (p,u) =
+          do { u' <- flatten' u
+             ; case p of
+                 PVar v -> return (FlatPatVar v, u')
+                 PCons k ps -> do { (vs,fs) <- unzip <$> mapM flattenPattern ps
+                                  ; return (FlatPatCons k vs, foldr ($) u' fs) }
+             }
 
---         flattenPattern :: Pattern
---                        -> State Int (Variable, FlatTerm -> FlatTerm)
---         flattenPattern PWild = do { v <- fresh "p"
---                                   ; return (v, id) }
---         flattenPattern (PVar v) = return (v,id)
---         flattenPattern (PCons k ps) =
---           do { v <- fresh "p"
---              ; (vs,fs) <- unzip <$> mapM flattenPattern ps
---              ; return ( v
---                       , \e -> Case (Var v) [(FPCons k vs,foldr ($) e fs)])
---              }
-
--- -- R-QHead
--- flattenPatterns' (CoCase ((QHead,u):_)) = flattenPatterns' u
--- -- R-QPVar
--- flattenPatterns' (CoCase ((QPat QHead (PVar v),u):_)) =
---   do { u' <- flattenPatterns' u
---      ; return (CoCase [(FQPat (FPVar v), u')]) }
+        flattenPattern :: Pattern
+                       -> State Int (Variable, FlatTerm -> FlatTerm)
+        flattenPattern (PVar v) = return (v,id)
+        flattenPattern (PCons k ps) =
+          do { v <- fresh "p"
+             ; (vs,fs) <- unzip <$> mapM flattenPattern ps
+             ; return ( v
+                      , \e -> FCase (FVar v)
+                                    (FlatPatCons k vs,foldr ($) e fs)
+                                    FFail)
+             }
+flatten' (CoCase ((QHead,u):_)) = flatten' u    -- R-QHead
+flatten' (CoCase ((QPat QHead (PVar v),u):_)) = -- R-QPVar
+  do { u' <- flatten' u
+     ; return (FCoCase (FlatCopPat (FlatPatVar v), u') FFail) }
 -- -- R-QPat
--- flattenPatterns' (CoCase ((QPat QHead p,u):coalts)) =
+-- flatten' (CoCase ((QPat QHead p,u):coalts)) =
 --   do { v <- fresh "p"
 --      ; y <- fresh "y"
 --      ; let t = Case (Var v) [(p,u),(PVar y,CoCase coalts)]
---      ; t' <- flattenPatterns' t
+--      ; t' <- flatten' t
 --      ; return (CoCase [(FQPat (FPVar v), t')])
 --      }
 -- -- R-QDest
--- flattenPatterns' (CoCase ((QDest h QHead,u):coalts)) =
---   do { u' <- flattenPatterns' u
---      ; coalts' <- flattenPatterns' (CoCase coalts)
+-- flatten' (CoCase ((QDest h QHead,u):coalts)) =
+--   do { u' <- flatten' u
+--      ; coalts' <- flatten' (CoCase coalts)
 --      ; return (CoCase [(FQDest h,u'),(FQHead,coalts')])
 --      }
 -- -- R-Rec
--- flattenPatterns' (CoCase ((q,u):coalts)) =
---   flattenPatterns' (CoCase coalts) >>= \cocase' ->
---   flattenPatterns' u >>= \u' ->
+-- flatten' (CoCase ((q,u):coalts)) =
+--   flatten' (CoCase coalts) >>= \cocase' ->
+--   flatten' u >>= \u' ->
 --   case unplugCopattern q of
 --     (Just rest, QDest h QHead) ->
---       do { u' <- flattenPatterns' ( CoCase [(rest,  u)
+--       do { u' <- flatten' ( CoCase [(rest,  u)
 --                                            ,(QHead, App (Dest h) (CoCase coalts))
 --                                            ]
 --                                   )
@@ -343,16 +338,16 @@ flattenPatterns = undefined
 --                           ,(FQHead,cocase')]) }
 --     (Just rest, QPat QHead p) ->
 --       do { x <- fresh "x"
---          ; u' <- flattenPatterns' ( CoCase [(rest,  u)
+--          ; u' <- flatten' ( CoCase [(rest,  u)
 --                                            ,(QHead, App (CoCase coalts) (Var x))
 --                                            ]
 --                                   )
 --          ; return (CoCase [(FQPat (FPVar x), u')
 --                           ,(FQHead,cocase')]) }
---     x -> error $ "todo{flattenPatterns'}" <+> show x
+--     x -> error $ "todo{flatten'}" <+> show x
 
 -- -- R-Empty is id
--- flattenPatterns' (CoCase []) = return (CoCase [])
+-- flatten' (CoCase []) = return (CoCase [])
 
 
 --------------------------------------------------------------------------------
@@ -385,26 +380,54 @@ data FlatTerm where
   FCoCase :: (FlatCopattern,FlatTerm) -- ^ Coalternative
           -> FlatTerm                 -- ^ Default case
           -> FlatTerm
+
+  FFail :: FlatTerm
   deriving (Eq,Show)
 
-instance Pretty FlatTerm
+instance Pretty FlatTerm where
+  ppInd _ (FLit i)         = show i
+  ppInd i (FAdd a b)       = (parens . ppInd i $ a)
+                         <+> "+"
+                         <+> (parens . ppInd i $ b)
+  ppInd _ (FVar s)         = s
+  ppInd i (FFix s t)       = "fix" <+> s <+> "in" <-> indent i (ppInd (i+1) t)
+  ppInd i (FLet s a b)     = "let" <+> s <+> "=" <+> ppInd (i+1) a
+                         <-> indent i ("in" <+> ppInd (i+1) b)
+  ppInd i (FApp a b)       = (parens . ppInd i $ a) <+> (parens . ppInd i $ b)
+  ppInd _ (FCons k)        = k
+  ppInd i (FCase t (p,u) d) = ("case" <+> ppInd i t)
+                          <-> (indent (i+1) "{" <+> pp p <+> "->"
+                               <+> (ppInd (i+2) u))
+                          <-> (indent (i+1) "|" <+> "_ ->"
+                               <+> (ppInd (i+2) d))
+                          <-> (indent (i+1) "}")
+  ppInd _ (FDest h)        = h
+  ppInd i (FCoCase (q,u) d) = "cocase"
+                          <-> (indent (i+1) "{" <+> pp q <+> "->"
+                               <+> (ppInd (i+2) u))
+                          <-> (indent (i+1) "," <+> "# ->"
+                               <+> (ppInd (i+2) d))
+                          <-> (indent (i+1) "}")
+  ppInd _ FFail = "cocase {}"
 
 data FlatPattern where
-  FlatPatVar :: Variable -> FlatPattern
+  FlatPatVar  :: Variable -> FlatPattern
   FlatPatCons :: Variable -> [Variable] -> FlatPattern
   deriving (Eq,Show)
 
-instance Pretty FlatPattern
+instance Pretty FlatPattern where
+  pp (FlatPatVar s)     = s
+  pp (FlatPatCons k vs) = smconcat (k:vs)
 
 data FlatCopattern where
   FlatCopDest :: Variable -> FlatCopattern
-  FlatCopPat :: FlatPattern -> FlatCopattern
+  FlatCopPat  :: FlatPattern -> FlatCopattern
   deriving (Eq,Show)
 
-instance Pretty FlatCopattern
-
-flatten :: Term -> FlatTerm
-flatten = undefined
+instance Pretty FlatCopattern where
+  pp (FlatCopDest h)             = h <+> "#"
+  pp (FlatCopPat (FlatPatVar v)) = "#" <+> v
+  pp (FlatCopPat k)              = "#" <+> (parens . pp $ k)
 
 --------------------------------------------------------------------------------
 --                              Evaluation                                    --
