@@ -130,18 +130,17 @@ runFlatten fm =
 runCompile :: CompileMode -> IO ()
 runCompile cm =
   do { pgm <- getProgram (cmInput cm)
+     ; let pgm' = D.flattenPgm pgm
      ; when (cmDebug cm) $
-         do { putStrLn "Source Program\n"
-            ; pprint pgm
-            ; putStrLn "--------------------------------\\"
-            ; putStrLn "Flattened Program\n"
-            ; pprint . D.flatten . D.pgmTerm $ pgm
-            ; putStrLn "--------------------------------\\" }
+         do { pprint pgm
+            ; putStrLn "\n->R\n"
+            ; pprint pgm'
+            ; putStrLn "\n=>\n" }
      ; let !prog' = case cmML cm of
-                      True -> ML.ppProgram . translateProgramCBV $ pgm
+                      True -> ML.ppProgram . translateProgramCBV $ pgm'
                       False -> H.ppProgram . (case cmLocal cm of
                                                True -> translateProgramLocal
-                                               False -> translateProgramST) $ pgm
+                                               False -> translateProgramST) $ pgm'
      ; case cmOutput cm of
          "-" -> putStrLn prog'
          fp  -> writeFile fp prog'

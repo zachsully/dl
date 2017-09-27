@@ -60,6 +60,7 @@ data Term where
   App  :: Term -> Term -> Term
   Cons :: Variable -> Term
   Case :: Term -> [(Pattern,Term)] -> Term
+  Fail :: Term
   deriving (Eq,Show)
 
 {- `distributeArgs` will take a constructor and its arguments and construct a
@@ -128,3 +129,4 @@ ppTerm (Case t alts) i p =
         ppPattern PWild = "_"
         ppPattern (PVar s) = s
         ppPattern (PCons s vs) = s <+> smconcat vs
+ppTerm Fail _ _ = "error \"match fail\""

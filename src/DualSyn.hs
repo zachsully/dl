@@ -18,6 +18,9 @@ instance Pretty t => Pretty (Program t) where
         <> "\n\n"
         <> (pp . pgmTerm $ pgm)
 
+flattenPgm :: Program Term -> Program FlatTerm
+flattenPgm pgm = Pgm (pgmDecls pgm) (flatten . pgmTerm $ pgm)
+
 type Decl = Either NegativeTyCons PositiveTyCons
 
 instance (Pretty a,Pretty b) => Pretty (Either a b) where
@@ -346,8 +349,7 @@ flatten' (CoCase ((QPat QHead (PVar v),u):_)) = -- R-QPVar
 --                           ,(FQHead,cocase')]) }
 --     x -> error $ "todo{flatten'}" <+> show x
 
--- -- R-Empty is id
--- flatten' (CoCase []) = return (CoCase [])
+flatten' (CoCase []) = return FFail -- R-Empty
 
 
 --------------------------------------------------------------------------------

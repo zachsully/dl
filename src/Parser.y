@@ -151,6 +151,7 @@ alt : pattern '->' term             { ($1,$3) }
 alts :: { [(Pattern,Term)] }
 alts : alt                          { [$1] }
      | alts '|' alt                 { $3 : $1 }
+     | {- empty -}                  { [] }
 
 coalt :: { (CoPattern,Term) }
 coalt : copattern '->' term         { ($1,$3) }
@@ -158,6 +159,7 @@ coalt : copattern '->' term         { ($1,$3) }
 coalts :: { [(CoPattern,Term)] }
 coalts : coalt                      { [$1] }
        | coalts ',' coalt           { $3 : $1 }
+       | {- empty -}                { [] }
 
 pattern :: { Pattern }
 pattern : str patterns              { PCons $1 (reverse $2) }

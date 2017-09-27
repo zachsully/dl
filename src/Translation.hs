@@ -85,26 +85,24 @@ declaration. `translateProgramLocal` infers a naming convention to avoid the
 dependence of terms on declarations.
 -}
 
-translateProgramST :: D.Program D.Term -> Hs.Program
+translateProgramST :: D.Program D.FlatTerm -> Hs.Program
 translateProgramST dpgm =
   fst $ runState
   (do { decls <- mapM transDeclST (D.pgmDecls dpgm)
-      ; let ft = D.flatten . D.pgmTerm $ dpgm
+      ; let ft = D.pgmTerm $ dpgm
       ; term  <- transTermST ft
       ; return (Hs.Pgm decls term) })
   startState
 
-translateProgramLocal :: D.Program D.Term -> Hs.Program
+translateProgramLocal :: D.Program D.FlatTerm -> Hs.Program
 translateProgramLocal dpgm = Hs.Pgm (fmap transDeclL . D.pgmDecls $ dpgm)
                                     ( transTermL
-                                    . D.flatten
                                     . D.pgmTerm
                                     $ dpgm )
 
-translateProgramCBV :: D.Program D.Term -> ML.Program
+translateProgramCBV :: D.Program D.FlatTerm -> ML.Program
 translateProgramCBV dpgm = ML.Pgm ( fmap transDeclCBV . D.pgmDecls $ dpgm )
                                   ( transTermCBV
-                                  . D.flatten
                                   . D.pgmTerm
                                   $ dpgm )
 
@@ -353,6 +351,8 @@ transTermST (D.FCoCase coalt _) = translateCoAlt coalt
                  ; p' <- transPatternST p
                  ; t' <- transTermST t
                  ; return (Hs.Lam v (Hs.Case (Hs.Var v) [(p',t')]))}
+
+transTermST (D.FFail) = return Hs.Fail
 
 transPatternST :: D.FlatPattern -> TransM Hs.Pattern
 transPatternST (D.FlatPatVar v) =
