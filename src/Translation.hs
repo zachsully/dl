@@ -382,12 +382,15 @@ transTermL (D.FVar v) = Hs.Var v
 transTermL (D.FFix v a) = let a' = transTermL a in Hs.Let v a' a'
 transTermL (D.FApp a b) = Hs.App (transTermL a) (transTermL b)
 transTermL (D.FCons k) = Hs.Cons k
-transTermL (D.FCase t alts _) = undefined
+transTermL (D.FCase t (p,u) d) = Hs.Case (transTermL t)
+                                         [(transPatL p, transTermL u)
+                                         ,(Hs.PWild,transTermL d)]
 transTermL (D.FDest h) = Hs.Var ("obs" <> h)
-transTermL (D.FCoCase coalts _) = undefined
+transTermL (D.FCoCase (q,u) d) = undefined
 
-transAltL :: (D.FlatPattern,D.FlatTerm) -> (Hs.Pattern,Hs.Term)
-transAltL = error "transAltL{*}"
+transPatL :: D.FlatPattern -> Hs.Pattern
+transPatL (D.FlatPatVar v)     = Hs.PVar v
+transPatL (D.FlatPatCons k vs) = Hs.PCons k vs
 
 transCoaltL :: (D.FlatCopattern, D.FlatTerm) -> Hs.Term
 transCoaltL (D.FlatCopDest _,u) = transTermL u
