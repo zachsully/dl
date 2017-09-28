@@ -1,0 +1,3 @@
+codata Const a { Const : Const a -> a }
+
+cocase { Const (Const #) -> 42 }

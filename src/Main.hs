@@ -123,7 +123,7 @@ runFlatten :: FlattenMode -> IO ()
 runFlatten fm =
   do { pgm <- getProgram (fmInput fm)
      ; pprint pgm
-     ; putStrLn "\n->R\n"
+     ; putStrLn "\n->>R\n"
      ; pprint . D.flatten . D.pgmTerm $ pgm
      }
 
@@ -133,7 +133,7 @@ runCompile cm =
      ; let pgm' = D.flattenPgm pgm
      ; when (cmDebug cm) $
          do { pprint pgm
-            ; putStrLn "\n->R\n"
+            ; putStrLn "\n->>R\n"
             ; pprint pgm'
             ; putStrLn "\n=>\n" }
      ; let !prog' = case cmML cm of

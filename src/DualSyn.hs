@@ -147,8 +147,8 @@ instance Pretty Term where
   ppInd i (Case t alts)   = "case"
                         <+> ppInd i t
                         <-> indent (i+1) "{"
-                        <-> ( stringmconcat ("\n" <> (indent i "| "))
-                            . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+2) u <> "\n")
+                        <+> ( stringmconcat ("\n" <> (indent (i+1) "| "))
+                            . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+2) u)
                             $ alts)
                         <-> indent (i+1) "}"
   ppInd _ (Dest h)        = h
@@ -313,41 +313,38 @@ flatten' (CoCase ((QHead,u):_)) = flatten' u    -- R-QHead
 flatten' (CoCase ((QPat QHead (PVar v),u):_)) = -- R-QPVar
   do { u' <- flatten' u
      ; return (FCoCase (FlatCopPat (FlatPatVar v), u') FFail) }
--- -- R-QPat
--- flatten' (CoCase ((QPat QHead p,u):coalts)) =
---   do { v <- fresh "p"
---      ; y <- fresh "y"
---      ; let t = Case (Var v) [(p,u),(PVar y,CoCase coalts)]
---      ; t' <- flatten' t
---      ; return (CoCase [(FQPat (FPVar v), t')])
---      }
--- -- R-QDest
--- flatten' (CoCase ((QDest h QHead,u):coalts)) =
---   do { u' <- flatten' u
---      ; coalts' <- flatten' (CoCase coalts)
---      ; return (CoCase [(FQDest h,u'),(FQHead,coalts')])
---      }
--- -- R-Rec
--- flatten' (CoCase ((q,u):coalts)) =
---   flatten' (CoCase coalts) >>= \cocase' ->
---   flatten' u >>= \u' ->
---   case unplugCopattern q of
---     (Just rest, QDest h QHead) ->
---       do { u' <- flatten' ( CoCase [(rest,  u)
---                                            ,(QHead, App (Dest h) (CoCase coalts))
---                                            ]
---                                   )
---          ; return (CoCase [(FQDest h, u')
---                           ,(FQHead,cocase')]) }
---     (Just rest, QPat QHead p) ->
---       do { x <- fresh "x"
---          ; u' <- flatten' ( CoCase [(rest,  u)
---                                            ,(QHead, App (CoCase coalts) (Var x))
---                                            ]
---                                   )
---          ; return (CoCase [(FQPat (FPVar x), u')
---                           ,(FQHead,cocase')]) }
---     x -> error $ "todo{flatten'}" <+> show x
+flatten' (CoCase ((QPat QHead p,u):coalts)) =   -- R-QPat
+  do { v <- fresh "p"
+     ; y <- fresh "y"
+     ; let t = Case (Var v) [(p,u),(PVar y,CoCase coalts)]
+     ; t' <- flatten' t
+     ; return (FCoCase (FlatCopPat (FlatPatVar v), t') FFail)
+     }
+flatten' (CoCase ((QDest h QHead,u):coalts)) =  -- R-QDest
+  do { u' <- flatten' u
+     ; coalts' <- flatten' (CoCase coalts)
+     ; return (FCoCase (FlatCopDest h,u') coalts')
+     }
+flatten' (CoCase ((q,u):coalts)) =              -- R-Rec
+  flatten' (CoCase coalts) >>= \cocase' ->
+  flatten' u >>= \u' ->
+  case unplugCopattern q of
+    (Just rest, QDest h QHead) ->
+      do { v  <- fresh "coalt"
+         ; u' <- flatten' ( CoCase [(rest,  u)
+                                   ,(QHead, App (Dest h) (Var v))
+                                   ]
+                           )
+         ; return (FLet v cocase' (FCoCase (FlatCopDest h, u') (FVar v))) }
+    -- (Just rest, QPat QHead p) ->
+    --   do { x <- fresh "x"
+    --      ; u' <- flatten' ( CoCase [(rest,  u)
+    --                                        ,(QHead, App (CoCase coalts) (Var x))
+    --                                        ]
+    --                               )
+    --      ; return (CoCase [(FQPat (FPVar x), u')
+    --                       ,(FQHead,cocase')]) }
+    x -> error $ "TODO flatten'{" <> show x <> "}"
 
 flatten' (CoCase []) = return FFail -- R-Empty
 

@@ -1,0 +1,20 @@
+Prelude> x
+Bar {foo1 = *** Exception: <interactive>:8:9-13: Missing field in record construction foo1
+
+Prelude> x { foo1 = 1 }
+Bar {foo1 = 1}
+Prelude> data Foo = Bar { baz :: Int, quux :: String }
+Prelude> let set_bax x y = Bar y (quux x)
+Prelude> let set_quux x y = Bar (baz x) y
+Prelude> let x = undefined
+Prelude> data Foo = Bar { baz :: Int, quux :: String } deriving Show
+Prelude> let set_bax x y = Bar y (quux x)
+Prelude> let set_quux x y = Bar (baz x) y
+Prelude> let x = undefined
+Prelude> set_bax x 5
+Bar {baz = 5, quux = "*** Exception: Prelude.undefined
+CallStack (from HasCallStack):
+  error, called at libraries/base/GHC/Err.hs:79:14 in base:GHC.Err
+    undefined, called at <interactive>:18:5 in interactive:Ghci14
+Prelude> set_quux (set_bax x 5) "hi"
+Bar {baz = 5, quux = "hi"}
