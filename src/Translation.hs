@@ -188,11 +188,21 @@ transDeclL (Right d) =
                            (D.posTyFVars d)
                            (fmap mkDataCon . D.injections $ d)))
   where mkDataCon :: D.Injection -> Hs.DataCon
-        mkDataCon = undefined
+        mkDataCon inj = Hs.DataCon (D.injName inj) (transTypeL . D.injCod $ inj)
 
 transDeclL (Left d)  =
-  (addFuns, Right $ Hs.RecordTyCons (D.negTyName d) (D.negTyFVars d) undefined)
-  where addFuns = undefined
+  ( addSetters (D.projections d) 0
+  , Right (Hs.RecordTyCons name
+                           (D.negTyFVars d)
+                           (fmap mkRecordField (D.projections d))))
+  where name = "Mk" <> D.negTyName d
+        numProjs = length . D.projections $ d
+        addSetters []     _ = id
+        addSetters (p:ps) i = let setterName = "set_" <> D.projName p
+                              in  (Hs.Let setterName
+                                          (Hs.Lam "d" (Hs.Lam "x" (Hs.App (Hs.Cons name) (Hs.Var "x")))))
+                                  . addSetters ps (i+1)
+        mkRecordField p = Hs.Field (D.projName p) (transTypeL . D.projCod $ p)
 
 
 -------------------
@@ -200,7 +210,7 @@ transDeclL (Left d)  =
 -------------------
 
 transDeclCBV :: D.Decl -> ML.DataTyCons
-transDeclCBV = undefined
+transDeclCBV = error "TODO: transDeclCBV{}"
 
 --------------------------------------------------------------------------------
 --                                 Types                                      --
@@ -230,7 +240,12 @@ transTypeST (D.TyCons k)  =
          Nothing -> error ("Type constructor '" <> k <> "' not in scope.")
      }
 
+-----------
+-- Local --
+-----------
 
+transTypeL :: D.Type -> Hs.Type
+transTypeL = error "TODO: transType{}"
 
 --------------------------------------------------------------------------------
 --                                  Terms                                     --
@@ -394,15 +409,15 @@ transTermL (D.FCons k) = Hs.Cons k
 transTermL (D.FCase t (p,u) d) = Hs.Case (transTermL t)
                                          [(transPatL p, transTermL u)
                                          ,(Hs.PWild,transTermL d)]
-transTermL (D.FDest h) = Hs.Var ("obs" <> h)
-transTermL (D.FCoCase (q,u) d) = undefined
+transTermL (D.FDest h) = Hs.Var ("_" <> h)
+transTermL (D.FCoCase (q,u) d) = transCoaltL (q,u)
 
 transPatL :: D.FlatPattern -> Hs.Pattern
 transPatL (D.FlatPatVar v)     = Hs.PVar v
 transPatL (D.FlatPatCons k vs) = Hs.PCons k vs
 
 transCoaltL :: (D.FlatCopattern, D.FlatTerm) -> Hs.Term
-transCoaltL (D.FlatCopDest _,u) = transTermL u
+transCoaltL (D.FlatCopDest h,u) = Hs.App (Hs.Var ("set_" <> h)) (transTermL u)
 transCoaltL (D.FlatCopPat _,u) = transTermL u
 
 -------------------
