@@ -11,18 +11,11 @@ import qualified HsSyn as Hs
 import qualified MLSyn as ML
 import Utils
 
-{- A lot of the translation is boilerplate. We use separate syntax for DualSyn
-and HsSyn to make explicit what is happening even though the former is a subset
-of the latter.
-
-   Translation is done in the context of a translation monad which keeps track
-of unique identifiers.
--}
-
-
 --------------------------------------------------------------------------------
 --                            Translation Monad                               --
 --------------------------------------------------------------------------------
+{- Translation is done in the context of a translation monad which at the least
+requires unique identifiers. -}
 
 data TransST
   = TransST
@@ -88,17 +81,23 @@ dependence of terms on declarations.
 translateProgramST :: D.Program D.FlatTerm -> Hs.Program
 translateProgramST dpgm =
   fst $ runState
-  (do { decls <- mapM transDeclST (D.pgmDecls dpgm)
+  (do { decls <- mapM (fmap Left . transDeclST) (D.pgmDecls dpgm)
       ; let ft = D.pgmTerm $ dpgm
       ; term  <- transTermST ft
       ; return (Hs.Pgm decls term) })
   startState
 
+{- Local translation defines new functions when a declaration is transformed.
+These functions must be in scope for the term. -}
 translateProgramLocal :: D.Program D.FlatTerm -> Hs.Program
-translateProgramLocal dpgm = Hs.Pgm (fmap transDeclL . D.pgmDecls $ dpgm)
-                                    ( transTermL
-                                    . D.pgmTerm
-                                    $ dpgm )
+translateProgramLocal dpgm =
+  let (f,decls') = foldr (\d (f,ds) ->
+                           let (df,d') = transDeclL d
+                           in  (df . f, d':ds) )
+                         (id,[])
+                         (D.pgmDecls dpgm)
+  in Hs.Pgm decls'
+            ( f . transTermL . D.pgmTerm $ dpgm )
 
 translateProgramCBV :: D.Program D.FlatTerm -> ML.Program
 translateProgramCBV dpgm = ML.Pgm ( fmap transDeclCBV . D.pgmDecls $ dpgm )
@@ -181,9 +180,19 @@ transInjST dinj =
 -- Local --
 -----------
 
-transDeclL :: D.Decl -> Hs.DataTyCons
-transDeclL (Right d) = Hs.DataTyCons (D.posTyName d) (D.posTyFVars d) undefined
-transDeclL (Left d)  = Hs.DataTyCons (D.negTyName d) (D.negTyFVars d) undefined
+transDeclL
+  :: D.Decl
+  -> (Hs.Term -> Hs.Term, Either Hs.DataTyCons Hs.RecordTyCons)
+transDeclL (Right d) =
+  (id, Left (Hs.DataTyCons (D.posTyName d)
+                           (D.posTyFVars d)
+                           (fmap mkDataCon . D.injections $ d)))
+  where mkDataCon :: D.Injection -> Hs.DataCon
+        mkDataCon = undefined
+
+transDeclL (Left d)  =
+  (addFuns, Right $ Hs.RecordTyCons (D.negTyName d) (D.negTyFVars d) undefined)
+  where addFuns = undefined
 
 
 -------------------
