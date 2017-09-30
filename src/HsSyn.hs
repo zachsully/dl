@@ -123,11 +123,12 @@ ppRecordDecl r = "data"
              <+> (smconcat . recordFVars $ r)
              <-> indent 1 "="
              <+> recordName r
-             <-> indent 1 "{"
-             <-> indent 1 "}"
+             <-> indent 1 "{" <+> (stringmconcat (indent 1 ", ")
+                                   (fmap ppRecordField . recordFields $ r))
+             <> indent 1 "} deriving Show"
 
-ppRecordCon :: Field -> String
-ppRecordCon f = fieldName f <+> "::" <+> (flip ppType 9 . fieldType $ f)
+ppRecordField :: Field -> String
+ppRecordField f = fieldName f <+> "::" <+> (flip ppType 9 . fieldType $ f) <> "\n"
 
 ppType :: Type -> Int -> String
 ppType TyInt       _ = "Int"
@@ -138,14 +139,16 @@ ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
 
 {- The Int passed in is the indentation level and precedence -}
 ppTerm :: Term -> Int -> Int -> String
-ppTerm (Let s a b)   i p = (smconcat ["let",s,"=",ppTerm a (i+2) p])
-                           <-> (indent i ("in" <+> (ppTerm b (i+1) p)))
+ppTerm (Let s a b)   i p = (smconcat ["let",s,"="])
+                           <+> (ppTerm a (i+1) p)
+                           <-> (indent i "in")
+                           <+> (ppTerm b (i+1) p)
 ppTerm (Lit n)       _ _ = show n
 ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
 ppTerm (Var s)       _ _ = s
 ppTerm (Lam s t)     i p = parens ( "\\" <> s <+> "->"
                                   <-> indent (i+2) (ppTerm t (i+3) p))
-ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> ppTerm b i p)
+ppTerm (App a b)     i p = ppTerm a i 9 <+> (parens (ppTerm b i p))
 ppTerm (Cons s)      _ _ = s
 ppTerm (Case t alts) i p =
   "case" <+> ppTerm t i 0 <+> "of"
@@ -159,4 +162,4 @@ ppTerm (Case t alts) i p =
         ppPattern PWild = "_"
         ppPattern (PVar s) = s
         ppPattern (PCons s vs) = s <+> smconcat vs
-ppTerm Fail _ _ = "error \"match fail\""
+ppTerm Fail _ _ = "(error \"match fail\")"

@@ -1,0 +1,4 @@
+codata Const a { Const : Const a -> a }
+
+let x = cocase { Const (Const #) -> 42 }
+in Const (Const x)

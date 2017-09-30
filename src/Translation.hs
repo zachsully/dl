@@ -196,14 +196,42 @@ transDeclL (Left d)  =
                            (D.negTyFVars d)
                            (fmap mkRecordField (D.projections d))))
   where name = "Mk" <> D.negTyName d
-        numProjs = length . D.projections $ d
-        addSetters []     _ = id
-        addSetters (p:ps) i = let setterName = "set_" <> D.projName p
-                              in  (Hs.Let setterName
-                                          (Hs.Lam "d" (Hs.Lam "x" (Hs.App (Hs.Cons name) (Hs.Var "x")))))
-                                  . addSetters ps (i+1)
-        mkRecordField p = Hs.Field (D.projName p) (transTypeL . D.projCod $ p)
+        pname p = "_" <> D.projName p
 
+        numProjs = length . D.projections $ d
+
+        -- an association between projections and their index
+        pIndexAssoc :: [(Int,D.Projection)]
+        pIndexAssoc = foldrWithIndex (\i p a -> (i,p):a) [] (D.projections d)
+
+        addSetters :: [D.Projection] -> Int -> (Hs.Term -> Hs.Term)
+        addSetters [] _ = id
+        addSetters (p:ps) i =
+          (Hs.Let
+            setterName
+            (Hs.Lam "d"
+              (Hs.Lam "x"
+                (foldlWithIndex (\j c p ->
+                                  let t = case i == j of
+                                            True  -> Hs.Var "x"
+                                            False -> Hs.App (Hs.Var (pname p))
+                                                            (Hs.Var "d")
+                                  in Hs.App c t
+                                )
+                                (Hs.Cons name)
+                                (D.projections d))))) --Hs.App(Hs.App (Hs.Cons name) (Hs.Var "x"))))))
+          . (addSetters ps (i+1))
+          where setterName = "set_" <> D.projName p
+
+        mkRecordField :: D.Projection -> Hs.Field
+        mkRecordField p = Hs.Field (pname p)
+                                   (transTypeL . D.projCod $ p)
+
+foldrWithIndex :: (Int -> a -> b -> b) -> b -> [a] -> b
+foldrWithIndex f b = snd . foldr (\a (i,x) -> (i+1,f i a x)) (0,b)
+
+foldlWithIndex :: (Int -> b -> a -> b) -> b -> [a] -> b
+foldlWithIndex f b = snd . foldl (\(i,x) a -> (i+1,f i x a)) (0,b)
 
 -------------------
 -- Call-by-value --
@@ -245,7 +273,11 @@ transTypeST (D.TyCons k)  =
 -----------
 
 transTypeL :: D.Type -> Hs.Type
-transTypeL = error "TODO: transType{}"
+transTypeL D.TyInt       = Hs.TyInt
+transTypeL (D.TyArr a b) = Hs.TyArr (transTypeL a) (transTypeL b)
+transTypeL (D.TyApp a b) = Hs.TyApp (transTypeL a) (transTypeL b)
+transTypeL (D.TyVar v)   = Hs.TyVar v
+transTypeL (D.TyCons k)  = Hs.TyCons k
 
 --------------------------------------------------------------------------------
 --                                  Terms                                     --
@@ -410,15 +442,17 @@ transTermL (D.FCase t (p,u) d) = Hs.Case (transTermL t)
                                          [(transPatL p, transTermL u)
                                          ,(Hs.PWild,transTermL d)]
 transTermL (D.FDest h) = Hs.Var ("_" <> h)
-transTermL (D.FCoCase (q,u) d) = transCoaltL (q,u)
+transTermL (D.FCoCase (q,u) d) = transCoaltL (q,u) (transTermL d)
+transTermL (D.FFail) = Hs.Fail
 
 transPatL :: D.FlatPattern -> Hs.Pattern
 transPatL (D.FlatPatVar v)     = Hs.PVar v
 transPatL (D.FlatPatCons k vs) = Hs.PCons k vs
 
-transCoaltL :: (D.FlatCopattern, D.FlatTerm) -> Hs.Term
-transCoaltL (D.FlatCopDest h,u) = Hs.App (Hs.Var ("set_" <> h)) (transTermL u)
-transCoaltL (D.FlatCopPat _,u) = transTermL u
+transCoaltL :: (D.FlatCopattern, D.FlatTerm) -> Hs.Term -> Hs.Term
+transCoaltL (D.FlatCopDest h,u) t = Hs.App (Hs.App (Hs.Var ("set_" <> h)) t)
+                                           (transTermL u)
+transCoaltL (D.FlatCopPat _,u) _ = transTermL u
 
 -------------------
 -- Call-by-value --
