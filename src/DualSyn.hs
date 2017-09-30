@@ -309,10 +309,13 @@ flatten' (Case t alts) =
                                     (FlatPatCons k vs,foldr ($) e fs)
                                     FFail)
              }
+
 flatten' (CoCase ((QHead,u):_)) = flatten' u    -- R-QHead
+
 flatten' (CoCase ((QPat QHead (PVar v),u):_)) = -- R-QPVar
   do { u' <- flatten' u
      ; return (FCoCase (FlatCopPat (FlatPatVar v), u') FFail) }
+
 flatten' (CoCase ((QPat QHead p,u):coalts)) =   -- R-QPat
   do { v <- fresh "p"
      ; y <- fresh "y"
@@ -320,15 +323,23 @@ flatten' (CoCase ((QPat QHead p,u):coalts)) =   -- R-QPat
      ; t' <- flatten' t
      ; return (FCoCase (FlatCopPat (FlatPatVar v), t') FFail)
      }
+
 flatten' (CoCase ((QDest h QHead,u):coalts)) =  -- R-QDest
   do { u' <- flatten' u
      ; coalts' <- flatten' (CoCase coalts)
      ; return (FCoCase (FlatCopDest h,u') coalts')
      }
+
 flatten' (CoCase ((q,u):coalts)) =              -- R-Rec
   flatten' (CoCase coalts) >>= \cocase' ->
   flatten' u >>= \u' ->
   case unplugCopattern q of
+    (Just rest, QPat QHead p) ->
+      do { v  <- fresh "coalt"
+         ; let u' = CoCase [(rest,  u),(QHead, App (Var v) (invertPattern p))]
+         ; u'' <- flatten' u'
+         ; flatten' (Let v (CoCase coalts) (CoCase [(QPat QHead p, u'),(QHead,Var v)]))
+         }
     (Just rest, QDest h QHead) ->
       do { v  <- fresh "coalt"
          ; u' <- flatten' ( CoCase [(rest,  u)
@@ -336,17 +347,15 @@ flatten' (CoCase ((q,u):coalts)) =              -- R-Rec
                                    ]
                            )
          ; return (FLet v cocase' (FCoCase (FlatCopDest h, u') (FVar v))) }
-    -- (Just rest, QPat QHead p) ->
-    --   do { x <- fresh "x"
-    --      ; u' <- flatten' ( CoCase [(rest,  u)
-    --                                        ,(QHead, App (CoCase coalts) (Var x))
-    --                                        ]
-    --                               )
-    --      ; return (CoCase [(FQPat (FPVar x), u')
-    --                       ,(FQHead,cocase')]) }
     x -> error $ "TODO flatten'{" <> show x <> "}"
 
 flatten' (CoCase []) = return FFail -- R-Empty
+
+invertPattern :: Pattern -> Term
+invertPattern PWild = error "cannot invert wildcard"
+invertPattern (PVar v) = Var v
+invertPattern (PCons k ps) = distributeArgs (k,fmap invertPattern ps)
+
 
 
 --------------------------------------------------------------------------------

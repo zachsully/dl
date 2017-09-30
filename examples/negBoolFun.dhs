@@ -1,0 +1,12 @@
+codata NegPair a b
+  { Fst : NegPair a b -> a
+  , Snd : NegPair a b -> b }
+
+data Bool
+  { True  : Bool
+  | False : Bool }
+
+let f = cocase { (Fst #) True  -> 0
+               , (Fst #) False -> 42
+               , Snd # -> True }
+in (Fst f) False
