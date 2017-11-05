@@ -6,10 +6,10 @@ import Data.Monoid
 import Utils
 import DualSyn
 
-data TypeScheme where
-  TyMono   :: Type -> TypeScheme
-  TyForall :: TyVariable -> Type -> TypeScheme
-  deriving (Show,Eq)
+-- data TypeScheme :: Kind -> * where
+--   TyMono   :: Type k -> TypeScheme k
+--   TyForall :: TyVariable k -> Type -> TypeScheme
+--   deriving (Show,Eq)
 
 ppTypeScheme :: TypeScheme -> String
 ppTypeScheme (TyMono ty)     = ppType ty
@@ -27,9 +27,10 @@ typeOfProgram (Pgm decls term) = infer decls [] term
 --------------------------------------------------------------------------------
 {- Checks whether a type is well formed -}
 
-isType :: [Decl]              -- ^ A set of type signatures
-       -> [(TyVariable,Type)] -- ^ A context of bindings of type variables
-       -> Type
+isType :: forall k
+       .  [Decl k]              -- ^ A set of type signatures
+       -> [(TyVariable,Type k)] -- ^ A context of bindings of type variables
+       -> Type k
        -> Bool
 isType _ _   TyInt         = True
 isType s ctx (TyArr a b)   = isType s ctx a && isType s ctx b

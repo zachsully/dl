@@ -4,6 +4,8 @@ module Parser where
 import Control.Monad.State
 import Lexer
 import DualSyn
+import VariableSyn
+import KindSyn
 }
 -- All shift/reduce conflicts
 %expect 18
@@ -13,7 +15,7 @@ import DualSyn
 %name parseTerm term
 %tokentype { Token }
 %error { parseError }
-%monad { State ([TyVariable],[(Variable,Polarity)]) }
+%monad { State ([Variable],[(Variable,Polarity)]) }
 
 %token
   num      { TokLit $$ }
@@ -86,20 +88,20 @@ injs : injs '|' inj                            { $3 : $1 }
 --                                 Types                                      --
 --------------------------------------------------------------------------------
 
-type :: { Type }
+type :: { Type Star }
 type : type0                           { $1 }
 
 -- try type constructor
-type0 :: { Type }
+type0 :: { Type Star }
 type0 :  type typeA                    { TyApp $1 $2 }
       |  type1                         { $1 }
 
 -- try function
-type1 :: { Type }
+type1 :: { Type Star }
 type1 :  type '->' type                { TyArr $1 $3 }
       |  typeA                         { $1 }
 
-typeA :: { Type }
+typeA :: { Type Star }
 typeA : '(' type ')'                   { $2 }
       | 'tyint'                        { TyInt }
       | str                            {% do { b <- isTyCons $1
@@ -193,10 +195,10 @@ copatternA : '#'                    { QHead }
 
 emptyState = ([],[])
 
-addTyCons :: TyVariable -> State ([TyVariable],ss) ()
+addTyCons :: Variable -> State ([Variable],ss) ()
 addTyCons s = get >>= \(ts,ss) -> put (s:ts,ss)
 
-isTyCons :: TyVariable -> State ([TyVariable],ss) Bool
+isTyCons :: Variable -> State ([Variable],ss) Bool
 isTyCons s = elem s . fst <$> get
 
 addVar :: Variable -> Polarity -> State (ts,[(Variable,Polarity)]) ()

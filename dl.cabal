@@ -17,6 +17,13 @@ executable dualpp
   build-tools:         alex, happy
 
   other-modules:       Lexer, Parser
+  exposed-modules:     Judgement,
+                       Translation,
+                       MLSyn,
+                       KindSyn,
+                       HsSyn,
+                       TypeSyn,
+                       Utils
 
   build-depends:       base                 >= 4.8,
                        ghc                  >= 8.0,
