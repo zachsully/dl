@@ -4,7 +4,7 @@
 -}
 module DualPrelude where
 
-import DualSyn
+import Syntax.Dual
 
 --------------------------------------------------------------------------------
 --                             Declarations                                   --

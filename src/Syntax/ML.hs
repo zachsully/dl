@@ -1,9 +1,9 @@
 {-# LANGUAGE GADTs #-}
-module MLSyn where
+module Syntax.ML where
 
 import Data.Monoid
 
-import Utils
+import Pretty
 
 data Program
   = Pgm

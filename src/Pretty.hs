@@ -1,4 +1,4 @@
-module Utils where
+module Pretty where
 
 import Data.Monoid
 

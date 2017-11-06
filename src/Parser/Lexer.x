@@ -1,5 +1,5 @@
 {
-module Lexer (lexFile, lexContents, Token(..)) where
+module Parser.Lexer (lexFile, lexContents, Token(..)) where
 }
 
 %wrapper "basic"

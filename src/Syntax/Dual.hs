@@ -1,41 +1,39 @@
-{-# LANGUAGE GADTs,
-             DataKinds,
-             RankNTypes #-}
-module DualSyn where
+{-# LANGUAGE GADTs, KindSignatures #-}
+module Syntax.Dual where
 
 import Debug.Trace
 import Control.Monad.State
 import Data.Monoid ((<>))
 
-import KindSyn
-import TypeSyn
-import VariableSyn
-import Utils
-
+import Syntax.Variable
+import Pretty
 
 --------------------------------------------------------------------------------
 --                             Top Level                                      --
 --------------------------------------------------------------------------------
+{- Untyped programs do not actually need declarations, they just do string
+matching for pattern matching. We do however still have type declarations
+because they will need to be translated for compilation. -}
 
-data Program k t
+data Program t
   = Pgm
-  { pgmDecls :: [Decl k]
+  { pgmDecls :: [Decl]
   , pgmTerm  :: t }
 
-instance Pretty t => Pretty (Program k t) where
+instance Pretty t => Pretty (Program t) where
   pp pgm = (stringmconcat "\n\n" . fmap pp . pgmDecls $ pgm)
         <> "\n\n"
         <> (pp . pgmTerm $ pgm)
 
-flattenPgm :: forall k . Program k Term -> Program k FlatTerm
+flattenPgm :: Program Term -> Program FlatTerm
 flattenPgm pgm = Pgm (pgmDecls pgm) (flatten . pgmTerm $ pgm)
 
-type Decl k = Either (NegativeTyCons k) (PositiveTyCons k)
+type Decl = Either NegativeTyCons PositiveTyCons
 
 instance (Pretty a,Pretty b) => Pretty (Either a b) where
   pp _ = ""
 
-declArity :: forall k . Decl k -> Int
+declArity :: Decl -> Int
 declArity (Left d)  = length . negTyFVars $ d
 declArity (Right d) = length . posTyFVars $ d
 
@@ -44,9 +42,58 @@ declArity (Right d) = length . posTyFVars $ d
 data Polarity = Positive | Negative
   deriving (Eq,Show)
 
+{- Intoduction of positive and negative types are done with NegativeTyCons and
+   PositiveTyCons. These two are very similar. The notable difference is in
+   projections and injections, where every projection must have domain and a
+   codomain, injections may not take arguments. -}
+data NegativeTyCons
+  = NegTyCons
+  { negTyName   :: Variable
+  , negTyFVars  :: [Variable]
+  , projections :: [Projection] }
+
+instance Pretty NegativeTyCons where
+  pp tc = "codata" <+> negTyName tc
+
+negTyArity :: NegativeTyCons -> Int
+negTyArity = length . negTyFVars
+
+data Projection
+  = Proj
+  { projName :: Variable
+  , projDom  :: Type
+  , projCod  :: Type }
+
+data PositiveTyCons
+  = PosTyCons
+  { posTyName  :: Variable
+  , posTyFVars :: [Variable]
+  , injections :: [Injection]  }
+
+instance Pretty PositiveTyCons where
+  pp tc = "data" <+> posTyName tc
+
+posTyArity :: PositiveTyCons -> Int
+posTyArity = length . posTyFVars
+
+data Injection
+  = Inj
+  { injName :: Variable
+  , injCod  :: Type }
+  {- the domain is a maybe value because unary constructors do not take
+     arguments, e.g. () : Unit -}
+
+{- These simple types are not needed for evaluation. -}
+data Type :: * where
+  TyInt  :: Type
+  TyArr  :: Type -> Type -> Type
+  TyVar  :: Variable -> Type
+  TyCons :: Variable -> Type
+  TyApp  :: Type -> Type -> Type
+
 
 --------------------------------------------------------------------------------
---                                 Terms                                      --
+--                            Untyped Terms                                   --
 --------------------------------------------------------------------------------
 {- Terms are parameterized over the type of pattern and copattern. This is
 important because we only translate flat (co)patterns. -}

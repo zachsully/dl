@@ -1,11 +1,10 @@
 {
-module Parser where
+module Parser.Parser where
 
 import Control.Monad.State
-import Lexer
-import DualSyn
-import VariableSyn
-import KindSyn
+import Parser.Lexer
+import Syntax.Dual
+import Syntax.Variable
 }
 -- All shift/reduce conflicts
 %expect 18
@@ -88,20 +87,20 @@ injs : injs '|' inj                            { $3 : $1 }
 --                                 Types                                      --
 --------------------------------------------------------------------------------
 
-type :: { Type Star }
+type :: { Type }
 type : type0                           { $1 }
 
 -- try type constructor
-type0 :: { Type Star }
+type0 :: { Type }
 type0 :  type typeA                    { TyApp $1 $2 }
       |  type1                         { $1 }
 
 -- try function
-type1 :: { Type Star }
+type1 :: { Type }
 type1 :  type '->' type                { TyArr $1 $3 }
       |  typeA                         { $1 }
 
-typeA :: { Type Star }
+typeA :: { Type }
 typeA : '(' type ')'                   { $2 }
       | 'tyint'                        { TyInt }
       | str                            {% do { b <- isTyCons $1

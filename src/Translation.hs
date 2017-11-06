@@ -6,10 +6,11 @@ import Data.Monoid ((<>))
 import Data.Foldable (foldrM)
 import Debug.Trace
 
-import qualified DualSyn as D
-import qualified HsSyn as Hs
-import qualified MLSyn as ML
-import Utils
+import qualified Syntax.Dual as D
+import qualified Syntax.Hs as Hs
+import qualified Syntax.ML as ML
+import Syntax.Variable
+import Pretty
 
 --------------------------------------------------------------------------------
 --                            Translation Monad                               --
@@ -22,14 +23,14 @@ data TransST
   { num     :: Int -- ^ tracks unique variable creation
 
     -- ^ maps source type vars to target type vars
-  , tyMap   :: [(D.TyVariable,Hs.TyVariable)]
+  , tyMap   :: [(Variable,Variable)]
 
     -- ^ maps source vars to target vars
-  , vMap    :: [(D.Variable,Hs.Variable)]
+  , vMap    :: [(Variable,Variable)]
 
     -- ^ maps destructors to contructors, their arity, and the index of the
     --   destructor in the constructor
-  , destMap :: [(D.Variable,(Hs.Variable,Int,Int))]
+  , destMap :: [(Variable,(Variable,Int,Int))]
   }
   deriving (Show,Eq)
 
@@ -44,28 +45,28 @@ freshen s =
      ; put (st { num = succ (num st) })
      ; return (s <> show (num st)) }
 
-addTyAssoc :: D.TyVariable -> Hs.TyVariable -> TransM ()
+addTyAssoc :: Variable -> Variable -> TransM ()
 addTyAssoc a b =
  do { st <- get
     ; put (st { tyMap = (a,b):(tyMap st) }) }
 
-lookupTyAssoc :: D.TyVariable -> TransM (Maybe Hs.TyVariable)
+lookupTyAssoc :: Variable -> TransM (Maybe Variable)
 lookupTyAssoc v = lookup v . tyMap <$> get
 
-addDestAssoc :: D.Variable -> Hs.Variable -> Int -> Int -> TransM ()
+addDestAssoc :: Variable -> Variable -> Int -> Int -> TransM ()
 addDestAssoc h k a i =
   do { st <- get
      ; put (st { destMap = (h,(k,a,i)):(destMap st)}) }
 
-lookupDestAssoc :: D.Variable -> TransM (Maybe (Hs.Variable,Int,Int))
+lookupDestAssoc :: Variable -> TransM (Maybe (Variable,Int,Int))
 lookupDestAssoc h = lookup h . destMap <$> get
 
-addVarAssoc :: D.Variable -> Hs.Variable -> TransM ()
+addVarAssoc :: Variable -> Variable -> TransM ()
 addVarAssoc s t =
   do { st <- get
      ; put (st { vMap = (s,t):(vMap st)}) }
 
-lookupVar :: D.Variable -> TransM (Maybe Hs.Variable)
+lookupVar :: Variable -> TransM (Maybe Variable)
 lookupVar v = lookup v . vMap <$> get
 
 --------------------------------------------------------------------------------
@@ -164,7 +165,7 @@ transDeclST (Left d) =
                          (D.projections d)
      ; return (Hs.DataTyCons tn tyvars [Hs.DataCon tnCons inj]) }
 
-transTyVarsST :: [D.TyVariable] -> TransM [Hs.TyVariable]
+transTyVarsST :: [Variable] -> TransM [Variable]
 transTyVarsST = mapM (\v -> do { v' <- freshen v
                                ; addTyAssoc v v'
                                ; return v' })
@@ -371,7 +372,7 @@ transTermST (D.FDest h) =
                                          ,(Hs.Var x))]))
               }
          Nothing -> error ("cannot find destructor " <> h) }
-  where mkPatterns :: Int -> Int -> Hs.Variable -> [Hs.Variable]
+  where mkPatterns :: Int -> Int -> Variable -> [Variable]
         mkPatterns 0 _ _ = []
         mkPatterns a i x = case i == a of
                              True  -> x : mkPatterns (pred a) i x

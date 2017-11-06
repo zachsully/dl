@@ -7,14 +7,15 @@ import Control.Monad.State
 import Control.Monad (when)
 
 -- local
-import qualified DualSyn as D
-import qualified HsSyn as H
-import qualified MLSyn as ML
-import Lexer
-import Parser
+import Syntax.Dual
+import qualified Syntax.Hs as H
+import qualified Syntax.ML as ML
+import Parser.Lexer
+import Parser.Parser
 import Translation
+import Interp
 -- import Judgement
-import Utils
+import Pretty
 
 
 --------------------------------------------------------------------------------
@@ -111,7 +112,7 @@ main = do { mode <- parseMode
               TypeOf tm   -> runTypeOf tm
           }
 
-getProgram :: FilePath -> IO (D.Program D.Term)
+getProgram :: FilePath -> IO (Program Term)
 getProgram fp =
   do { !tokens <- case fp of
                     "-" -> lexContents
@@ -124,13 +125,13 @@ runFlatten fm =
   do { pgm <- getProgram (fmInput fm)
      ; pprint pgm
      ; putStrLn "\n->>R\n"
-     ; pprint . D.flatten . D.pgmTerm $ pgm
+     ; pprint . flatten . pgmTerm $ pgm
      }
 
 runCompile :: CompileMode -> IO ()
 runCompile cm =
   do { pgm <- getProgram (cmInput cm)
-     ; let pgm' = D.flattenPgm pgm
+     ; let pgm' = flattenPgm pgm
      ; when (cmDebug cm) $
          do { pprint pgm
             ; putStrLn "\n->>R\n"
@@ -148,10 +149,10 @@ runCompile cm =
 
 runEvaluate :: EvalMode -> IO ()
 runEvaluate em =
-  do { term <- D.pgmTerm <$> getProgram (emInput em)
+  do { term <- pgmTerm <$> getProgram (emInput em)
      ; when (emDebug em) $ pprint term
      ; putStr "> "
-     ; print . D.evalEmpty $ term }
+     ; pprint . evalEmpty $ term }
 
 runTypeOf :: TypeMode -> IO ()
 runTypeOf tm = error "unimplemented"

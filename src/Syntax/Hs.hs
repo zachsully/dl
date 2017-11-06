@@ -1,9 +1,9 @@
 {-# LANGUAGE GADTs #-}
-module HsSyn where
+module Syntax.Hs where
 
 import Data.Monoid
 
-import Utils
+import Pretty
 
 data Program
   = Pgm

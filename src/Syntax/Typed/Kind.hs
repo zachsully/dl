@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-module KindSyn where
+module Syntax.Typed.Kind where
 
 data Kind where
   KStar :: Kind
