@@ -1,11 +1,12 @@
-{-# LANGUAGE GADTs, KindSignatures #-}
+{-# LANGUAGE GADTs, KindSignatures, LambdaCase #-}
 module Interp where
+
+import Data.Monoid
+import Control.Monad.State
 
 import Syntax.Dual
 import Syntax.Variable
 import Pretty
-import Debug.Trace
-import Data.Monoid
 
 --------------------------------------------------------------------------------
 --                              Evaluation                                    --
@@ -41,6 +42,13 @@ instance Pretty Result where
   pp (RCoCase coalts) = pp (CoCase coalts)
   pp RMatchFail = "fail"
 
+resultToTerm :: Result -> Term
+resultToTerm (RInt i) = Lit i
+resultToTerm (RConsApp k ts) = distributeArgs (k,ts)
+resultToTerm (RDest h) = Dest h
+resultToTerm (RCoCase coalts) = CoCase coalts
+resultToTerm RMatchFail = CoCase []
+
 
 type Env = Variable -> Term
 
@@ -53,76 +61,121 @@ update e v t = \v' ->
     True  -> t
     False -> e v'
 
+type FreshVars = [Variable]
+
+freshV :: State FreshVars Variable
+freshV = do { (v:vs) <- get
+           ; put vs
+           ; return v }
+
 evalEmpty :: Term -> Result
-evalEmpty = eval emptyEnv
+evalEmpty t = fst $ runState (eval emptyEnv t) varStream
 
 typeError :: Result
 typeError = error "type error"
 
-eval :: Env -> Term -> Result
+eval :: Env -> Term -> State FreshVars Result
 eval e t =
   case t of
     Let v t t' -> eval (update e v t) t'
 
-    Lit i -> RInt i
+    Lit i -> return (RInt i)
 
-    Add t t' ->
-      case (eval e t, eval e t') of
-        (RInt i,RInt j) -> RInt (i+j)
-        _ -> typeError
+    Add a b ->
+      eval e a >>= \a' ->
+      eval e b >>= \b' ->
+         return $ case (a',b') of
+                      (RInt i,RInt j) -> RInt (i+j)
+                      _ -> typeError
 
     Var v -> eval e (e v)
 
     Fix v t -> eval (update e v t) t
 
-    App t t' ->
-      case eval e t of
-        RInt _ -> typeError
-        RConsApp k ts -> RConsApp k (ts <> [t])
-        RDest h ->
-          case eval e t' of
-            RInt _ -> typeError
-            RConsApp _ _ -> typeError
-            RDest _ -> typeError
-            RCoCase coalts ->
-              case flatCoalts coalts of
-                CoCase coatls' -> evalComatchDest h coalts
-                _ -> typeError
-            RMatchFail -> RMatchFail
-        RCoCase coalts ->
-           case flatCoalts coalts of
-             CoCase ((QPat QHead (PVar v),u):_) ->
-               eval (update e v t') u
-             _ -> typeError
-        RMatchFail -> RMatchFail
+    App a b ->
+      eval e a >>= \case
+        { RInt _ -> return typeError
+        ; RConsApp k ts -> return (RConsApp k (ts <> [t]))
+        ; RDest h ->
+            eval e b >>= \case
+              { RInt _ -> return typeError
+              ; RConsApp _ _ -> return typeError
+              ; RDest _ -> return typeError
+              ; RCoCase coalts ->
+                  flatCoalts coalts >>= \case
+                    { CoCase coatls' -> evalComatchDest h coalts
+                    ; _ -> return typeError }
+              ; RMatchFail -> return RMatchFail }
+        ; RCoCase coalts ->
+            flatCoalts coalts >>= \case
+              { CoCase ((QPat QHead (PVar v),u):_) ->
+                  eval (update e v b) u
+              ; _ -> return typeError }
+        ; RMatchFail -> return RMatchFail }
 
-    Cons k -> RConsApp k []
+    Cons k -> return (RConsApp k [])
 
     Case t alts ->
-      case eval e t of
-        RInt _ -> typeError
-        RConsApp k ts -> evalMatch e k ts alts
-        RDest _ -> typeError
-        RCoCase coalts ->
-          case eval e (flatCoalts coalts) of
-            RConsApp k ts -> evalMatch e k ts alts
-            _ -> typeError
-        RMatchFail -> RMatchFail
+      eval e t >>= \t' ->
+        case t' of
+          RInt _ -> return typeError
+          RConsApp k ts -> evalMatch e k ts alts
+          RDest _ -> return typeError
+          RCoCase coalts ->
+            flatCoalts coalts >>= eval e >>= \t'' ->
+              case t'' of
+                RConsApp k ts -> evalMatch e k ts alts
+                _ -> return typeError
+          RMatchFail -> return RMatchFail
 
-    Dest h -> RDest h
+    Dest h -> return (RDest h)
 
-    CoCase coalts -> RCoCase coalts
+    CoCase coalts -> return (RCoCase coalts)
 
-flatCoalts :: [(CoPattern,Term)] -> Term
-flatCoalts ((QHead,t):_) = t
-flatCoalts ((QPat QHead _,t):_) = undefined
-flatCoalts _ = undefined
+flatAlts :: Term -> [(Pattern,Term)] -> State FreshVars Term
+flatAlts _ _ = undefined
 
-evalMatch :: Env -> Variable -> [Term] -> [(Pattern,Term)] -> Result
-evalMatch = undefined
+flatCoalts :: [(CoPattern,Term)] -> State FreshVars Term
+flatCoalts [] = return (CoCase [])
+flatCoalts ((QHead,t):_) = return t
+flatCoalts ((QPat QHead (PVar v),t):_) =
+  return (CoCase [(QPat QHead (PVar v), t)])
+flatCoalts ((QPat QHead p,t):coalts) =
+  freshV >>= \x ->
+  freshV >>= \y ->
+    return (CoCase [( QPat QHead (PVar x)
+                    , Case (Var x) [ ( p , t )
+                                   , ( PVar y , App (CoCase coalts) (Var x)) ]
+                    )
+                   ])
+flatCoalts ((QDest h QHead, t):coalts) =
+  case coalts of
+    [(QHead,_)] -> return (CoCase ((QDest h QHead, t):coalts))
+    _ -> return (CoCase [(QDest h QHead, t), (QHead,CoCase coalts)])
+flatCoalts ((q,t):coalts) =
+  case unplugCopattern q of
+    (Nothing,QHead) -> error "should not happen"
+    (Nothing,(QPat QHead _)) -> error "should not happen"
+    (Nothing,(QDest _ QHead)) -> error "should not happen"
+    (Just _, _) -> error "todo"
 
-evalComatchDest :: Variable -> [(CoPattern,Term)] -> Result
-evalComatchDest = undefined
+evalMatch
+  :: Env
+  -> Variable
+  -> [Term]
+  -> [(Pattern,Term)]
+  -> State FreshVars Result
+evalMatch _ _ _ [] = return RMatchFail
+evalMatch _ _ _ (a0:a1:[]) = undefined
+evalMatch _ _ _ _ = error "case not flattened correctly."
+
+evalComatchDest
+  :: Variable
+  -> [(CoPattern,Term)]
+  -> State FreshVars Result
+evalComatchDest _ [] = return RMatchFail
+evalComatchDest _ (c0:c1:[]) = undefined
+evalComatchDest _ _ = error "cocase not flattened correctly."
 
 -- data Machine
 --   = Machine { run :: (Term, ObsCtx, Env) -> (Result, ObsCtx, Env) }

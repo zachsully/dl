@@ -96,7 +96,7 @@ selectMode = subparser
 parseMode :: IO Mode
 parseMode = execParser
           $ info (helper <*> selectMode)
-          $ fullDesc <> progDesc "dualpp: a small dualized langauge"
+          $ fullDesc <> progDesc "dl: a small dualized langauge"
 
 
 --------------------------------------------------------------------------------
@@ -155,7 +155,7 @@ runEvaluate em =
      ; pprint . evalEmpty $ term }
 
 runTypeOf :: TypeMode -> IO ()
-runTypeOf tm = error "unimplemented"
+runTypeOf _ = error "unimplemented"
   -- do { pgm <- getProgram (tmInput tm)
   --    ; when (tmDebug tm) $ pprint pgm
   --    ; putStrLn . ppTypeScheme . inferTSProgram $ pgm }

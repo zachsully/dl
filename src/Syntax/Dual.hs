@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, KindSignatures #-}
+{-# LANGUAGE DataKinds, GADTs, KindSignatures #-}
 module Syntax.Dual where
 
 import Debug.Trace
@@ -25,7 +25,7 @@ instance Pretty t => Pretty (Program t) where
         <> "\n\n"
         <> (pp . pgmTerm $ pgm)
 
-flattenPgm :: Program Term -> Program FlatTerm
+flattenPgm :: Program (Term l) -> Program FlatTerm
 flattenPgm pgm = Pgm (pgmDecls pgm) (flatten . pgmTerm $ pgm)
 
 type Decl = Either NegativeTyCons PositiveTyCons
@@ -97,25 +97,27 @@ data Type :: * where
 --------------------------------------------------------------------------------
 {- Terms are parameterized over the type of pattern and copattern. This is
 important because we only translate flat (co)patterns. -}
-data Term where
-  Let :: Variable -> Term -> Term -> Term
 
-  -- ^ Number primitives
-  Lit :: Int -> Term
-  Add :: Term -> Term -> Term
+{- Language tags where Cop > FCop > Pat. Eventually I want to use these tags to
+subdivide terms -}
+data LangTag = Cop | FCop | Pat deriving (Eq,Show)
+data NestTag = Nest | Flat deriving (Eq,Show)
 
-  Var :: Variable -> Term
-  Fix :: Variable -> Term -> Term
-  App :: Term -> Term -> Term
+data Term :: LangTag -> * where
+  Lit :: Int -> Term l
+  Add :: Term l -> Term l -> Term l
+  Var :: Variable -> Term l
+  Fix :: Variable -> Term l -> Term l
+  App :: Term l -> Term l -> Term l
+  Let :: Variable -> Term l -> Term l -> Term l
 
-  Cons :: Variable -> Term
-  Case :: Term -> [(Pattern,Term)] -> Term
+  Cons :: Variable -> Term l
+  Case :: Term l -> [(Pattern,Term l)] -> Term l
 
-  Dest :: Variable -> Term
-  CoCase :: [(CoPattern,Term)] -> Term
-  deriving (Eq,Show)
+  Dest :: Variable -> Term Cop
+  CoCase :: [(Copattern,Term Cop)] -> Term Cop
 
-instance Pretty Term where
+instance Pretty (Term lang) where
   ppInd _ (Lit i)         = show i
   ppInd i (Add a b)       = (parens . ppInd i $ a)
                         <+> "+"
@@ -142,16 +144,35 @@ instance Pretty Term where
                             $ coalts)
                         <-> indent (i+1) "}"
 
+instance FV (Term lang) where
+  freeVars = fv []
+    where fv bs (Let v a b) = fv (v:bs) a
+          fv bs (Lit _) = []
+          fv bs (Add a b) = fv bs a <> fv bs b
+          fv bs (Var v) = case elem v bs of
+                            True -> []
+                            False -> [v]
+          fv bs (Fix v t) = fv (v:bs) t
+          fv bs (App a b) = fv bs a <> fv bs b
+          fv bs (Cons k) = case elem k bs of
+                             True -> []
+                             False -> [k]
+          fv bs (Case t alts) = fv bs t
+          fv bs (Dest h) = case elem h bs of
+                             True -> []
+                             False -> [h]
+          fv bs (CoCase coalts) = undefined
+
 {- `collectArgs` will recur down an application to find the constructor and its
    arguments -}
-collectArgs :: Term -> Maybe (Variable,[Term])
+collectArgs :: Term lang -> Maybe (Variable,[Term lang])
 collectArgs (App e t) = collectArgs e >>= \(k,ts) -> return (k,t:ts)
 collectArgs (Cons k)  = return (k,[])
 collectArgs _         = Nothing
 
 {- `distributeArgs` will take a constructor and its arguments and construct a
    term applying the constructor to all of its arguments -}
-distributeArgs :: (Variable,[Term]) -> Term
+distributeArgs :: (Variable,[Term lang]) -> Term lang
 distributeArgs (k,ts) = foldl App (Cons k) ts
 
 
@@ -160,30 +181,43 @@ distributeArgs (k,ts) = foldl App (Cons k) ts
 ------------------
 
 {- Pattern -}
-data Pattern where
-  PWild :: Pattern
-  PVar  :: Variable -> Pattern
-  PCons :: Variable -> [Pattern] -> Pattern
-  deriving (Eq,Show)
+data Pattern :: * where
+  PWild     :: Pattern
+  PVar      :: Variable -> Pattern
+  PCons     :: Variable -> [Pattern] -> Pattern
 
 instance Pretty Pattern where
   pp PWild        = "_"
   pp (PVar s)     = s
   pp (PCons k ps) = k <+> (smconcat . fmap (parens . pp) $ ps)
 
+instance Bind Pattern where
+  binds PWild = []
+  binds (PVar v) = [v]
+  binds (PCons _ ps) = mconcat . fmap binds $ ps
+
 {- Copatterns -}
 {- NOTE: we often use 'q' for a copattern variables -}
-data CoPattern where
-  QHead :: CoPattern                          -- ^ the copattern matching the context
-  QDest :: Variable -> CoPattern -> CoPattern -- ^ a specific destructor
-  QPat  :: CoPattern -> Pattern -> CoPattern  -- ^ a copattern applied ot a pattern
-  QVar  :: Variable -> CoPattern -> CoPattern -- ^ a covariable to bind continuations
-  deriving (Eq,Show)
+data Copattern :: * where
+  QHead :: Copattern
+  -- ^ the copattern matching the context
+  QDest :: Variable -> Copattern -> Copattern
+  -- ^ a specific destructor
+  QPat  :: Copattern -> Pattern -> Copattern
+  -- ^ a copattern applied ot a pattern
+  QVar  :: Variable -> Copattern -> Copattern
+  -- ^ a covariable to bind continuations
 
-instance Pretty CoPattern where
+instance Pretty Copattern where
   pp QHead       = "#"
   pp (QDest h q) = h <+> (parens . pp $ q)
   pp (QPat q p)  = (parens . pp $ q) <+> (parens . pp $ p)
+
+instance Bind Copattern where
+  binds QHead = []
+  binds (QDest _ q) = binds q
+  binds (QPat q p) = binds q <> binds p
+  binds (QVar v q) = v : binds q
 
 --------------------------------------------------------------------------------
 --                        Term Manipulations --
@@ -193,7 +227,7 @@ instance Pretty CoPattern where
 returns (an optional new copattern with the inner most matchable pattern pulled
 out and replace by head) and the inner most copattern -}
 
-unplugCopattern :: CoPattern -> (Maybe CoPattern,CoPattern)
+unplugCopattern :: Copattern -> (Maybe Copattern,Copattern)
 unplugCopattern QHead           = (Nothing, QHead)
 unplugCopattern (QPat QHead p)  = (Nothing, (QPat QHead p))
 unplugCopattern (QDest h QHead) = (Nothing, (QDest h QHead))
@@ -207,7 +241,7 @@ unplugCopattern (QPat q p)      = let (m,i) = unplugCopattern q in
                                     Just q' -> (Just (QPat q' p), i)
 
 -- replace head with copattern in copattern
-plugCopattern :: CoPattern -> CoPattern -> CoPattern
+plugCopattern :: Copattern -> Copattern -> Copattern
 plugCopattern QHead       q' = q'
 plugCopattern (QDest h q) q' = QDest h (plugCopattern q q')
 plugCopattern (QPat q p)  q' = QPat (plugCopattern q q') p
@@ -254,10 +288,10 @@ fresh v = do { n <- get
              ; put (succ n)
              ; return (v <> show n) }
 
-flatten :: Term -> FlatTerm
+flatten :: Term l -> FlatTerm
 flatten t = fst . runState (flatten' t) $ 0
 
-flatten' :: Term -> State Int FlatTerm
+flatten' :: Term l -> State Int FlatTerm
 flatten' (Let v a b) =
   FLet v <$> flatten' a <*> flatten' b
 flatten' (Lit i) = return (FLit i)
@@ -269,7 +303,7 @@ flatten' (Cons k) = return (FCons k)
 flatten' (Dest h) = return (FDest h)
 flatten' (Case t alts) =
   FCase <$> flatten' t <*> (flattenAlt . head $ alts) <*> return FFail
-  where flattenAlt :: (Pattern,Term) -> State Int (FlatPattern,FlatTerm)
+  where flattenAlt :: (Pattern,Term t) -> State Int (FlatPattern,FlatTerm)
         flattenAlt (p,u) =
           do { u' <- flatten' u
              ; case p of
@@ -327,11 +361,11 @@ flatten' (CoCase ((q,u):coalts)) =              -- R-Rec
                                    ]
                            )
          ; return (FLet v cocase' (FCoCase (FlatCopDest h, u') (FVar v))) }
-    x -> error $ "TODO flatten'{" <> show x <> "}"
+    x -> error $ "TODO flatten{}"
 
 flatten' (CoCase []) = return FFail -- R-Empty
 
-invertPattern :: Pattern -> Term
+invertPattern :: Pattern -> Term l
 invertPattern PWild = error "cannot invert wildcard"
 invertPattern (PVar v) = Var v
 invertPattern (PCons k ps) = distributeArgs (k,fmap invertPattern ps)
@@ -339,12 +373,13 @@ invertPattern (PCons k ps) = distributeArgs (k,fmap invertPattern ps)
 
 
 --------------------------------------------------------------------------------
---                              Flat Terms                                    --
+--                        Flatten (Co)Alternative                             --
 --------------------------------------------------------------------------------
 {- FlatTerms where added because in addition to having only flat (co)patterns,
 they also have (co)case statements that contain defaults.
 
-FlatTerms are a subset of Terms. -}
+FlatTerms are a subset of Terms.
+-}
 data FlatTerm where
   FLet :: Variable -> FlatTerm -> FlatTerm -> FlatTerm
 

@@ -127,6 +127,7 @@ term2 :  term '+' termA                { Add $1 $3 }
       |  'let' str '=' term 'in' term  { Let $2 $4 $6 }
       |  'case' term '{' alts '}'      { Case $2 (reverse $4) }
       |  'cocase' '{' coalts '}'       { CoCase (reverse $3) }
+      |  '{' coalts '}'                { CoCase (reverse $2) }
       |  termA                         { $1 }
 
 {- We lookup to see if the string is defined as a symbol and a singleton
