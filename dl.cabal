@@ -1,6 +1,6 @@
-name:                dualpp
+name:                dl
 version:             0.0.0.1
-synopsis:            A preprocessor for codata and copattern matching in Haskell
+synopsis:            A simple dual data language
 homepage:            zachsully.com
 license:             BSD3
 license-file:        LICENSE
@@ -10,20 +10,13 @@ category:            Language
 build-type:          Simple
 cabal-version:       >=1.10
 
-executable dualpp
+executable dl
   main-is:             Main.hs
   GHC-Options :       -Wall -j6
   hs-source-dirs:      src
   build-tools:         alex, happy
 
   other-modules:       Lexer, Parser
-  exposed-modules:     Judgement,
-                       Translation,
-                       MLSyn,
-                       KindSyn,
-                       HsSyn,
-                       TypeSyn,
-                       Utils
 
   build-depends:       base                 >= 4.8,
                        ghc                  >= 8.0,

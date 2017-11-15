@@ -23,12 +23,15 @@ tokens :-
   =          { const TokEq }
   in         { const TokIn }
   \#         { const TokHash }
+  □          { const TokBox }
   _          { const TokUnderscore }
   \->        { const TokArr }
-  \{         { const TokLBrac }
-  \}         { const TokRBrac }
+  \{         { const TokLBrace }
+  \}         { const TokRBrace }
   \(         { const TokLParen }
   \)         { const TokRParen }
+  \[         { const TokLBrack }
+  \]         { const TokRBrack }
   \,         { const TokComma }
   \|         { const TokMid }
   \:         { const TokColon }
@@ -49,12 +52,15 @@ data Token
   | TokEq
   | TokIn
   | TokHash
+  | TokBox
   | TokUnderscore
   | TokArr
-  | TokLBrac
-  | TokRBrac
+  | TokLBrace
+  | TokRBrace
   | TokLParen
   | TokRParen
+  | TokLBrack
+  | TokRBrack
   | TokComma
   | TokMid
   | TokColon

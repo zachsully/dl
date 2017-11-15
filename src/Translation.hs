@@ -9,6 +9,8 @@ import Debug.Trace
 import qualified DualSyn as D
 import qualified HsSyn as Hs
 import qualified MLSyn as ML
+import qualified TypeSyn as Ty
+import qualified VariableSyn as V
 import Utils
 
 --------------------------------------------------------------------------------
@@ -22,14 +24,14 @@ data TransST
   { num     :: Int -- ^ tracks unique variable creation
 
     -- ^ maps source type vars to target type vars
-  , tyMap   :: [(D.TyVariable,Hs.TyVariable)]
+  , tyMap   :: [(V.Variable,Hs.TyVariable)]
 
     -- ^ maps source vars to target vars
-  , vMap    :: [(D.Variable,Hs.Variable)]
+  , vMap    :: [(V.Variable,Hs.Variable)]
 
     -- ^ maps destructors to contructors, their arity, and the index of the
     --   destructor in the constructor
-  , destMap :: [(D.Variable,(Hs.Variable,Int,Int))]
+  , destMap :: [(V.Variable,(Hs.Variable,Int,Int))]
   }
   deriving (Show,Eq)
 
@@ -44,28 +46,28 @@ freshen s =
      ; put (st { num = succ (num st) })
      ; return (s <> show (num st)) }
 
-addTyAssoc :: D.TyVariable -> Hs.TyVariable -> TransM ()
+addTyAssoc :: V.Variable -> Hs.TyVariable -> TransM ()
 addTyAssoc a b =
  do { st <- get
     ; put (st { tyMap = (a,b):(tyMap st) }) }
 
-lookupTyAssoc :: D.TyVariable -> TransM (Maybe Hs.TyVariable)
+lookupTyAssoc :: V.Variable -> TransM (Maybe Hs.TyVariable)
 lookupTyAssoc v = lookup v . tyMap <$> get
 
-addDestAssoc :: D.Variable -> Hs.Variable -> Int -> Int -> TransM ()
+addDestAssoc :: V.Variable -> Hs.Variable -> Int -> Int -> TransM ()
 addDestAssoc h k a i =
   do { st <- get
      ; put (st { destMap = (h,(k,a,i)):(destMap st)}) }
 
-lookupDestAssoc :: D.Variable -> TransM (Maybe (Hs.Variable,Int,Int))
+lookupDestAssoc :: V.Variable -> TransM (Maybe (Hs.Variable,Int,Int))
 lookupDestAssoc h = lookup h . destMap <$> get
 
-addVarAssoc :: D.Variable -> Hs.Variable -> TransM ()
+addVarAssoc :: V.Variable -> Hs.Variable -> TransM ()
 addVarAssoc s t =
   do { st <- get
      ; put (st { vMap = (s,t):(vMap st)}) }
 
-lookupVar :: D.Variable -> TransM (Maybe Hs.Variable)
+lookupVar :: V.Variable -> TransM (Maybe Hs.Variable)
 lookupVar v = lookup v . vMap <$> get
 
 --------------------------------------------------------------------------------
@@ -144,36 +146,36 @@ translateProgramCBV dpgm = ML.Pgm ( fmap transDeclCBV . D.pgmDecls $ dpgm )
 
 transDeclST :: D.Decl -> TransM Hs.DataTyCons
 transDeclST (Right d) =
-  do { tn <- freshen (D.posTyName d)
-     ; addTyAssoc (D.posTyName d) tn
-     ; tyvars <- transTyVarsST (D.posTyFVars d)
-     ; injs <- mapM transInjST (D.injections d)
+  do { tn <- freshen (Ty.posTyName d)
+     ; addTyAssoc (Ty.posTyName d) tn
+     ; tyvars <- transTyVarsST (Ty.posTyFVars d)
+     ; injs <- mapM transInjST (Ty.injections d)
      ; return (Hs.DataTyCons tn tyvars injs) }
 
 transDeclST (Left d) =
-  do { tn <- freshen (D.negTyName d)
-     ; tyvars <- transTyVarsST (D.negTyFVars d)
+  do { tn <- freshen (Ty.negTyName d)
+     ; tyvars <- transTyVarsST (Ty.negTyFVars d)
      ; let tnCons = "Mk" <> tn
            ty = foldl Hs.TyApp (Hs.TyVar tn) (map Hs.TyVar tyvars)
-           arity = length . D.projections $ d
+           arity = length . Ty.projections $ d
      ; (inj,_) <- foldrM (\p (accTy,i) ->
-                           do { ty1 <- transTypeST . D.projCod $ p
-                              ; addDestAssoc (D.projName p) tnCons arity i
+                           do { ty1 <- transTypeST . Ty.projCod $ p
+                              ; addDestAssoc (Ty.projName p) tnCons arity i
                               ; return (Hs.TyArr ty1 accTy,succ i) })
                          (ty,1)
-                         (D.projections d)
+                         (Ty.projections d)
      ; return (Hs.DataTyCons tn tyvars [Hs.DataCon tnCons inj]) }
 
-transTyVarsST :: [D.TyVariable] -> TransM [Hs.TyVariable]
+transTyVarsST :: [Ty.TyVariable] -> TransM [Hs.TyVariable]
 transTyVarsST = mapM (\v -> do { v' <- freshen v
                                ; addTyAssoc v v'
                                ; return v' })
 
-transInjST :: D.Injection -> TransM Hs.DataCon
+transInjST :: Ty.Injection -> TransM Hs.DataCon
 transInjST dinj =
-  do { n <- freshen (D.injName dinj)
-     ; addVarAssoc (D.injName dinj) n
-     ; ty <- transTypeST . D.injCod $ dinj
+  do { n <- freshen (Ty.injName dinj)
+     ; addVarAssoc (Ty.injName dinj) n
+     ; ty <- transTypeST . Ty.injCod $ dinj
      ; return (Hs.DataCon n ty) }
 
 -----------
@@ -184,27 +186,27 @@ transDeclL
   :: D.Decl
   -> (Hs.Term -> Hs.Term, Either Hs.DataTyCons Hs.RecordTyCons)
 transDeclL (Right d) =
-  (id, Left (Hs.DataTyCons (D.posTyName d)
-                           (D.posTyFVars d)
-                           (fmap mkDataCon . D.injections $ d)))
-  where mkDataCon :: D.Injection -> Hs.DataCon
-        mkDataCon inj = Hs.DataCon (D.injName inj) (transTypeL . D.injCod $ inj)
+  (id, Left (Hs.DataTyCons (Ty.posTyName d)
+                           (Ty.posTyFVars d)
+                           (fmap mkDataCon . Ty.injections $ d)))
+  where mkDataCon :: Ty.Injection -> Hs.DataCon
+        mkDataCon inj = Hs.DataCon (Ty.injName inj) (transTypeL . Ty.injCod $ inj)
 
 transDeclL (Left d)  =
-  ( addSetters (D.projections d) 0
+  ( addSetters (Ty.projections d) 0
   , Right (Hs.RecordTyCons name
-                           (D.negTyFVars d)
-                           (fmap mkRecordField (D.projections d))))
-  where name = "Mk" <> D.negTyName d
-        pname p = "_" <> D.projName p
+                           (Ty.negTyFVars d)
+                           (fmap mkRecordField (Ty.projections d))))
+  where name = "Mk" <> Ty.negTyName d
+        pname p = "_" <> Ty.projName p
 
-        numProjs = length . D.projections $ d
+        numProjs = length . Ty.projections $ d
 
         -- an association between projections and their index
-        pIndexAssoc :: [(Int,D.Projection)]
-        pIndexAssoc = foldrWithIndex (\i p a -> (i,p):a) [] (D.projections d)
+        pIndexAssoc :: [(Int,Ty.Projection)]
+        pIndexAssoc = foldrWithIndex (\i p a -> (i,p):a) [] (Ty.projections d)
 
-        addSetters :: [D.Projection] -> Int -> (Hs.Term -> Hs.Term)
+        addSetters :: [Ty.Projection] -> Int -> (Hs.Term -> Hs.Term)
         addSetters [] _ = id
         addSetters (p:ps) i =
           (Hs.Let
@@ -219,13 +221,13 @@ transDeclL (Left d)  =
                                   in Hs.App c t
                                 )
                                 (Hs.Cons name)
-                                (D.projections d))))) --Hs.App(Hs.App (Hs.Cons name) (Hs.Var "x"))))))
+                                (Ty.projections d))))) --Hs.App(Hs.App (Hs.Cons name) (Hs.Var "x"))))))
           . (addSetters ps (i+1))
-          where setterName = "set_" <> D.projName p
+          where setterName = "set_" <> Ty.projName p
 
-        mkRecordField :: D.Projection -> Hs.Field
+        mkRecordField :: Ty.Projection -> Hs.Field
         mkRecordField p = Hs.Field (pname p)
-                                   (transTypeL . D.projCod $ p)
+                                   (transTypeL . Ty.projCod $ p)
 
 foldrWithIndex :: (Int -> a -> b -> b) -> b -> [a] -> b
 foldrWithIndex f b = snd . foldr (\a (i,x) -> (i+1,f i a x)) (0,b)
@@ -251,17 +253,17 @@ transDeclCBV = error "TODO: transDeclCBV{}"
 constructors depend on the translation of declarations and must lookup their
 value in the TransM monad. -}
 
-transTypeST :: D.Type -> TransM Hs.Type
-transTypeST D.TyInt       = return Hs.TyInt
-transTypeST (D.TyArr a b) = Hs.TyArr <$> transTypeST a <*> transTypeST b
-transTypeST (D.TyApp a b) = Hs.TyApp <$> transTypeST a <*> transTypeST b
-transTypeST (D.TyVar v)   =
+transTypeST :: Ty.Type -> TransM Hs.Type
+transTypeST Ty.TyInt       = return Hs.TyInt
+transTypeST (Ty.TyArr a b) = Hs.TyArr <$> transTypeST a <*> transTypeST b
+transTypeST (Ty.TyApp a b) = Hs.TyApp <$> transTypeST a <*> transTypeST b
+transTypeST (Ty.TyVar v)   =
   do { tm <- tyMap <$> get
      ; case lookup v tm of
          Just v' -> return (Hs.TyVar v')
          Nothing -> error ("Type variable '" <> v <> "' not in scope.")
      }
-transTypeST (D.TyCons k)  =
+transTypeST (Ty.TyCons k)  =
   do { tm <- tyMap <$> get
      ; case lookup k tm of
          Just k' -> return (Hs.TyCons k')
@@ -272,12 +274,12 @@ transTypeST (D.TyCons k)  =
 -- Local --
 -----------
 
-transTypeL :: D.Type -> Hs.Type
-transTypeL D.TyInt       = Hs.TyInt
-transTypeL (D.TyArr a b) = Hs.TyArr (transTypeL a) (transTypeL b)
-transTypeL (D.TyApp a b) = Hs.TyApp (transTypeL a) (transTypeL b)
-transTypeL (D.TyVar v)   = Hs.TyVar v
-transTypeL (D.TyCons k)  = Hs.TyCons k
+transTypeL :: Ty.Type -> Hs.Type
+transTypeL Ty.TyInt       = Hs.TyInt
+transTypeL (Ty.TyArr a b) = Hs.TyArr (transTypeL a) (transTypeL b)
+transTypeL (Ty.TyApp a b) = Hs.TyApp (transTypeL a) (transTypeL b)
+transTypeL (Ty.TyVar v)   = Hs.TyVar v
+transTypeL (Ty.TyCons k)  = Hs.TyCons k
 
 --------------------------------------------------------------------------------
 --                                  Terms                                     --

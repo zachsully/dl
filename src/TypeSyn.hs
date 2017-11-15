@@ -9,26 +9,26 @@ import Utils
 --                                 Types                                      --
 --------------------------------------------------------------------------------
 
-data Type :: Kind -> * where
-  TyInt  :: Type 'KStar
-  TyArr  :: Type 'KStar -> Type 'KStar -> Type 'KStar
-  TyVar  :: Variable -> Type 'KStar
-  TyCons :: Variable -> Type 'KStar
-  TyApp  :: Type 'KStar -> Type 'KStar -> Type 'KStar
+data Type :: * where
+  TyInt  :: Type
+  TyArr  :: Type -> Type -> Type
+  TyVar  :: Variable -> Type
+  TyCons :: Variable -> Type
+  TyApp  :: Type -> Type -> Type
 
-ppType :: forall k . Type k -> String
+ppType :: Type -> String
 ppType TyInt = "Int"
 ppType (TyArr a b) = ppType a <+> "->" <+> ppType b
 ppType (TyVar v) = v
 ppType (TyCons k) = k
 ppType (TyApp a b) =  ppType a <+> ppType b
 
-collectTyArgs :: forall k . Type k -> Maybe (TyVariable,[Type k])
+collectTyArgs :: Type -> Maybe (TyVariable,[Type])
 collectTyArgs (TyApp e t) = collectTyArgs e >>= \(k,ts) -> return (k,t:ts)
 collectTyArgs (TyCons k)  = return (k,[])
 collectTyArgs _           = Nothing
 
-distributeTyArgs :: forall k . (TyVariable,[Type KStar]) -> Type KStar
+distributeTyArgs :: (TyVariable,[Type]) -> Type
 distributeTyArgs (k,ts) = foldl TyApp (TyCons k) ts
 
 {- TyVariable are bound inside of the types in a declaration -}
@@ -38,39 +38,39 @@ type TyVariable = String
    PositiveTyCons. These two are very similar. The notable difference is in
    projections and injections, where every projection must have domain and a
    codomain, injections may not take arguments. -}
-data NegativeTyCons k
+data NegativeTyCons
   = NegTyCons
   { negTyName   :: TyVariable
   , negTyFVars  :: [TyVariable]
-  , projections :: [Projection k] }
+  , projections :: [Projection] }
 
-instance Pretty (NegativeTyCons k) where
+instance Pretty NegativeTyCons where
   pp tc = "codata" <+> negTyName tc
 
-negTyArity :: forall k . NegativeTyCons k -> Int
+negTyArity :: NegativeTyCons -> Int
 negTyArity = length . negTyFVars
 
-data Projection k
+data Projection
   = Proj
   { projName :: Variable
-  , projDom  :: Type k
-  , projCod  :: Type k }
+  , projDom  :: Type
+  , projCod  :: Type }
 
-data PositiveTyCons k
+data PositiveTyCons
   = PosTyCons
   { posTyName  :: TyVariable
   , posTyFVars :: [TyVariable]
-  , injections :: [Injection k]  }
+  , injections :: [Injection]  }
 
-instance Pretty (PositiveTyCons k) where
+instance Pretty PositiveTyCons where
   pp tc = "data" <+> posTyName tc
 
-posTyArity :: forall k . PositiveTyCons k -> Int
+posTyArity :: PositiveTyCons -> Int
 posTyArity = length . posTyFVars
 
-data Injection k
+data Injection
   = Inj
   { injName :: Variable
-  , injCod  :: Type k }
+  , injCod  :: Type }
   {- the domain is a maybe value because unary constructors do not take
      arguments, e.g. () : Unit -}

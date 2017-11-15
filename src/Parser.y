@@ -1,4 +1,5 @@
 {
+{-# LANGAUGE DataKinds #-}
 module Parser where
 
 import Control.Monad.State
@@ -6,6 +7,7 @@ import Lexer
 import DualSyn
 import VariableSyn
 import KindSyn
+import TypeSyn
 }
 -- All shift/reduce conflicts
 %expect 18
@@ -31,12 +33,15 @@ import KindSyn
   '='      { TokEq }
   'in'     { TokIn }
   '#'      { TokHash }
+  '□'      { TokBox }
   '_'      { TokUnderscore }
   '->'     { TokArr }
-  '{'      { TokLBrac }
-  '}'      { TokRBrac }
+  '{'      { TokLBrace }
+  '}'      { TokRBrace }
   '('      { TokLParen }
   ')'      { TokRParen }
+  '['      { TokLBrack }
+  ']'      { TokRBrack }
   ','      { TokComma }
   '|'      { TokMid }
   ':'      { TokColon }
@@ -88,20 +93,20 @@ injs : injs '|' inj                            { $3 : $1 }
 --                                 Types                                      --
 --------------------------------------------------------------------------------
 
-type :: { Type Star }
+type :: { Type }
 type : type0                           { $1 }
 
 -- try type constructor
-type0 :: { Type Star }
+type0 :: { Type }
 type0 :  type typeA                    { TyApp $1 $2 }
       |  type1                         { $1 }
 
 -- try function
-type1 :: { Type Star }
+type1 :: { Type }
 type1 :  type '->' type                { TyArr $1 $3 }
       |  typeA                         { $1 }
 
-typeA :: { Type Star }
+typeA :: { Type }
 typeA : '(' type ')'                   { $2 }
       | 'tyint'                        { TyInt }
       | str                            {% do { b <- isTyCons $1
@@ -117,6 +122,8 @@ typeA : '(' type ')'                   { $2 }
 
 term :: { Term }
 term : term1                      { $1 }
+     | '{' coalts '}'             { CoCase (reverse $2) }
+
 
 term1 :: { Term }
 term1 :  term  termA              { App $1 $2 }
@@ -148,45 +155,54 @@ termA :  num                      { Lit $1 }
 --------------
 
 alt :: { (Pattern,Term) }
-alt : pattern '->' term             { ($1,$3) }
+alt : pattern '->' term          { ($1,$3) }
 
 alts :: { [(Pattern,Term)] }
-alts : alt                          { [$1] }
-     | alts '|' alt                 { $3 : $1 }
-     | {- empty -}                  { [] }
+alts : alt                       { [$1] }
+     | alts '|' alt              { $3 : $1 }
+     | {- empty -}               { [] }
 
 coalt :: { (CoPattern,Term) }
-coalt : copattern '->' term         { ($1,$3) }
+coalt : copattern '->' term      { ($1,$3) }
 
 coalts :: { [(CoPattern,Term)] }
-coalts : coalt                      { [$1] }
-       | coalts ',' coalt           { $3 : $1 }
-       | {- empty -}                { [] }
+coalts : coalt                   { [$1] }
+       | coalts ',' coalt        { $3 : $1 }
+       | {- empty -}             { [] }
 
 pattern :: { Pattern }
-pattern : str patterns              { PCons $1 (reverse $2) }
-        | str                       { PCons $1 [] }
+pattern : str patterns           { PCons $1 (reverse $2) }
+        | str                    { PCons $1 [] }
 
 patternA :: { Pattern }
-patternA : '_'                      { PWild }
-         | str                      { PVar $1 }
-         | '(' pattern ')'          { $2 }
+patternA : '_'                   { PWild }
+         | str                   { PVar $1 }
+         | '(' pattern ')'       { $2 }
 
 patterns :: { [Pattern] }
-patterns : patternA                 { [$1] }
-         | patterns patternA        { $2 : $1 }
+patterns : patternA              { [$1] }
+         | patterns patternA     { $2 : $1 }
 
 copattern :: { CoPattern }
-copattern : copattern patternA     { QPat $1 $2 }
-          | copattern0              { $1 }
+copattern : copattern patternA   { QPat $1 $2 }
+          | copattern0           { $1 }
 
 copattern0 :: { CoPattern }
-copattern0 : str copatternA         { QDest $1 $2 }
-           | copatternA             { $1 }
+copattern0 : str copatternA      {% do { mp <- getPolarity $1
+                                       ; case mp of
+                                           Nothing -> return (QVar $1 $2)
+                                           Just Negative -> return (QDest $1 $2)
+                                           Just Positive ->
+                                             error ("constructor " ++ $1 ++
+                                                    " in copattern.")
+                                       }
+                                 }
+           | copatternA          { $1 }
 
 copatternA :: { CoPattern }
 copatternA : '#'                    { QHead }
-           | '(' copattern ')'      { $2 }
+           | '□'                    { QHead }
+           | '[' copattern ']'      { $2 }
 
 {
 --------------------------------------------------------------------------------

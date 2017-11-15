@@ -13,6 +13,7 @@ import qualified MLSyn as ML
 import Lexer
 import Parser
 import Translation
+import Interpreter
 -- import Judgement
 import Utils
 
@@ -151,7 +152,7 @@ runEvaluate em =
   do { term <- D.pgmTerm <$> getProgram (emInput em)
      ; when (emDebug em) $ pprint term
      ; putStr "> "
-     ; print . D.evalEmpty $ term }
+     ; print . interpEmpty $ term }
 
 runTypeOf :: TypeMode -> IO ()
 runTypeOf tm = error "unimplemented"

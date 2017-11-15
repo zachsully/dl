@@ -1,4 +1,4 @@
 codata Const a
   { Const : Const a -> a}
 
-Const (cocase { Const # -> 42 })
+Const ({ Const □ -> 42 })
