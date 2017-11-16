@@ -24,6 +24,7 @@ tokens :-
   in         { const TokIn }
   \#         { const TokHash }
   □          { const TokBox }
+  ▪          { const TokBoxFill }
   _          { const TokUnderscore }
   \->        { const TokArr }
   \{         { const TokLBrace }
@@ -53,6 +54,7 @@ data Token
   | TokIn
   | TokHash
   | TokBox
+  | TokBoxFill
   | TokUnderscore
   | TokArr
   | TokLBrace

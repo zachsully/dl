@@ -34,6 +34,7 @@ import TypeSyn
   'in'     { TokIn }
   '#'      { TokHash }
   '□'      { TokBox }
+  '▪'      { TokBoxFill }
   '_'      { TokUnderscore }
   '->'     { TokArr }
   '{'      { TokLBrace }
@@ -127,6 +128,7 @@ term : term1                      { $1 }
 
 term1 :: { Term }
 term1 :  term  termA              { App $1 $2 }
+      |  '▪' termA                { Prompt $2 }
       |  term2                    { $1 }
 
 term2 :: { Term }

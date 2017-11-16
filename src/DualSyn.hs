@@ -66,6 +66,7 @@ data Term where
 
   Dest :: Variable -> Term
   CoCase :: [(CoPattern,Term)] -> Term
+  Prompt :: Term -> Term -- sets a point to delimit continuations
   deriving (Eq,Show)
 
 instance Pretty Term where
