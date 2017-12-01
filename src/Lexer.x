@@ -1,5 +1,5 @@
 {
-module Lexer (lexFile, lexContents, Token(..)) where
+module Lexer (lexFile, lexString, lexContents, Token(..)) where
 }
 
 %wrapper "basic"
@@ -23,10 +23,11 @@ tokens :-
   =          { const TokEq }
   in         { const TokIn }
   \#         { const TokHash }
-  □          { const TokBox }
-  ▪          { const TokBoxFill }
+  □         { const TokBox }
+  ▪         { const TokBoxFill }
   _          { const TokUnderscore }
   \->        { const TokArr }
+  →         { const TokArr }
   \{         { const TokLBrace }
   \}         { const TokRBrace }
   \(         { const TokLParen }
@@ -70,6 +71,9 @@ data Token
 
 lexFile :: FilePath -> IO [Token]
 lexFile fp = alexScanTokens <$> readFile fp
+
+lexString :: String -> [Token]
+lexString = alexScanTokens
 
 lexContents :: IO [Token]
 lexContents = alexScanTokens <$> getContents

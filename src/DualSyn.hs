@@ -57,9 +57,9 @@ data Term where
   Lit :: Int -> Term
   Add :: Term -> Term -> Term
 
-  Var :: Variable -> Term
-  Fix :: Variable -> Term -> Term
-  App :: Term -> Term -> Term
+  Var   :: Variable -> Term
+  Fix   :: Variable -> Term -> Term
+  App   :: Term -> Term -> Term
 
   Cons :: Variable -> Term
   Case :: Term -> [(Pattern,Term)] -> Term
@@ -138,6 +138,14 @@ instance Pretty CoPattern where
   pp QHead       = "#"
   pp (QDest h q) = h <+> (parens . pp $ q)
   pp (QPat q p)  = (parens . pp $ q) <+> (parens . pp $ p)
+
+
+-----------------------------
+-- Some smart constructors --
+-----------------------------
+
+lam :: Variable -> Term -> Term
+lam v t = CoCase [(QPat QHead (PVar v), t)]
 
 --------------------------------------------------------------------------------
 --                        Term Manipulations --

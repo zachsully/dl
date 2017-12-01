@@ -17,6 +17,7 @@
 	   ("case\s"   . font-lock-type-face)
 	   )))
   (set-syntax-table dual-lang-mode-syntax-table)
+  (setq set-input-method "TeX")
   (setq mode-name "dl-mode"))
 
 ;; Loading

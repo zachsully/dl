@@ -10,7 +10,7 @@ import KindSyn
 import TypeSyn
 }
 -- All shift/reduce conflicts
-%expect 18
+%expect 14
 
 %name parseProgram program
 %name parseType type
@@ -33,8 +33,8 @@ import TypeSyn
   '='      { TokEq }
   'in'     { TokIn }
   '#'      { TokHash }
-  '□'      { TokBox }
-  '▪'      { TokBoxFill }
+  '□'     { TokBox }
+  '▪'     { TokBoxFill }
   '_'      { TokUnderscore }
   '->'     { TokArr }
   '{'      { TokLBrace }
@@ -123,20 +123,18 @@ typeA : '(' type ')'                   { $2 }
 
 term :: { Term }
 term : term1                      { $1 }
-     | '{' coalts '}'             { CoCase (reverse $2) }
-
 
 term1 :: { Term }
-term1 :  term  termA              { App $1 $2 }
-      |  '▪' termA                { Prompt $2 }
+term1 :  termA  term              { App $1 $2 }
+      |  '▪' termA               { Prompt $2 }
       |  term2                    { $1 }
 
 term2 :: { Term }
 term2 :  term '+' termA                { Add $1 $3 }
+      |  'cocase' '{' coalts '}'       { CoCase (reverse $3) }
       |  'fix' str 'in' term           { Fix $2 $4 }
       |  'let' str '=' term 'in' term  { Let $2 $4 $6 }
       |  'case' term '{' alts '}'      { Case $2 (reverse $4) }
-      |  'cocase' '{' coalts '}'       { CoCase (reverse $3) }
       |  termA                         { $1 }
 
 {- We lookup to see if the string is defined as a symbol and a singleton
@@ -150,7 +148,9 @@ termA :  num                      { Lit $1 }
                                             Just Positive -> return (Cons $1)
                                         }
                                   }
-      |  '(' term ')'             { $2 }
+      | '(' term ')'              { $2 }
+      | '{' coalts '}'                 { CoCase (reverse $2) }
+
 
 --------------
 -- Matching --
@@ -203,7 +203,7 @@ copattern0 : str copatternA      {% do { mp <- getPolarity $1
 
 copatternA :: { CoPattern }
 copatternA : '#'                    { QHead }
-           | '□'                    { QHead }
+           | '□'                   { QHead }
            | '[' copattern ']'      { $2 }
 
 {

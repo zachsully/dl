@@ -16,7 +16,16 @@ executable dl
   hs-source-dirs:      src
   build-tools:         alex, happy
 
-  other-modules:       Lexer, Parser
+  other-modules:       Lexer,
+                       Parser,
+                       DualSyn,
+                       HsSyn,
+                       Interpreter,
+                       KindSyn,
+                       MLSyn,
+                       Translation,
+                       Utils,
+                       VariableSyn
 
   build-depends:       base                 >= 4.8,
                        ghc                  >= 8.0,

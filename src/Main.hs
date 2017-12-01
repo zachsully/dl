@@ -5,6 +5,7 @@ import Data.Monoid
 import Options.Applicative
 import Control.Monad.State
 import Control.Monad (when)
+import System.IO
 
 -- local
 import qualified DualSyn as D
@@ -48,6 +49,7 @@ data Mode
   | Compile  CompileMode
   | Evaluate EvalMode
   | TypeOf   TypeMode
+  | Repl
 
 inputFp :: Parser FilePath
 inputFp = strArgument (metavar "INPUT" <> help "input dual language file")
@@ -90,6 +92,8 @@ selectMode = subparser
                               (progDesc "compile a dual language program to Haskell.")))
   <> (command "eval" (info (helper <*> (Evaluate <$> parseEvaluate))
                            (progDesc "evaluate a dual language program.")))
+  <> (command "repl" (info (helper <*> (pure Repl))
+                           (progDesc "a dl read-eval-print loop.")))
   <> (command "type" (info (helper <*> (TypeOf <$> parseTypeOf))
                            (progDesc "infer the type of a dual language program.")))
 
@@ -110,6 +114,7 @@ main = do { mode <- parseMode
               Compile cm  -> runCompile cm
               Evaluate em -> runEvaluate em
               TypeOf tm   -> runTypeOf tm
+              Repl        -> runRepl
           }
 
 getProgram :: FilePath -> IO (D.Program D.Term)
@@ -159,3 +164,14 @@ runTypeOf tm = error "unimplemented"
   -- do { pgm <- getProgram (tmInput tm)
   --    ; when (tmDebug tm) $ pprint pgm
   --    ; putStrLn . ppTypeScheme . inferTSProgram $ pgm }
+
+runRepl :: IO ()
+runRepl =
+  do { hSetBuffering stdout NoBuffering
+     ; hSetBuffering stdin  LineBuffering
+     ; forever $
+         do { hPutStr stdout "> "
+            ; t <- fst . flip runState emptyState
+                 . parseTerm . lexString <$> hGetLine stdin
+            ; hPutStrLn stdout . pp . interpEmpty $ t }
+     }
