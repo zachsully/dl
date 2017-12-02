@@ -15,7 +15,7 @@ import Lexer
 import Parser
 import Translation
 import Interpreter
--- import Judgement
+import Judgement
 import Utils
 
 
@@ -110,10 +110,10 @@ parseMode = execParser
 main :: IO ()
 main = do { mode <- parseMode
           ; case mode of
-              Flatten fm  -> runFlatten fm
-              Compile cm  -> runCompile cm
-              Evaluate em -> runEvaluate em
-              TypeOf tm   -> runTypeOf tm
+              Flatten fm  -> runFlatten fm =<< getProgram (fmInput fm)
+              Compile cm  -> runCompile cm =<< getProgram (cmInput cm)
+              Evaluate em -> runEvaluate em =<< getProgram (emInput em)
+              TypeOf tm   -> runTypeOf tm =<< getProgram (tmInput tm)
               Repl        -> runRepl
           }
 
@@ -122,48 +122,52 @@ getProgram fp =
   do { !tokens <- case fp of
                     "-" -> lexContents
                     _   -> lexFile fp
-     ; return . fst . runState (parseProgram tokens) $ emptyState
+     ; case tokens of
+         Left e -> error e
+         Right ts ->
+           case runParserM (parseProgram ts) emptyState of
+             Left e -> error e
+             Right (p,_) -> return p
      }
 
-runFlatten :: FlattenMode -> IO ()
-runFlatten fm =
-  do { pgm <- getProgram (fmInput fm)
-     ; pprint pgm
+runFlatten :: FlattenMode -> D.Program D.Term -> IO ()
+runFlatten _ pgm =
+  do { pprint pgm
      ; putStrLn "\n->>R\n"
-     ; pprint . D.flatten . D.pgmTerm $ pgm
-     }
+     ; pprint . D.flatten . D.pgmTerm $ pgm }
 
-runCompile :: CompileMode -> IO ()
-runCompile cm =
-  do { pgm <- getProgram (cmInput cm)
-     ; let pgm' = D.flattenPgm pgm
-     ; when (cmDebug cm) $
+runCompile :: CompileMode -> D.Program D.Term -> IO ()
+runCompile cm pgm =
+  let pgm' = D.flattenPgm pgm in
+    do { when (cmDebug cm) $
          do { pprint pgm
             ; putStrLn "\n->>R\n"
             ; pprint pgm'
             ; putStrLn "\n=>\n" }
-     ; let !prog' = case cmML cm of
-                      True -> ML.ppProgram . translateProgramCBV $ pgm'
-                      False -> H.ppProgram . (case cmLocal cm of
-                                               True -> translateProgramLocal
-                                               False -> translateProgramST) $ pgm'
-     ; case cmOutput cm of
-         "-" -> putStrLn prog'
-         fp  -> writeFile fp prog'
-     }
+       ; let !prog' = case cmML cm of
+                        True -> ML.ppProgram . translateProgramCBV $ pgm'
+                        False -> H.ppProgram . (case cmLocal cm of
+                                                   True -> translateProgramLocal
+                                                   False -> translateProgramST) $ pgm'
+       ; case cmOutput cm of
+           "-" -> putStrLn prog'
+           fp  -> writeFile fp prog'
+       }
 
-runEvaluate :: EvalMode -> IO ()
-runEvaluate em =
-  do { term <- D.pgmTerm <$> getProgram (emInput em)
-     ; when (emDebug em) $ pprint term
-     ; putStr "> "
-     ; print . interpEmpty $ term }
+runEvaluate :: EvalMode -> D.Program D.Term -> IO ()
+runEvaluate em pgm =
+  let term = D.pgmTerm pgm in
+    do { when (emDebug em) $ pprint term
+       ; putStr "> "
+       ; case runStd (interpEmpty term) of
+           Left s -> print s
+           Right a -> pprint a
+       }
 
-runTypeOf :: TypeMode -> IO ()
-runTypeOf tm = error "unimplemented"
-  -- do { pgm <- getProgram (tmInput tm)
-  --    ; when (tmDebug tm) $ pprint pgm
-  --    ; putStrLn . ppTypeScheme . inferTSProgram $ pgm }
+runTypeOf :: TypeMode -> D.Program D.Term -> IO ()
+runTypeOf tm pgm =
+  do { when (tmDebug tm) $ pprint pgm
+     ; pprint . inferTSProgram $ pgm }
 
 runRepl :: IO ()
 runRepl =
@@ -171,7 +175,15 @@ runRepl =
      ; hSetBuffering stdin  LineBuffering
      ; forever $
          do { hPutStr stdout "> "
-            ; t <- fst . flip runState emptyState
-                 . parseTerm . lexString <$> hGetLine stdin
-            ; hPutStrLn stdout . pp . interpEmpty $ t }
+            ; m <- lexString <$> hGetLine stdin
+            ; case m of
+                Left e -> hPutStrLn stdout e
+                Right ts ->
+                  case runParserM (parseTerm ts) emptyState of
+                    Left e -> hPutStrLn stdout e
+                    Right (t,_) ->
+                      case runStd (interpEmpty t) of
+                        Left s -> hPutStrLn stdout $ s
+                        Right a -> hPutStrLn stdout . pp $ a
+            }
      }

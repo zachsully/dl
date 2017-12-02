@@ -1,19 +1,21 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs,KindSignatures #-}
 module Judgement where
 
 import Data.Monoid
 
 import Utils
+import TypeSyn
 import DualSyn
+import VariableSyn
 
--- data TypeScheme :: Kind -> * where
---   TyMono   :: Type k -> TypeScheme k
---   TyForall :: TyVariable k -> Type -> TypeScheme
---   deriving (Show,Eq)
+data TypeScheme :: * where
+  TyMono   :: Type -> TypeScheme
+  TyForall :: TyVariable -> Type -> TypeScheme
+  deriving Eq
 
-ppTypeScheme :: TypeScheme -> String
-ppTypeScheme (TyMono ty)     = ppType ty
-ppTypeScheme (TyForall v ty) = "forall" <+> v <> "." <+> ppType ty
+instance Pretty TypeScheme where
+  pp (TyMono ty)     = pp ty
+  pp (TyForall v ty) = "∀" <+> v <> "." <+> pp ty
 
 --------------------------------------------------------------------------------
 --                              Top Level                                     --
@@ -27,10 +29,9 @@ typeOfProgram (Pgm decls term) = infer decls [] term
 --------------------------------------------------------------------------------
 {- Checks whether a type is well formed -}
 
-isType :: forall k
-       .  [Decl k]              -- ^ A set of type signatures
-       -> [(TyVariable,Type k)] -- ^ A context of bindings of type variables
-       -> Type k
+isType :: [Decl]              -- ^ A set of type signatures
+       -> [(TyVariable,Type)] -- ^ A context of bindings of type variables
+       -> Type
        -> Bool
 isType _ _   TyInt         = True
 isType s ctx (TyArr a b)   = isType s ctx a && isType s ctx b
@@ -74,9 +75,9 @@ inferTS c (App a b)  = case inferTS c a of
                              TyMono bTy ->
                                case bTy == aTy0 of
                                  True -> TyMono aTy1
-                                 False -> error ("expecting type" <+> ppType aTy1)
-                             t -> error ("must be a function type, given" <+> ppTypeScheme t)
-                         t -> error ("must be a function type, given" <+> ppTypeScheme t)
+                                 False -> error ("expecting type" <+> pp aTy1)
+                             t -> error ("must be a function type, given" <+> pp t)
+                         t -> error ("must be a function type, given" <+> pp t)
 inferTS c (Cons k)   = case lookup k c of
                          Just t -> TyMono t
                          Nothing -> error ("unbound constructor " <> k)
@@ -111,8 +112,8 @@ unify :: Type -> Type -> [(TyVariable,Type)]
 unify a@(TyVar a') b@(TyVar b') = case a' == b' of
                                     True -> [(a',b)]
                                     False -> error (unwords ["cannot unify"
-                                                            ,show a,"and"
-                                                            ,show b])
+                                                            ,pp a,"and"
+                                                            ,pp b])
 unify (TyVar a') b = case occurs a' b of
                        True -> error "recursion in type"
                        False -> [(a',b)]
@@ -124,7 +125,7 @@ unify (TyCons a) (TyCons b) = case a == b of
                                 False -> error ("unify tyCons" <> a <> " and " <> b)
 unify (TyApp a b) (TyApp a' b') = unify a b <> unify a' b'
 unify (TyArr a b) (TyArr a' b') = unify a b <> unify a' b'
-unify a b = error (unwords ["cannot unify",show a,"and",show b])
+unify a b = error (unwords ["cannot unify",pp a,"and",pp b])
 
 --------------------------------------------------------------------------------
 --                              Bidirectional Tc                              --
@@ -170,7 +171,7 @@ infer s c (App a b) =
     TyArr tyDom tyCod ->
       case check s c b tyDom of
         True -> tyCod
-        False -> error (show a ++ " expects arguments of type " ++ show tyDom)
+        False -> error (show a ++ " expects arguments of type " ++ pp tyDom)
     _ -> error ("operator must have a function type: " ++ show a)
 
 infer _ _ (Case _ _) = error "infer{Case}"

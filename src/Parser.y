@@ -2,7 +2,8 @@
 {-# LANGAUGE DataKinds #-}
 module Parser where
 
-import Control.Monad.State
+import Control.Monad
+
 import Lexer
 import DualSyn
 import VariableSyn
@@ -16,8 +17,8 @@ import TypeSyn
 %name parseType type
 %name parseTerm term
 %tokentype { Token }
-%error { parseError }
-%monad { State ([Variable],[(Variable,Polarity)]) }
+%error { pfail }
+%monad { ParserM }{ (>>=) }{ return }
 
 %token
   num      { TokLit $$ }
@@ -211,20 +212,49 @@ copatternA : '#'                    { QHead }
 --                                Helpers                                     --
 --------------------------------------------------------------------------------
 
+data ParserM a
+  = ParserM
+  { runParserM :: ([Variable],[(Variable,Polarity)])
+               -> Either String (a,([Variable],[(Variable,Polarity)]))
+  }
+
+instance Functor ParserM where
+  fmap f m = ParserM $ \s ->
+    case runParserM m s of
+      Left e -> Left e
+      Right (a,s') -> Right (f a, s')
+
+instance Applicative ParserM where
+  pure = return
+  (<*>) = ap
+
+instance Monad ParserM where
+  return x = ParserM $ \s -> Right (x,s)
+  m >>= f = ParserM $ \s ->
+    case runParserM m s of
+      Left e -> Left e
+      Right (x,s') -> runParserM (f x) s'
+
+get :: ParserM ([Variable],[(Variable,Polarity)])
+get = ParserM $ \s -> Right (s,s)
+
+put :: ([Variable],[(Variable,Polarity)]) -> ParserM ()
+put s = ParserM $ \_ -> Right ((),s)
+
 emptyState = ([],[])
 
-addTyCons :: Variable -> State ([Variable],ss) ()
+addTyCons :: Variable -> ParserM ()
 addTyCons s = get >>= \(ts,ss) -> put (s:ts,ss)
 
-isTyCons :: Variable -> State ([Variable],ss) Bool
+isTyCons :: Variable -> ParserM Bool
 isTyCons s = elem s . fst <$> get
 
-addVar :: Variable -> Polarity -> State (ts,[(Variable,Polarity)]) ()
+addVar :: Variable -> Polarity -> ParserM ()
 addVar s p = get >>= \(ts,ss) -> put (ts,(s,p):ss)
 
-getPolarity :: Variable -> State (ts,[(Variable,Polarity)]) (Maybe Polarity)
+getPolarity :: Variable -> ParserM (Maybe Polarity)
 getPolarity s = get >>= \(_,ss) -> return (lookup s ss)
 
-parseError :: [Token] -> a
-parseError ts = error ("parse error: " ++ show ts)
+pfail :: [Token] -> ParserM a
+pfail ts = ParserM $ \_ -> Left ("<parse error>: " ++ show ts)
 }

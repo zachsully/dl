@@ -1,7 +1,12 @@
 module Utils where
 
 import Data.Monoid
+import Control.Monad
 
+--------------------------------------------------------------------------------
+--                                  Pretty                                    --
+--------------------------------------------------------------------------------
+{- A class for pretty printing -}
 class Pretty a where
   {-# MINIMAL ppInd | pp #-}
   pp :: a -> String
@@ -44,3 +49,42 @@ ppPrec p p' s = case p > p' of
 
 parens :: String -> String
 parens s = "(" <> s <> ")"
+
+--------------------------------------------------------------------------------
+--                               Standard Monad                               --
+--------------------------------------------------------------------------------
+{- This is a monad that can fail and that has a state of unique names. These two
+side effects are needed a lot in this code -}
+
+data Std a = Std { apStd :: [String] -> Either String (a,[String]) }
+
+names :: [String]
+names = names' (0 :: Int)
+  where names' x = ("x" ++ show x) : names' (x+1)
+
+runStd :: Std a -> Either String a
+runStd m =
+  case apStd m names of
+    Left s -> Left s
+    Right (a,_) -> Right a
+
+failure :: String -> Std a
+failure s = Std $ \_ -> Left s
+
+instance Functor Std where
+  fmap f m = Std $ \ns ->
+    case apStd m ns of
+      Left s -> Left s
+      Right (a,ns') -> Right (f a, ns')
+
+instance Applicative Std where
+  pure  = return
+  (<*>) = ap
+
+instance Monad Std where
+  return x = Std $ \ns -> Right (x,ns)
+  m >>= f =
+    Std $ \ns ->
+      case apStd m ns of
+        Left s -> Left s
+        Right (a,ns') -> apStd (f a) ns'

@@ -2,6 +2,7 @@
 module Interpreter where
 
 import Data.Monoid
+
 import Utils
 import VariableSyn
 import DualSyn
@@ -46,64 +47,63 @@ reifyEvalCtx (EAppR v e) = lam "t0" (App (reifyValue v) undefined)
 
 data Env = Env [(Variable,(Term,Env))]
 
-lookupEnv :: Variable -> Env -> (Term,Env)
+lookupEnv :: Variable -> Env -> Std (Term,Env)
 lookupEnv v (Env e) =
   case lookup v e of
-    Nothing -> error "unbound variable"
-    Just x -> x
+    Nothing -> failure "unbound variable"
+    Just x -> return x
 
 instance Monoid Env where
   mempty = Env []
   mappend (Env a) (Env b) = Env (a <> b)
 
-interpEmpty :: Term -> Value
+interpEmpty :: Term -> Std Value
 interpEmpty = interp EEmpty mempty
 
-interp :: EvalCtx -> Env -> Term -> Value
+interp :: EvalCtx -> Env -> Term -> Std Value
 interp ctx env term =
   case term of
     Let x a b -> interp ctx (Env [(x,(a,env))] <> env) b
     Prompt a -> interp (EPrompt ctx) env a
-    Lit i -> VLit i
+    Lit i -> return (VLit i)
     Add a b ->
-      let a' = interp (ctx `EAddL` b) env a
-          b' = interp (a' `EAddR` ctx) env b
-      in
-        case (a',b') of
-          (VLit a'',VLit b'') -> VLit (a'' + b'')
-          _ -> error "type error"
+      do { a' <- interp (ctx `EAddL` b) env a
+         ; b' <- interp (a' `EAddR` ctx) env b
+         ; case (a',b') of
+             (VLit a'',VLit b'') -> return (VLit (a'' + b''))
+             _ -> failure "type error"
+         }
     Var v ->
-      let (term',env') = lookupEnv v env
-      in
-        interp ctx env' term'
+      do { (term',env') <- lookupEnv v env
+         ; interp ctx env' term' }
     Fix x term' -> interp ctx (Env [(x,(term',env))] <> env) term'
     App a b ->
-      let a' = interp (ctx `EAppL` b) env a
-      in
-        interp (a' `EAppR` ctx) env b
-    Cons k -> VConsApp k []
-    Case _ _ -> undefined
-    Dest h -> VObs h
+      do { a' <- interp (ctx `EAppL` b) env a
+         ; interp (a' `EAppR` ctx) env b }
+    Cons k -> return (VConsApp k [])
+    Case _ _ -> failure "TODO{case}"
+    Dest h -> return (VObs h)
     CoCase coalts -> comatch ctx env coalts
 
 {- The outer comatch helper just goes through coalternatives by induction on the
 list. -}
-comatch :: EvalCtx -> Env -> [(CoPattern,Term)] -> Value
+comatch :: EvalCtx -> Env -> [(CoPattern,Term)] -> Std Value
 comatch ctx env ((cop,u):cas) =
-  case comatch' ctx env cop of
+  comatch' ctx env cop >>= \m ->
+  case m of
     Nothing -> comatch ctx env cas
     Just (ctx',env') -> interp ctx' env' u
-comatch _ _ [] = VFail
+comatch _ _ [] = return VFail
 
 {- Try to match with the outer most eval ctx at first, if that fails the try an
    inner eval ctx.
 -}
-comatch' :: EvalCtx -> Env -> CoPattern -> Maybe (EvalCtx,Env)
-comatch' ctx env QHead = Just (ctx,env)
+comatch' :: EvalCtx -> Env -> CoPattern -> Std (Maybe (EvalCtx,Env))
+comatch' ctx env QHead = return (Just (ctx,env))
 
 {- Covariables -}
 comatch' ctx env (QVar a QHead) =
-  Just (EEmpty, Env [(a,(reifyEvalCtx ctx,env))] <> env)
+  return (Just (EEmpty, Env [(a,(reifyEvalCtx ctx,env))] <> env))
 comatch' ctx env (QVar a q) = comatch' ctx env q
 
 {- Application forms -}
@@ -111,7 +111,9 @@ comatch' (EAppR (VObs h) ctx) env (QDest h' q) =
   case h == h' of
      True -> comatch' ctx env q
      False ->
-       do { (ctx', env') <- comatch' ctx env (QDest h' q)
-          ; return (EAppR (VObs h) ctx',env') }
+       do { m <- comatch' ctx env (QDest h' q)
+          ; case m of
+              Nothing -> return Nothing
+              Just (ctx', env') -> return $ Just (EAppR (VObs h) ctx',env') }
 
-comatch' _ _ _ = error "TODO{Comatch}"
+comatch' _ _ _ = failure "TODO{Comatch}"

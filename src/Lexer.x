@@ -69,12 +69,24 @@ data Token
   | TokColon
   deriving (Eq,Show)
 
-lexFile :: FilePath -> IO [Token]
-lexFile fp = alexScanTokens <$> readFile fp
+alexScanTokens' :: String -> Either String [Token]
+alexScanTokens' s = go ('\n',[],s)
+  where go inp@(_,_,s') =
+          case alexScan inp 0 of
+            AlexEOF -> Right []
+            AlexError _ -> Left "<lexical error>"
+            AlexSkip inp' _ -> go inp'
+            AlexToken inp' len act ->
+              case go inp' of
+                Left e -> Left e
+                Right ts -> Right (act (take len s') : ts)
 
-lexString :: String -> [Token]
-lexString = alexScanTokens
+lexFile :: FilePath -> IO (Either String [Token])
+lexFile fp = alexScanTokens' <$> readFile fp
 
-lexContents :: IO [Token]
-lexContents = alexScanTokens <$> getContents
+lexString :: String -> Either String [Token]
+lexString = alexScanTokens'
+
+lexContents :: IO (Either String [Token])
+lexContents = alexScanTokens' <$> getContents
 }

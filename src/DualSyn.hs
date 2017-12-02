@@ -3,11 +3,9 @@
              RankNTypes #-}
 module DualSyn where
 
-import Debug.Trace
 import Control.Monad.State
 import Data.Monoid ((<>))
 
-import KindSyn
 import TypeSyn
 import VariableSyn
 import Utils

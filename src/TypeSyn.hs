@@ -15,13 +15,14 @@ data Type :: * where
   TyVar  :: Variable -> Type
   TyCons :: Variable -> Type
   TyApp  :: Type -> Type -> Type
+  deriving Eq
 
-ppType :: Type -> String
-ppType TyInt = "Int"
-ppType (TyArr a b) = ppType a <+> "->" <+> ppType b
-ppType (TyVar v) = v
-ppType (TyCons k) = k
-ppType (TyApp a b) =  ppType a <+> ppType b
+instance Pretty Type where
+  pp TyInt = "Int"
+  pp (TyArr a b) = pp a <+> "->" <+> pp b
+  pp (TyVar v) = v
+  pp (TyCons k) = k
+  pp (TyApp a b) = pp a <+> pp b
 
 collectTyArgs :: Type -> Maybe (TyVariable,[Type])
 collectTyArgs (TyApp e t) = collectTyArgs e >>= \(k,ts) -> return (k,t:ts)

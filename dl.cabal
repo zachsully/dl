@@ -21,6 +21,7 @@ executable dl
                        DualSyn,
                        HsSyn,
                        Interpreter,
+                       Judgement,
                        KindSyn,
                        MLSyn,
                        Translation,
