@@ -21,8 +21,8 @@ instance Pretty TypeScheme where
 --                              Top Level                                     --
 --------------------------------------------------------------------------------
 
-typeOfProgram :: Program Term -> Type
-typeOfProgram (Pgm decls term) = infer decls [] term
+typeOfProgram :: Program Term -> Std Type
+typeOfProgram (Pgm decls term) = infer (mkContext decls) term
 
 --------------------------------------------------------------------------------
 --                                isType                                      --
@@ -130,71 +130,73 @@ unify a b = error (unwords ["cannot unify",pp a,"and",pp b])
 --------------------------------------------------------------------------------
 --                              Bidirectional Tc                              --
 --------------------------------------------------------------------------------
-{- Attempt at a bidirectional typechecker. Not complete and maybe not even
-   necessary. -}
+{- Attempt at a bidirectional typechecker. We do not include declarations in the
+~infer~ and ~check~ functions because we populate the Ctx with the necessary
+information before running.
+-}
+
 -----------
 -- infer --
 -----------
-infer :: [Decl] -> Ctx -> Term -> Type
-infer _ _ (Lit _) = TyInt
+infer :: Ctx -> Term -> Std Type
+infer _ (Lit _) = return TyInt
 
-infer s c (Add a b) =
-  case check s c a TyInt && check s c b TyInt of
-    True -> TyInt
-    False -> error "both arguments of + expect an TyInt"
+infer c (Add a b) =
+  do { check c a TyInt
+     ; check c b TyInt
+     ; return TyInt }
 
-infer _ c (Var v) =
+infer c (Var v) =
   case lookup v c of
-    Just t -> t
-    Nothing -> error ("variable " ++ show v ++ " not bound")
+    Just t -> return t
+    Nothing -> unboundErr v
 
-infer s c (Fix _ t) = infer s c t
+infer c (Fix _ t) = infer c t
 
-infer s _ (Cons k) = case do { d <- lookupDatum k s
-                             ; case d of
-                                 Left _ -> error "constructor as destructor"
-                                 Right d' -> lookupInjection k . injections $ d'
-                             } of
-                       Just i -> injCod i
-                       Nothing -> error ("unknown constructor " <> k)
+infer c (Cons k) =
+  case lookup k c of
+    Just t -> return t
+    Nothing -> unboundErr k
 
-infer s _ (Dest h) = case do { d <- lookupDatum h s
-                             ; case d of
-                                 Left d' -> lookupProjection h . projections $ d'
-                                 Right _ -> error "destructor as constructor"
-                             } of
-                       Just p -> TyArr (projDom p) (projCod p)
-                       Nothing -> error ("unknown destructor " <> h)
+infer c (Dest h) =
+  case lookup h c of
+    Just t -> return t
+    Nothing -> unboundErr h
 
-infer s c (App a b) =
-  case infer s c a of
-    TyArr tyDom tyCod ->
-      case check s c b tyDom of
-        True -> tyCod
-        False -> error (show a ++ " expects arguments of type " ++ pp tyDom)
-    _ -> error ("operator must have a function type: " ++ show a)
+infer c (App a b) =
+  do { ty <- infer c a
+     ; case ty of
+         TyArr tyDom tyCod ->
+           do { check c b tyDom
+              ; return tyCod }
+         _ -> typeErr ("operator must have a function type: " ++ pp a)
+     }
 
-infer _ _ (Case _ _) = error "infer{Case}"
+infer _ (Case _ _) = unimplementedErr "infer{Case}"
 
-infer _ _ (CoCase _) = error "infer{CoCase}"
+infer _ (CoCase _) = unimplementedErr "infer{CoCase}"
 
 -----------
 -- check --
 -----------
 
-check :: [Decl] -> Ctx -> Term -> Type -> Bool
-check _ _ (Lit _)   TyInt = True
-check s c (Add a b) TyInt = check s c a TyInt && check s c b TyInt
-check _ c (Var v)   ty    = case lookup v c of
-                              Just ty' -> ty == ty'
-                              Nothing -> False
-check s c (Fix v t)  ty   = check s ((v,ty):c) t ty
-check _ _ (Cons _)   _    = error "check{Cons}"
-check _ _ (Dest _)   _    = error "check{Dest}"
-check _ _ (App _ _)  _    = error "check{App}"
-check _ _ (Case _ _) _    = error "check{Case}"
-check _ _ (CoCase _) _    = error "check{CoCase}"
-check _ _ _ _ = False
+check :: Ctx -> Term -> Type -> Std ()
+check _ (Lit _)   TyInt = return ()
+check c (Add a b) TyInt = check c a TyInt >> check c b TyInt
+check c (Var v)   ty    =
+  case lookup v c of
+    Just ty' ->
+      case ty == ty' of
+        True -> return ()
+        False -> typeErr ("expected '" <+> v <+> "' to have type" <+> pp ty)
+    Nothing -> unboundErr v
+check c (Fix v t)  ty   = check ((v,ty):c) t ty
+check _ (Cons _)   _    = error "check{Cons}"
+check _ (Dest _)   _    = error "check{Dest}"
+check _ (App _ _)  _    = error "check{App}"
+check _ (Case _ _) _    = error "check{Case}"
+check _ (CoCase _) _    = error "check{CoCase}"
+check _ _ _ = failure "check{unknown error}"
 
 --------------------------------------------------------------------------------
 --                                 Utils                                      --

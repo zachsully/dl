@@ -50,7 +50,7 @@ data Env = Env [(Variable,(Term,Env))]
 lookupEnv :: Variable -> Env -> Std (Term,Env)
 lookupEnv v (Env e) =
   case lookup v e of
-    Nothing -> failure "unbound variable"
+    Nothing -> unboundErr v
     Just x -> return x
 
 instance Monoid Env where
@@ -71,7 +71,7 @@ interp ctx env term =
          ; b' <- interp (a' `EAddR` ctx) env b
          ; case (a',b') of
              (VLit a'',VLit b'') -> return (VLit (a'' + b''))
-             _ -> failure "type error"
+             _ -> typeErr "adding non-numbers"
          }
     Var v ->
       do { (term',env') <- lookupEnv v env
@@ -81,7 +81,7 @@ interp ctx env term =
       do { a' <- interp (ctx `EAppL` b) env a
          ; interp (a' `EAppR` ctx) env b }
     Cons k -> return (VConsApp k [])
-    Case _ _ -> failure "TODO{case}"
+    Case _ _ -> unimplementedErr "case"
     Dest h -> return (VObs h)
     CoCase coalts -> comatch ctx env coalts
 
@@ -116,4 +116,4 @@ comatch' (EAppR (VObs h) ctx) env (QDest h' q) =
               Nothing -> return Nothing
               Just (ctx', env') -> return $ Just (EAppR (VObs h) ctx',env') }
 
-comatch' _ _ _ = failure "TODO{Comatch}"
+comatch' _ _ _ = unimplementedErr "comatch'"

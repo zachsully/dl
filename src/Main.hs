@@ -174,7 +174,7 @@ runRepl =
   do { hSetBuffering stdout NoBuffering
      ; hSetBuffering stdin  LineBuffering
      ; forever $
-         do { hPutStr stdout "> "
+         do { hPutStr stdout "▪ "
             ; m <- lexString <$> hGetLine stdin
             ; case m of
                 Left e -> hPutStrLn stdout e
@@ -182,8 +182,12 @@ runRepl =
                   case runParserM (parseTerm ts) emptyState of
                     Left e -> hPutStrLn stdout e
                     Right (t,_) ->
-                      case runStd (interpEmpty t) of
+                      case runStd (interpEmpty (D.Prompt t)) of
                         Left s -> hPutStrLn stdout $ s
-                        Right a -> hPutStrLn stdout . pp $ a
+                        Right a ->
+                          case runStd (infer [] (reifyValue a)) of
+                            Left _ -> hPutStrLn stdout . pp $ a
+                            Right ty -> hPutStrLn stdout $
+                              pp a <+> ":" <+> pp ty
             }
      }

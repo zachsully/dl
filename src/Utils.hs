@@ -71,6 +71,15 @@ runStd m =
 failure :: String -> Std a
 failure s = Std $ \_ -> Left s
 
+unimplementedErr :: String -> Std a
+unimplementedErr = failure . ("<unimplemented>" <+>)
+
+typeErr :: String -> Std a
+typeErr = failure . ("<type error>" <+>)
+
+unboundErr :: String -> Std a
+unboundErr = failure . ("<unbound variable>" <+>)
+
 instance Functor Std where
   fmap f m = Std $ \ns ->
     case apStd m ns of
