@@ -159,7 +159,7 @@ transDeclST (Left d) =
            ty = foldl Hs.TyApp (Hs.TyVar tn) (map Hs.TyVar tyvars)
            arity = length . Ty.projections $ d
      ; (inj,_) <- foldrM (\p (accTy,i) ->
-                           do { ty1 <- transTypeST . Ty.projCod $ p
+                           do { ty1 <- transTypeST . Ty.projType $ p
                               ; addDestAssoc (Ty.projName p) tnCons arity i
                               ; return (Hs.TyArr ty1 accTy,succ i) })
                          (ty,1)
@@ -175,7 +175,7 @@ transInjST :: Ty.Injection -> TransM Hs.DataCon
 transInjST dinj =
   do { n <- freshen (Ty.injName dinj)
      ; addVarAssoc (Ty.injName dinj) n
-     ; ty <- transTypeST . Ty.injCod $ dinj
+     ; ty <- transTypeST . Ty.injType $ dinj
      ; return (Hs.DataCon n ty) }
 
 -----------
@@ -191,7 +191,7 @@ transDeclL (Right d) =
                            (fmap mkDataCon . Ty.injections $ d)))
   where mkDataCon :: Ty.Injection -> Hs.DataCon
         mkDataCon inj = Hs.DataCon (Ty.injName inj)
-                                   (transTypeL . Ty.injCod $ inj)
+                                   (transTypeL . Ty.injType $ inj)
 
 transDeclL (Left d)  =
   ( addSetters (Ty.projections d) 0
@@ -228,7 +228,7 @@ transDeclL (Left d)  =
 
         mkRecordField :: Ty.Projection -> Hs.Field
         mkRecordField p = Hs.Field (pname p)
-                                   (transTypeL . Ty.projCod $ p)
+                                   (transTypeL . Ty.projType $ p)
 
 foldrWithIndex :: (Int -> a -> b -> b) -> b -> [a] -> b
 foldrWithIndex f b = snd . foldr (\a (i,x) -> (i+1,f i a x)) (0,b)

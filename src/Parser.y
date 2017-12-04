@@ -13,7 +13,7 @@ import TypeSyn
 import Utils
 }
 -- All shift/reduce conflicts
-%expect 14
+%expect 10
 
 %name parseProgram program
 %name parseType type
@@ -83,8 +83,8 @@ decls : decl decls                             { $1 : $2 }
       | {- empty -}                            { [] }
 
 proj :: { Projection }
-proj : var ':' type '->' type                  {% do { addVar $1 Negative
-                                                     ; return (Proj $1 $3 $5) } }
+proj : var ':' type                            {% do { addVar $1 Negative
+                                                     ; return (Proj $1 $3) } }
 projs :: { [Projection] }
 projs : projs ',' proj                         { $3 : $1 }
       | proj                                   { [$1] }

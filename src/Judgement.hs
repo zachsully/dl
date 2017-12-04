@@ -187,11 +187,15 @@ We must check that the arugment
 
 infer c (Prompt t) = infer c t
 
--- inferCopat :: Ctx -> CoPattern -> Std Type
--- inferCopat c ty QHead = return ty
--- inferCopat _ _ (QDest _ _) = unimplementedErr "inferCopat"
--- inferCopat _ _ (QPat _ _) = unimplementedErr "inferCopat"
--- inferCopat _ _ (QVar _ _) = unimplementedErr "inferCopat"
+inferCopat :: Ctx -> Type -> CoPattern -> Std (Type,Ctx)
+inferCopat c ety QHead = return (ety,c)
+inferCopat c ety (QDest h q) =
+  do { (qty,c') <- inferCopat c ety q
+     ; hty <- lookupStd h c'
+     ; return (TyInt,c') }
+
+inferCopat _ _ (QPat _ _) = unimplementedErr "inferCopat"
+inferCopat _ _ (QVar _ _) = unimplementedErr "inferCopat{qvar}"
 
 -----------
 -- check --
@@ -211,18 +215,21 @@ check c (Var v) ty =
   do { ty' <- lookupStd v c
      ; case ty == ty' of
          True -> return ()
-         False -> typeErr ("expected '" <+> pp v <+> "' to have type" <+> pp ty) }
+         False -> typeErr ("expected '" <+> pp v
+                           <+> "' to have type" <+> pp ty) }
 check c (Fix v t) ty = check ((v,ty):c) t ty
 check c (Cons k) ty =
   do { ty' <- lookupStd k c
      ; case ty == ty' of
          True -> return ()
-         False -> typeErr ("expected '" <+> pp k <+> "' to have type" <+> pp ty) }
+         False -> typeErr ("expected '" <+> pp k
+                           <+> "' to have type" <+> pp ty) }
 check c (Dest h) ty =
   do { ty' <- lookupStd h c
      ; case ty == ty' of
          True -> return ()
-         False -> typeErr ("expected '" <+> pp h <+> "' to have type" <+> pp ty) }
+         False -> typeErr ("expected '" <+> pp h
+                           <+> "' to have type" <+> pp ty) }
 check c (App a b) ty =
   do { aty <- infer c a
      ; case aty of
@@ -247,22 +254,31 @@ check c (Prompt t) ty =
 checkPat :: Ctx -> Pattern -> Type -> Std Ctx
 checkPat c PWild        _ = return c
 checkPat c (PVar v)     t = return ((v,t):c)
-checkPat _ (PCons k _)  _ = unimplementedErr "checkPats"
+checkPat c (PCons k ps) ty =
+  do { kty <- lookupStd k c
+     ; case length ps == funArity kty of
+         True  ->
+           do { cs <- mapM (\(ty',p') -> checkPat c p' ty')
+                           (zip (collectFunArgTys kty) ps)
+              ; return (mconcat cs <> c) }
+         False -> typeErr ("constructor '" <> pp k
+                           <> "' has arity" <+> show (funArity kty))
+     }
+  where collectFunArgTys :: Type -> [Type]
+        collectFunArgTys (TyArr a b) = a : collectFunArgTys b
+        collectFunArgTys x = [x]
 
 --------------------------------------------------------------------------------
 --                                 Utils                                      --
 --------------------------------------------------------------------------------
 
-mkTyContext :: [Decl] -> [(Variable,Type)]
-mkTyContext = undefined
-
 mkContext :: [Decl] -> [(Variable,Type)]
 mkContext [] = []
 mkContext (d:ds) =
   (case d of
-     Left neg -> map (\p -> (projName p, TyArr (projDom p) (projCod p)))
+     Left neg -> map (\p -> (projName p, projType p))
                     (projections neg)
-     Right pos -> map (\i -> (injName i, injCod i)) (injections pos)
+     Right pos -> map (\i -> (injName i, injType i)) (injections pos)
   ) <> (mkContext ds)
 
 lookupDecl :: Variable -> [Decl] -> Maybe Decl

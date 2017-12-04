@@ -14,7 +14,7 @@ data Type :: * where
   TyVar  :: Variable -> Type
   TyCons :: Variable -> Type
   TyApp  :: Type -> Type -> Type
-  deriving Eq
+  deriving (Eq,Show)
 
 instance Pretty Type where
   pp TyInt = "Int"
@@ -54,8 +54,7 @@ negTyArity = length . negTyFVars
 data Projection
   = Proj
   { projName :: Variable
-  , projDom  :: Type
-  , projCod  :: Type }
+  , projType  :: Type }
 
 data PositiveTyCons
   = PosTyCons
@@ -72,6 +71,6 @@ posTyArity = length . posTyFVars
 data Injection
   = Inj
   { injName :: Variable
-  , injCod  :: Type }
+  , injType  :: Type }
   {- the domain is a maybe value because unary constructors do not take
      arguments, e.g. () : Unit -}
