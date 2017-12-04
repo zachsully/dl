@@ -167,7 +167,10 @@ runEvaluate em pgm =
 runTypeOf :: TypeMode -> D.Program D.Term -> IO ()
 runTypeOf tm pgm =
   do { when (tmDebug tm) $ pprint pgm
-     ; pprint . inferTSProgram $ pgm }
+     ; case runStd . typeOfProgram $ pgm of
+         Left e -> putStrLn e
+         Right ty -> putStrLn . pp $ ty
+     }
 
 runRepl :: IO ()
 runRepl =

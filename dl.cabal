@@ -20,6 +20,7 @@ executable dl
                        Parser,
                        DualSyn,
                        HsSyn,
+                       TypeSyn,
                        Interpreter,
                        Judgement,
                        KindSyn,

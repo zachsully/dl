@@ -56,50 +56,50 @@ isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
 --------------------------------------------------------------------------------
 {- Type scheme inference with algorithm W. -}
 
-inferTSProgram :: Program Term -> TypeScheme
-inferTSProgram pgm = inferTS (mkContext . pgmDecls $ pgm)
-                             (pgmTerm pgm)
+-- inferTSProgram :: Program Term -> TypeScheme
+-- inferTSProgram pgm = inferTS (mkContext . pgmDecls $ pgm)
+--                              (pgmTerm pgm)
 
-inferTS :: [(Variable,Type)] -> Term -> TypeScheme
-inferTS _ (Lit _)    = TyMono TyInt
-inferTS c (Add a b)  = case (inferTS c a,inferTS c b) of
-                         (TyMono TyInt, TyMono TyInt) -> TyMono TyInt
-                         _ -> error "(+) requires it's arguments to be of type Int"
-inferTS c (Var v)    = case lookup v c of
-                         Just t -> TyMono t
-                         Nothing -> error ("unbound variable " <> v)
-inferTS c (Fix _ t)  = inferTS c t
-inferTS c (App a b)  = case inferTS c a of
-                         (TyMono (TyArr aTy0 aTy1)) ->
-                           case inferTS c b of
-                             TyMono bTy ->
-                               case bTy == aTy0 of
-                                 True -> TyMono aTy1
-                                 False -> error ("expecting type" <+> pp aTy1)
-                             t -> error ("must be a function type, given" <+> pp t)
-                         t -> error ("must be a function type, given" <+> pp t)
-inferTS c (Cons k)   = case lookup k c of
-                         Just t -> TyMono t
-                         Nothing -> error ("unbound constructor " <> k)
-inferTS c (Case e a) = let _ = inferTS c e
-                           tyAlts = map inferTSAlt a
-                       in case tyAlts of
-                            [] -> error "cannot infer empty case"
-                            (t:ts) -> case all (== t) ts of
-                                        True -> t
-                                        False -> error "all case branches must have the same type"
-  where inferTSAlt :: (Pattern,Term) -> TypeScheme
-        inferTSAlt (_,t) = inferTS c t
+-- inferTS :: [(Variable,Type)] -> Term -> TypeScheme
+-- inferTS _ (Lit _)    = TyMono TyInt
+-- inferTS c (Add a b)  = case (inferTS c a,inferTS c b) of
+--                          (TyMono TyInt, TyMono TyInt) -> TyMono TyInt
+--                          _ -> error "(+) requires it's arguments to be of type Int"
+-- inferTS c (Var v)    = case lookup v c of
+--                          Just t -> TyMono t
+--                          Nothing -> error ("unbound variable " <> v)
+-- inferTS c (Fix _ t)  = inferTS c t
+-- inferTS c (App a b)  = case inferTS c a of
+--                          (TyMono (TyArr aTy0 aTy1)) ->
+--                            case inferTS c b of
+--                              TyMono bTy ->
+--                                case bTy == aTy0 of
+--                                  True -> TyMono aTy1
+--                                  False -> error ("expecting type" <+> pp aTy1)
+--                              t -> error ("must be a function type, given" <+> pp t)
+--                          t -> error ("must be a function type, given" <+> pp t)
+-- inferTS c (Cons k)   = case lookup k c of
+--                          Just t -> TyMono t
+--                          Nothing -> error ("unbound constructor " <> k)
+-- inferTS c (Case e a) = let _ = inferTS c e
+--                            tyAlts = map inferTSAlt a
+--                        in case tyAlts of
+--                             [] -> error "cannot infer empty case"
+--                             (t:ts) -> case all (== t) ts of
+--                                         True -> t
+--                                         False -> error "all case branches must have the same type"
+--   where inferTSAlt :: (Pattern,Term) -> TypeScheme
+--         inferTSAlt (_,t) = inferTS c t
 
-        -- inferTSPattern :: Pattern -> TypeScheme
-        -- inferTSPattern PWild        = TyForall "x" (TyVar "x")
-        -- inferTSPattern (PVar _)     = TyForall "x" (TyVar "x")
-        -- inferTSPattern (PCons _ _)  = undefined
+--         -- inferTSPattern :: Pattern -> TypeScheme
+--         -- inferTSPattern PWild        = TyForall "x" (TyVar "x")
+--         -- inferTSPattern (PVar _)     = TyForall "x" (TyVar "x")
+--         -- inferTSPattern (PCons _ _)  = undefined
 
-inferTS c (Dest h)   = case lookup h c of
-                         Just t -> TyMono t
-                         Nothing -> error ("unbound destructor " <> h)
-inferTS c (CoCase a) = undefined c a
+-- inferTS c (Dest h)   = case lookup h c of
+--                          Just t -> TyMono t
+--                          Nothing -> error ("unbound destructor " <> h)
+-- inferTS c (CoCase a) = undefined c a
 
 occurs :: TyVariable -> Type -> Bool
 occurs _ TyInt       = False
@@ -139,6 +139,10 @@ information before running.
 -- infer --
 -----------
 infer :: Ctx -> Term -> Std Type
+infer c (Let x a b) =
+  do { aty <- infer c a
+     ; infer ((x,aty):c) b }
+
 infer _ (Lit _) = return TyInt
 
 infer c (Add a b) =
@@ -172,31 +176,86 @@ infer c (App a b) =
          _ -> typeErr ("operator must have a function type: " ++ pp a)
      }
 
-infer _ (Case _ _) = unimplementedErr "infer{Case}"
+infer c (Case e alts) =
+  do { ety <- infer c e
+     ; tys <- mapM (\(p,u) -> checkPat c p ety >>= \c' -> infer c' u)
+                   alts
+     ; case tys of
+         [] -> typeErr "cannot type empty case"
+         (t:ts) ->
+           case all (== t) ts of
+             True  -> return t
+             False -> typeErr "all branches must return the same type."
+     }
 
 infer _ (CoCase _) = unimplementedErr "infer{CoCase}"
+{- Consider the term
+```
+  fst { fst □ -> 42 }
+```
+We must check that the arugment
+-}
+
+infer c (Prompt t) = infer c t
+
+inferCopat :: Ctx -> CoPattern -> Std Type
+inferCopat c ty QHead = return (c,ty)
+inferCopat _ _ (QDest _ _) = unimplementedErr "inferCopat"
+inferCopat _ _ (QPat _ _) = unimplementedErr "inferCopat"
+inferCopat _ _ (QVar _ _) = unimplementedErr "inferCopat"
 
 -----------
 -- check --
 -----------
 
 check :: Ctx -> Term -> Type -> Std ()
-check _ (Lit _)   TyInt = return ()
-check c (Add a b) TyInt = check c a TyInt >> check c b TyInt
-check c (Var v)   ty    =
+check _ (Let _ _ _) _ = unimplementedErr "check{Let}"
+check _ (Lit _) ty =
+  case ty == TyInt of
+    True -> return ()
+    False -> typeErr ("expected type" <+> pp ty <+> "given" <+> pp TyInt)
+check c (Add a b) ty =
+  case ty == TyInt of
+    True -> check c a TyInt >> check c b TyInt
+    False -> typeErr ("expected type" <+> pp ty <+> "given" <+> pp TyInt)
+check c (Var v) ty =
   case lookup v c of
     Just ty' ->
       case ty == ty' of
         True -> return ()
         False -> typeErr ("expected '" <+> v <+> "' to have type" <+> pp ty)
     Nothing -> unboundErr v
-check c (Fix v t)  ty   = check ((v,ty):c) t ty
-check _ (Cons _)   _    = error "check{Cons}"
-check _ (Dest _)   _    = error "check{Dest}"
-check _ (App _ _)  _    = error "check{App}"
-check _ (Case _ _) _    = error "check{Case}"
-check _ (CoCase _) _    = error "check{CoCase}"
-check _ _ _ = failure "check{unknown error}"
+check c (Fix v t) ty = check ((v,ty):c) t ty
+check c (Cons k) ty =
+  case lookup k c of
+    Just ty' ->
+      case ty == ty' of
+        True -> return ()
+        False -> typeErr ("expected '" <+> k <+> "' to have type" <+> pp ty)
+    Nothing -> unboundErr k
+check c (Dest h) ty =
+  case lookup h c of
+    Just ty' ->
+      case ty == ty' of
+        True -> return ()
+        False -> typeErr ("expected '" <+> h <+> "' to have type" <+> pp ty)
+    Nothing -> unboundErr h
+check _ (App _ _) _ = error "check{App}"
+check _ (Case _ _) _ = error "check{Case}"
+check _ (CoCase _) _ = error "check{CoCase}"
+check c (Prompt t) ty =
+  do { ty' <- infer c t
+     ; case ty' == ty of
+         True -> return ()
+         False -> typeErr ("expected type" <+> pp ty <+> "given" <+> pp ty')
+     }
+
+{- checking patterns produces a new context that binds variables of some type.
+-}
+checkPat :: Ctx -> Pattern -> Type -> Std Ctx
+checkPat c PWild        _ = return c
+checkPat c (PVar v)     t = return ((v,t):c)
+checkPat _ (PCons _ _) _ = unimplementedErr "checkPats"
 
 --------------------------------------------------------------------------------
 --                                 Utils                                      --

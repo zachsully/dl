@@ -24,6 +24,10 @@ instance Pretty Type where
   pp (TyCons k) = k
   pp (TyApp a b) = pp a <+> pp b
 
+funArity :: Type -> Int
+funArity (TyArr _ b) = 1 + funArity b
+funArity _ = 0
+
 collectTyArgs :: Type -> Maybe (TyVariable,[Type])
 collectTyArgs (TyApp e t) = collectTyArgs e >>= \(k,ts) -> return (k,t:ts)
 collectTyArgs (TyCons k)  = return (k,[])
