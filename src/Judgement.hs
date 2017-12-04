@@ -10,12 +10,12 @@ import VariableSyn
 
 data TypeScheme :: * where
   TyMono   :: Type -> TypeScheme
-  TyForall :: TyVariable -> Type -> TypeScheme
+  TyForall :: Variable -> Type -> TypeScheme
   deriving Eq
 
 instance Pretty TypeScheme where
   pp (TyMono ty)     = pp ty
-  pp (TyForall v ty) = "∀" <+> v <> "." <+> pp ty
+  pp (TyForall v ty) = "∀" <+> pp v <> "." <+> pp ty
 
 --------------------------------------------------------------------------------
 --                              Top Level                                     --
@@ -30,7 +30,7 @@ typeOfProgram (Pgm decls term) = infer (mkContext decls) term
 {- Checks whether a type is well formed -}
 
 isType :: [Decl]              -- ^ A set of type signatures
-       -> [(TyVariable,Type)] -- ^ A context of bindings of type variables
+       -> [(Variable,Type)] -- ^ A context of bindings of type variables
        -> Type
        -> Bool
 isType _ _   TyInt         = True
@@ -101,14 +101,14 @@ isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
 --                          Nothing -> error ("unbound destructor " <> h)
 -- inferTS c (CoCase a) = undefined c a
 
-occurs :: TyVariable -> Type -> Bool
+occurs :: Variable -> Type -> Bool
 occurs _ TyInt       = False
 occurs v (TyArr a b) = occurs v a || occurs v b
 occurs v (TyVar v')  = v == v'
 occurs v (TyCons k)  = v == k
 occurs v (TyApp a b) = occurs v a || occurs v b
 
-unify :: Type -> Type -> [(TyVariable,Type)]
+unify :: Type -> Type -> [(Variable,Type)]
 unify a@(TyVar a') b@(TyVar b') = case a' == b' of
                                     True -> [(a',b)]
                                     False -> error (unwords ["cannot unify"
@@ -120,9 +120,10 @@ unify (TyVar a') b = case occurs a' b of
 unify b (TyVar a') = case occurs a' b of
                        True -> error "recursion in type"
                        False -> [(a',b)]
-unify (TyCons a) (TyCons b) = case a == b of
-                                True -> []
-                                False -> error ("unify tyCons" <> a <> " and " <> b)
+unify (TyCons a) (TyCons b) =
+  case a == b of
+    True -> []
+    False -> error ("unify tyCons" <> pp a <> " and " <> pp b)
 unify (TyApp a b) (TyApp a' b') = unify a b <> unify a' b'
 unify (TyArr a b) (TyArr a' b') = unify a b <> unify a' b'
 unify a b = error (unwords ["cannot unify",pp a,"and",pp b])
@@ -150,22 +151,10 @@ infer c (Add a b) =
      ; check c b TyInt
      ; return TyInt }
 
-infer c (Var v) =
-  case lookup v c of
-    Just t -> return t
-    Nothing -> unboundErr v
-
+infer c (Var v) = lookupStd v c
 infer c (Fix _ t) = infer c t
-
-infer c (Cons k) =
-  case lookup k c of
-    Just t -> return t
-    Nothing -> unboundErr k
-
-infer c (Dest h) =
-  case lookup h c of
-    Just t -> return t
-    Nothing -> unboundErr h
+infer c (Cons k) = lookupStd k c
+infer c (Dest h) = lookupStd h c
 
 infer c (App a b) =
   do { ty <- infer c a
@@ -173,7 +162,7 @@ infer c (App a b) =
          TyArr tyDom tyCod ->
            do { check c b tyDom
               ; return tyCod }
-         _ -> typeErr ("operator must have a function type: " ++ pp a)
+         _ -> typeErr ("must have a function type: " ++ pp a)
      }
 
 infer c (Case e alts) =
@@ -198,11 +187,11 @@ We must check that the arugment
 
 infer c (Prompt t) = infer c t
 
-inferCopat :: Ctx -> CoPattern -> Std Type
-inferCopat c ty QHead = return (c,ty)
-inferCopat _ _ (QDest _ _) = unimplementedErr "inferCopat"
-inferCopat _ _ (QPat _ _) = unimplementedErr "inferCopat"
-inferCopat _ _ (QVar _ _) = unimplementedErr "inferCopat"
+-- inferCopat :: Ctx -> CoPattern -> Std Type
+-- inferCopat c ty QHead = return ty
+-- inferCopat _ _ (QDest _ _) = unimplementedErr "inferCopat"
+-- inferCopat _ _ (QPat _ _) = unimplementedErr "inferCopat"
+-- inferCopat _ _ (QVar _ _) = unimplementedErr "inferCopat"
 
 -----------
 -- check --
@@ -219,28 +208,31 @@ check c (Add a b) ty =
     True -> check c a TyInt >> check c b TyInt
     False -> typeErr ("expected type" <+> pp ty <+> "given" <+> pp TyInt)
 check c (Var v) ty =
-  case lookup v c of
-    Just ty' ->
-      case ty == ty' of
-        True -> return ()
-        False -> typeErr ("expected '" <+> v <+> "' to have type" <+> pp ty)
-    Nothing -> unboundErr v
+  do { ty' <- lookupStd v c
+     ; case ty == ty' of
+         True -> return ()
+         False -> typeErr ("expected '" <+> pp v <+> "' to have type" <+> pp ty) }
 check c (Fix v t) ty = check ((v,ty):c) t ty
 check c (Cons k) ty =
-  case lookup k c of
-    Just ty' ->
-      case ty == ty' of
-        True -> return ()
-        False -> typeErr ("expected '" <+> k <+> "' to have type" <+> pp ty)
-    Nothing -> unboundErr k
+  do { ty' <- lookupStd k c
+     ; case ty == ty' of
+         True -> return ()
+         False -> typeErr ("expected '" <+> pp k <+> "' to have type" <+> pp ty) }
 check c (Dest h) ty =
-  case lookup h c of
-    Just ty' ->
-      case ty == ty' of
-        True -> return ()
-        False -> typeErr ("expected '" <+> h <+> "' to have type" <+> pp ty)
-    Nothing -> unboundErr h
-check _ (App _ _) _ = error "check{App}"
+  do { ty' <- lookupStd h c
+     ; case ty == ty' of
+         True -> return ()
+         False -> typeErr ("expected '" <+> pp h <+> "' to have type" <+> pp ty) }
+check c (App a b) ty =
+  do { aty <- infer c a
+     ; case aty of
+         TyArr dom cod ->
+           case cod == ty of
+             True -> check c b dom
+             False -> typeErr ("expected '" <+> pp a
+                               <+> "' to have return type" <+> pp ty)
+         _ -> typeErr ("must have a function type: " ++ pp a)
+     }
 check _ (Case _ _) _ = error "check{Case}"
 check _ (CoCase _) _ = error "check{CoCase}"
 check c (Prompt t) ty =
@@ -255,13 +247,13 @@ check c (Prompt t) ty =
 checkPat :: Ctx -> Pattern -> Type -> Std Ctx
 checkPat c PWild        _ = return c
 checkPat c (PVar v)     t = return ((v,t):c)
-checkPat _ (PCons _ _) _ = unimplementedErr "checkPats"
+checkPat _ (PCons k _)  _ = unimplementedErr "checkPats"
 
 --------------------------------------------------------------------------------
 --                                 Utils                                      --
 --------------------------------------------------------------------------------
 
-mkTyContext :: [Decl] -> [(TyVariable,Type)]
+mkTyContext :: [Decl] -> [(Variable,Type)]
 mkTyContext = undefined
 
 mkContext :: [Decl] -> [(Variable,Type)]
@@ -273,7 +265,7 @@ mkContext (d:ds) =
      Right pos -> map (\i -> (injName i, injCod i)) (injections pos)
   ) <> (mkContext ds)
 
-lookupDecl :: TyVariable -> [Decl] -> Maybe Decl
+lookupDecl :: Variable -> [Decl] -> Maybe Decl
 lookupDecl _ [] = Nothing
 lookupDecl v ((Left d):ds) = case v == negTyName d of
                                True -> Just (Left d)

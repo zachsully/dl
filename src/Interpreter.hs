@@ -17,8 +17,8 @@ data Value :: * where
 
 instance Pretty Value where
   pp (VLit i)        = show i
-  pp (VConsApp k ts) = k <+> concatMap pp ts
-  pp (VObs h)        = h
+  pp (VConsApp k ts) = pp k <+> concatMap pp ts
+  pp (VObs h)        = pp h
   pp (VCocase cas)   = pp (CoCase cas)
   pp VFail           = "⊥"
 
@@ -40,18 +40,16 @@ data EvalCtx :: * where
 reifyEvalCtx :: EvalCtx -> Term
 reifyEvalCtx EEmpty      = undefined
 reifyEvalCtx (EPrompt e) = Prompt (reifyEvalCtx e)
-reifyEvalCtx (EAddL e t) = lam "t0" (Add (Var "t0") t)
-reifyEvalCtx (EAddR v e) = lam "t0" (Add (reifyValue v) (Var "t0"))
-reifyEvalCtx (EAppL e t) = lam "t0" (App (Var "t0") t)
-reifyEvalCtx (EAppR v e) = lam "t0" (App (reifyValue v) undefined)
+reifyEvalCtx (EAddL e t) = lam (Variable "t0") (Add (Var (Variable "t0")) t)
+reifyEvalCtx (EAddR v e) = lam (Variable "t0")
+                               (Add (reifyValue v) (Var (Variable "t0")))
+reifyEvalCtx (EAppL e t) = lam (Variable "t0") (App (Var (Variable "t0")) t)
+reifyEvalCtx (EAppR v e) = lam (Variable "t0") (App (reifyValue v) undefined)
 
 data Env = Env [(Variable,(Term,Env))]
 
 lookupEnv :: Variable -> Env -> Std (Term,Env)
-lookupEnv v (Env e) =
-  case lookup v e of
-    Nothing -> unboundErr v
-    Just x -> return x
+lookupEnv v (Env e) = lookupStd v e
 
 instance Monoid Env where
   mempty = Env []

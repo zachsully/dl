@@ -1,7 +1,6 @@
 {-# LANGUAGE GADTs, DataKinds, KindSignatures, RankNTypes #-}
 module TypeSyn where
 
-import KindSyn
 import VariableSyn
 import Utils
 
@@ -20,24 +19,21 @@ data Type :: * where
 instance Pretty Type where
   pp TyInt = "Int"
   pp (TyArr a b) = pp a <+> "->" <+> pp b
-  pp (TyVar v) = v
-  pp (TyCons k) = k
+  pp (TyVar v) = unVariable v
+  pp (TyCons k) = unVariable k
   pp (TyApp a b) = pp a <+> pp b
 
 funArity :: Type -> Int
 funArity (TyArr _ b) = 1 + funArity b
 funArity _ = 0
 
-collectTyArgs :: Type -> Maybe (TyVariable,[Type])
+collectTyArgs :: Type -> Maybe (Variable,[Type])
 collectTyArgs (TyApp e t) = collectTyArgs e >>= \(k,ts) -> return (k,t:ts)
 collectTyArgs (TyCons k)  = return (k,[])
 collectTyArgs _           = Nothing
 
-distributeTyArgs :: (TyVariable,[Type]) -> Type
+distributeTyArgs :: (Variable,[Type]) -> Type
 distributeTyArgs (k,ts) = foldl TyApp (TyCons k) ts
-
-{- TyVariable are bound inside of the types in a declaration -}
-type TyVariable = String
 
 {- Intoduction of positive and negative types are done with NegativeTyCons and
    PositiveTyCons. These two are very similar. The notable difference is in
@@ -45,12 +41,12 @@ type TyVariable = String
    codomain, injections may not take arguments. -}
 data NegativeTyCons
   = NegTyCons
-  { negTyName   :: TyVariable
-  , negTyFVars  :: [TyVariable]
+  { negTyName   :: Variable
+  , negTyFVars  :: [Variable]
   , projections :: [Projection] }
 
 instance Pretty NegativeTyCons where
-  pp tc = "codata" <+> negTyName tc
+  pp tc = "codata" <+> pp (negTyName tc)
 
 negTyArity :: NegativeTyCons -> Int
 negTyArity = length . negTyFVars
@@ -63,12 +59,12 @@ data Projection
 
 data PositiveTyCons
   = PosTyCons
-  { posTyName  :: TyVariable
-  , posTyFVars :: [TyVariable]
+  { posTyName  :: Variable
+  , posTyFVars :: [Variable]
   , injections :: [Injection]  }
 
 instance Pretty PositiveTyCons where
-  pp tc = "data" <+> posTyName tc
+  pp tc = "data" <+> pp (posTyName tc)
 
 posTyArity :: PositiveTyCons -> Int
 posTyArity = length . posTyFVars

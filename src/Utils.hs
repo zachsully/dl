@@ -80,6 +80,13 @@ typeErr = failure . ("<type error>" <+>)
 unboundErr :: String -> Std a
 unboundErr = failure . ("<unbound variable>" <+>)
 
+lookupStd :: (Eq a, Pretty a) => a -> [(a,b)] -> Std b
+lookupStd a [] = failure ("<unbound>" <+> pp a)
+lookupStd a ((x,v):xs) =
+  case x == a of
+    True  -> return v
+    False -> lookupStd a xs
+
 instance Functor Std where
   fmap f m = Std $ \ns ->
     case apStd m ns of

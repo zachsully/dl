@@ -3,6 +3,7 @@ module HsSyn where
 
 import Data.Monoid
 
+import VariableSyn
 import Utils
 
 data Program
@@ -22,17 +23,15 @@ data Program
 data Type where
   TyInt  :: Type
   TyArr  :: Type -> Type -> Type
-  TyVar  :: TyVariable -> Type
-  TyCons :: TyVariable -> Type
+  TyVar  :: Variable -> Type
+  TyCons :: Variable -> Type
   TyApp  :: Type -> Type -> Type
   deriving (Eq,Show)
 
-type TyVariable = String
-
 data DataTyCons
   = DataTyCons
-  { dataName  :: TyVariable
-  , dataFVars :: [TyVariable]
+  { dataName  :: Variable
+  , dataFVars :: [Variable]
   , dataCons  :: [DataCon] }
   deriving (Eq,Show)
 
@@ -44,8 +43,8 @@ data DataCon
 
 data RecordTyCons
   = RecordTyCons
-  { recordName   :: TyVariable
-  , recordFVars  :: [TyVariable]
+  { recordName   :: Variable
+  , recordFVars  :: [Variable]
   , recordFields :: [Field] }
   deriving (Eq,Show)
 
@@ -88,8 +87,6 @@ data Pattern where
   PCons :: Variable -> [Variable] -> Pattern
   deriving (Eq,Show)
 
-type Variable = String
-
 --------------------------------------------------------------------------------
 --                              Pretty Print                                  --
 --------------------------------------------------------------------------------
@@ -105,51 +102,53 @@ ppDecl = either ppDataDecl ppRecordDecl
 
 ppDataDecl :: DataTyCons -> String
 ppDataDecl d = "data"
-           <+> dataName d
-           <+> (smconcat . dataFVars $ d)
+           <+> pp (dataName d)
+           <+> (smconcat . fmap unVariable . dataFVars $ d)
            <+> "where"
            <-> (vmconcat . fmap ppDataCons . dataCons $ d)
            <-> (indent 1 "deriving Show\n")
 
   where ppDataCons :: DataCon -> String
-        ppDataCons dc = indent 1 (   conName dc
+        ppDataCons dc = indent 1 (   pp (conName dc)
                                  <+> "::"
                                  <+> flip ppType 9 . conType $ dc )
 
 
 ppRecordDecl :: RecordTyCons -> String
 ppRecordDecl r = "data"
-             <+> recordName r
-             <+> (smconcat . recordFVars $ r)
+             <+> pp (recordName r)
+             <+> (smconcat . fmap pp . recordFVars $ r)
              <-> indent 1 "="
-             <+> recordName r
+             <+> pp (recordName r)
              <-> indent 1 "{" <+> (stringmconcat (indent 1 ", ")
                                    (fmap ppRecordField . recordFields $ r))
              <> indent 1 "} deriving Show"
 
 ppRecordField :: Field -> String
-ppRecordField f = fieldName f <+> "::" <+> (flip ppType 9 . fieldType $ f) <> "\n"
+ppRecordField f = pp (fieldName f)
+  <+> "::"
+  <+> (flip ppType 9 . fieldType $ f) <> "\n"
 
 ppType :: Type -> Int -> String
 ppType TyInt       _ = "Int"
 ppType (TyArr a b) p = ppPrec 1 p (ppType a p <+> "->" <+> ppType b p)
-ppType (TyVar s)   _ = s
-ppType (TyCons s)  _ = s
+ppType (TyVar s)   _ = pp s
+ppType (TyCons s)  _ = pp s
 ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
 
 {- The Int passed in is the indentation level and precedence -}
 ppTerm :: Term -> Int -> Int -> String
-ppTerm (Let s a b)   i p = (smconcat ["let",s,"="])
+ppTerm (Let s a b)   i p = (smconcat ["let",pp s,"="])
                            <+> (ppTerm a (i+1) p)
                            <-> (indent i "in")
                            <+> (ppTerm b (i+1) p)
 ppTerm (Lit n)       _ _ = show n
 ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
-ppTerm (Var s)       _ _ = s
-ppTerm (Lam s t)     i p = parens ( "\\" <> s <+> "->"
+ppTerm (Var s)       _ _ = pp s
+ppTerm (Lam s t)     i p = parens ( "\\" <> pp s <+> "->"
                                   <-> indent (i+2) (ppTerm t (i+3) p))
 ppTerm (App a b)     i p = ppTerm a i 9 <+> (parens (ppTerm b i p))
-ppTerm (Cons s)      _ _ = s
+ppTerm (Cons s)      _ _ = pp s
 ppTerm (Case t alts) i p =
   "case" <+> ppTerm t i 0 <+> "of"
     <-> (vmconcat . map (indent i . ppAlt) $ alts)
@@ -160,6 +159,6 @@ ppTerm (Case t alts) i p =
 
         ppPattern :: Pattern -> String
         ppPattern PWild = "_"
-        ppPattern (PVar s) = s
-        ppPattern (PCons s vs) = s <+> smconcat vs
+        ppPattern (PVar s) = pp s
+        ppPattern (PCons s vs) = pp s <+> smconcat . fmap pp $ vs
 ppTerm Fail _ _ = "(error \"match fail\")"

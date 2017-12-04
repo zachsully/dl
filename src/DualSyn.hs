@@ -72,12 +72,12 @@ instance Pretty Term where
   ppInd i (Add a b)       = (parens . ppInd i $ a)
                         <+> "+"
                         <+> (parens . ppInd i $ b)
-  ppInd _ (Var s)         = s
-  ppInd i (Fix s t)       = "fix" <+> s <+> "in" <-> indent i (ppInd (i+1) t)
-  ppInd i (Let s a b)     = "let" <+> s <+> "=" <+> ppInd (i+1) a
+  ppInd _ (Var s)         = pp s
+  ppInd i (Fix s t)       = "fix" <+> pp s <+> "in" <-> indent i (ppInd (i+1) t)
+  ppInd i (Let s a b)     = "let" <+> pp s <+> "=" <+> ppInd (i+1) a
                         <-> indent i ("in" <+> ppInd (i+1) b)
   ppInd i (App a b)       = (parens . ppInd i $ a) <+> (parens . ppInd i $ b)
-  ppInd _ (Cons k)        = k
+  ppInd _ (Cons k)        = pp k
   ppInd i (Case t alts)   = "case"
                         <+> ppInd i t
                         <-> indent (i+1) "{"
@@ -85,7 +85,7 @@ instance Pretty Term where
                             . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+2) u)
                             $ alts)
                         <-> indent (i+1) "}"
-  ppInd _ (Dest h)        = h
+  ppInd _ (Dest h)        = pp h
   ppInd i (CoCase [])     = "cocase {}"
   ppInd i (CoCase coalts) = "cocase"
                         <-> indent (i+1) "{ "
@@ -120,8 +120,8 @@ data Pattern where
 
 instance Pretty Pattern where
   pp PWild        = "_"
-  pp (PVar s)     = s
-  pp (PCons k ps) = k <+> (smconcat . fmap (parens . pp) $ ps)
+  pp (PVar s)     = pp s
+  pp (PCons k ps) = pp k <+> (smconcat . fmap (parens . pp) $ ps)
 
 {- Copatterns -}
 {- NOTE: we often use 'q' for a copattern variables -}
@@ -133,8 +133,8 @@ data CoPattern where
   deriving (Eq,Show)
 
 instance Pretty CoPattern where
-  pp QHead       = "#"
-  pp (QDest h q) = h <+> (parens . pp $ q)
+  pp QHead       = "□"
+  pp (QDest h q) = pp h <+> (parens . pp $ q)
   pp (QPat q p)  = (parens . pp $ q) <+> (parens . pp $ p)
 
 
@@ -212,7 +212,7 @@ plugCopattern (QPat q p)  q' = QPat (plugCopattern q q') p
 fresh :: Variable -> State Int Variable
 fresh v = do { n <- get
              ; put (succ n)
-             ; return (v <> show n) }
+             ; return . Variable $ (unVariable v <> show n) }
 
 flatten :: Term -> FlatTerm
 flatten t = fst . runState (flatten' t) $ 0
@@ -242,7 +242,7 @@ flatten' (Case t alts) =
                        -> State Int (Variable, FlatTerm -> FlatTerm)
         flattenPattern (PVar v) = return (v,id)
         flattenPattern (PCons k ps) =
-          do { v <- fresh "p"
+          do { v <- fresh (Variable "p")
              ; (vs,fs) <- unzip <$> mapM flattenPattern ps
              ; return ( v
                       , \e -> FCase (FVar v)
@@ -257,8 +257,8 @@ flatten' (CoCase ((QPat QHead (PVar v),u):_)) = -- R-QPVar
      ; return (FCoCase (FlatCopPat (FlatPatVar v), u') FFail) }
 
 flatten' (CoCase ((QPat QHead p,u):coalts)) =   -- R-QPat
-  do { v <- fresh "p"
-     ; y <- fresh "y"
+  do { v <- fresh (Variable "p")
+     ; y <- fresh (Variable "y")
      ; let t = Case (Var v) [(p,u),(PVar y,CoCase coalts)]
      ; t' <- flatten' t
      ; return (FCoCase (FlatCopPat (FlatPatVar v), t') FFail)
@@ -275,13 +275,13 @@ flatten' (CoCase ((q,u):coalts)) =              -- R-Rec
   flatten' u >>= \u' ->
   case unplugCopattern q of
     (Just rest, QPat QHead p) ->
-      do { v  <- fresh "coalt"
+      do { v  <- fresh (Variable "coalt")
          ; let u' = CoCase [(rest,  u),(QHead, App (Var v) (invertPattern p))]
          ; u'' <- flatten' u'
          ; flatten' (Let v (CoCase coalts) (CoCase [(QPat QHead p, u'),(QHead,Var v)]))
          }
     (Just rest, QDest h QHead) ->
-      do { v  <- fresh "coalt"
+      do { v  <- fresh (Variable "coalt")
          ; u' <- flatten' ( CoCase [(rest,  u)
                                    ,(QHead, App (Dest h) (Var v))
                                    ]
@@ -337,19 +337,19 @@ instance Pretty FlatTerm where
   ppInd i (FAdd a b)       = (parens . ppInd i $ a)
                          <+> "+"
                          <+> (parens . ppInd i $ b)
-  ppInd _ (FVar s)         = s
-  ppInd i (FFix s t)       = "fix" <+> s <+> "in" <-> indent i (ppInd (i+1) t)
-  ppInd i (FLet s a b)     = "let" <+> s <+> "=" <+> ppInd (i+1) a
+  ppInd _ (FVar s)         = pp s
+  ppInd i (FFix s t)       = "fix" <+> pp s <+> "in" <-> indent i (ppInd (i+1) t)
+  ppInd i (FLet s a b)     = "let" <+> pp s <+> "=" <+> ppInd (i+1) a
                          <-> indent i ("in" <+> ppInd (i+1) b)
   ppInd i (FApp a b)       = (parens . ppInd i $ a) <+> (parens . ppInd i $ b)
-  ppInd _ (FCons k)        = k
+  ppInd _ (FCons k)        = pp k
   ppInd i (FCase t (p,u) d) = ("case" <+> ppInd i t)
                           <-> (indent (i+1) "{" <+> pp p <+> "->"
                                <+> (ppInd (i+2) u))
                           <-> (indent (i+1) "|" <+> "_ ->"
                                <+> (ppInd (i+2) d))
                           <-> (indent (i+1) "}")
-  ppInd _ (FDest h)        = h
+  ppInd _ (FDest h)        = pp h
   ppInd i (FCoCase (q,u) d) = "cocase"
                           <-> (indent (i+1) "{" <+> pp q <+> "->"
                                <+> (ppInd (i+2) u))
@@ -364,8 +364,8 @@ data FlatPattern where
   deriving (Eq,Show)
 
 instance Pretty FlatPattern where
-  pp (FlatPatVar s)     = s
-  pp (FlatPatCons k vs) = smconcat (k:vs)
+  pp (FlatPatVar s)     = pp s
+  pp (FlatPatCons k vs) = smconcat (pp k:fmap pp vs)
 
 data FlatCopattern where
   FlatCopDest :: Variable -> FlatCopattern
@@ -373,6 +373,6 @@ data FlatCopattern where
   deriving (Eq,Show)
 
 instance Pretty FlatCopattern where
-  pp (FlatCopDest h)             = h <+> "#"
-  pp (FlatCopPat (FlatPatVar v)) = "#" <+> v
+  pp (FlatCopDest h)             = pp h <+> "#"
+  pp (FlatCopPat (FlatPatVar v)) = "#" <+> pp v
   pp (FlatCopPat k)              = "#" <+> (parens . pp $ k)

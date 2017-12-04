@@ -10,7 +10,7 @@ import qualified DualSyn as D
 import qualified HsSyn as Hs
 import qualified MLSyn as ML
 import qualified TypeSyn as Ty
-import qualified VariableSyn as V
+import VariableSyn
 import Utils
 
 --------------------------------------------------------------------------------
@@ -24,14 +24,14 @@ data TransST
   { num     :: Int -- ^ tracks unique variable creation
 
     -- ^ maps source type vars to target type vars
-  , tyMap   :: [(V.Variable,Hs.TyVariable)]
+  , tyMap   :: [(Variable,Variable)]
 
     -- ^ maps source vars to target vars
-  , vMap    :: [(V.Variable,Hs.Variable)]
+  , vMap    :: [(Variable,Variable)]
 
     -- ^ maps destructors to contructors, their arity, and the index of the
     --   destructor in the constructor
-  , destMap :: [(V.Variable,(Hs.Variable,Int,Int))]
+  , destMap :: [(Variable,(Variable,Int,Int))]
   }
   deriving (Show,Eq)
 
@@ -40,34 +40,34 @@ startState = TransST 0 [] [] []
 
 type TransM a = State TransST a
 
-freshen :: String -> TransM String
+freshen :: Variable -> TransM Variable
 freshen s =
   do { st <- get
      ; put (st { num = succ (num st) })
-     ; return (s <> show (num st)) }
+     ; return (Variable (unVariable s <> show (num st))) }
 
-addTyAssoc :: V.Variable -> Hs.TyVariable -> TransM ()
+addTyAssoc :: Variable -> Variable -> TransM ()
 addTyAssoc a b =
  do { st <- get
     ; put (st { tyMap = (a,b):(tyMap st) }) }
 
-lookupTyAssoc :: V.Variable -> TransM (Maybe Hs.TyVariable)
+lookupTyAssoc :: Variable -> TransM (Maybe Variable)
 lookupTyAssoc v = lookup v . tyMap <$> get
 
-addDestAssoc :: V.Variable -> Hs.Variable -> Int -> Int -> TransM ()
+addDestAssoc :: Variable -> Variable -> Int -> Int -> TransM ()
 addDestAssoc h k a i =
   do { st <- get
      ; put (st { destMap = (h,(k,a,i)):(destMap st)}) }
 
-lookupDestAssoc :: V.Variable -> TransM (Maybe (Hs.Variable,Int,Int))
+lookupDestAssoc :: Variable -> TransM (Maybe (Variable,Int,Int))
 lookupDestAssoc h = lookup h . destMap <$> get
 
-addVarAssoc :: V.Variable -> Hs.Variable -> TransM ()
+addVarAssoc :: Variable -> Variable -> TransM ()
 addVarAssoc s t =
   do { st <- get
      ; put (st { vMap = (s,t):(vMap st)}) }
 
-lookupVar :: V.Variable -> TransM (Maybe Hs.Variable)
+lookupVar :: Variable -> TransM (Maybe Variable)
 lookupVar v = lookup v . vMap <$> get
 
 --------------------------------------------------------------------------------
@@ -155,7 +155,7 @@ transDeclST (Right d) =
 transDeclST (Left d) =
   do { tn <- freshen (Ty.negTyName d)
      ; tyvars <- transTyVarsST (Ty.negTyFVars d)
-     ; let tnCons = "Mk" <> tn
+     ; let tnCons = Variable "Mk" <> tn
            ty = foldl Hs.TyApp (Hs.TyVar tn) (map Hs.TyVar tyvars)
            arity = length . Ty.projections $ d
      ; (inj,_) <- foldrM (\p (accTy,i) ->
@@ -166,7 +166,7 @@ transDeclST (Left d) =
                          (Ty.projections d)
      ; return (Hs.DataTyCons tn tyvars [Hs.DataCon tnCons inj]) }
 
-transTyVarsST :: [Ty.TyVariable] -> TransM [Hs.TyVariable]
+transTyVarsST :: [Variable] -> TransM [Variable]
 transTyVarsST = mapM (\v -> do { v' <- freshen v
                                ; addTyAssoc v v'
                                ; return v' })
@@ -190,15 +190,16 @@ transDeclL (Right d) =
                            (Ty.posTyFVars d)
                            (fmap mkDataCon . Ty.injections $ d)))
   where mkDataCon :: Ty.Injection -> Hs.DataCon
-        mkDataCon inj = Hs.DataCon (Ty.injName inj) (transTypeL . Ty.injCod $ inj)
+        mkDataCon inj = Hs.DataCon (Ty.injName inj)
+                                   (transTypeL . Ty.injCod $ inj)
 
 transDeclL (Left d)  =
   ( addSetters (Ty.projections d) 0
   , Right (Hs.RecordTyCons name
                            (Ty.negTyFVars d)
                            (fmap mkRecordField (Ty.projections d))))
-  where name = "Mk" <> Ty.negTyName d
-        pname p = "_" <> Ty.projName p
+  where name = Variable "Mk" <> Ty.negTyName d
+        pname p = Variable "_" <> Ty.projName p
 
         numProjs = length . Ty.projections $ d
 
@@ -211,19 +212,19 @@ transDeclL (Left d)  =
         addSetters (p:ps) i =
           (Hs.Let
             setterName
-            (Hs.Lam "d"
-              (Hs.Lam "x"
+            (Hs.Lam (Variable "d")
+              (Hs.Lam (Variable "x")
                 (foldlWithIndex (\j c p ->
                                   let t = case i == j of
-                                            True  -> Hs.Var "x"
+                                            True  -> Hs.Var (Variable "x")
                                             False -> Hs.App (Hs.Var (pname p))
-                                                            (Hs.Var "d")
+                                                            (Hs.Var (Variable "d"))
                                   in Hs.App c t
                                 )
                                 (Hs.Cons name)
                                 (Ty.projections d))))) --Hs.App(Hs.App (Hs.Cons name) (Hs.Var "x"))))))
           . (addSetters ps (i+1))
-          where setterName = "set_" <> Ty.projName p
+          where setterName = Variable "set_" <> Ty.projName p
 
         mkRecordField :: Ty.Projection -> Hs.Field
         mkRecordField p = Hs.Field (pname p)
@@ -261,13 +262,13 @@ transTypeST (Ty.TyVar v)   =
   do { tm <- tyMap <$> get
      ; case lookup v tm of
          Just v' -> return (Hs.TyVar v')
-         Nothing -> error ("Type variable '" <> v <> "' not in scope.")
+         Nothing -> error ("Type variable '" <> pp v <> "' not in scope.")
      }
 transTypeST (Ty.TyCons k)  =
   do { tm <- tyMap <$> get
      ; case lookup k tm of
          Just k' -> return (Hs.TyCons k')
-         Nothing -> error ("Type constructor '" <> k <> "' not in scope.")
+         Nothing -> error ("Type constructor '" <> pp k <> "' not in scope.")
      }
 
 -----------
@@ -304,7 +305,7 @@ transTermST (D.FVar v) =
      ; case m of
          Just v' -> return (Hs.Var v')
          Nothing -> do { vm <- vMap <$> get
-                       ; error ("untranslated variable " <> v
+                       ; error ("untranslated variable " <> pp v
                                <> "\nin: " <> show vm) }
      }
 transTermST (D.FFix v t) = undefined
@@ -315,7 +316,7 @@ transTermST (D.FCons k) =
   do { m <- vMap <$> get
      ; case lookup k m of
          Just k' -> return (Hs.Cons k')
-         Nothing -> error ("untranslated constructor " <> k) }
+         Nothing -> error ("untranslated constructor" <+> pp k) }
 transTermST (D.FCase t alt _) =
   Hs.Case <$> transTermST t
           <*> ((\(p,e) ->
@@ -365,19 +366,19 @@ transTermST (D.FDest h) =
   do { dmap <- destMap <$> get
      ; case lookup h dmap of
          Just (k,a,i) ->
-           do { v <- freshen "v"
-              ; x <- freshen "x"
+           do { v <- freshen (Variable "v")
+              ; x <- freshen (Variable "x")
               ; return (Hs.Lam v
                                (Hs.Case (Hs.Var v)
                                         [(Hs.PCons k (mkPatterns a i x)
                                          ,(Hs.Var x))]))
               }
-         Nothing -> error ("cannot find destructor " <> h) }
-  where mkPatterns :: Int -> Int -> Hs.Variable -> [Hs.Variable]
+         Nothing -> error ("cannot find destructor" <+> pp h) }
+  where mkPatterns :: Int -> Int -> Variable -> [Variable]
         mkPatterns 0 _ _ = []
         mkPatterns a i x = case i == a of
                              True  -> x : mkPatterns (pred a) i x
-                             False -> "_"  : mkPatterns (pred a) i x -- this is a lazy,dirty,nasty,ugly hack
+                             False -> Variable "_" : mkPatterns (pred a) i x -- this is a lazy,dirty,nasty,ugly hack
 
 
 {- [Translating CoCase]
@@ -403,9 +404,9 @@ transTermST (D.FCoCase coalt _) = translateCoAlt coalt
                      Just (k,_,_) ->
                        do { t' <- transTermST t
                           ; return (Hs.App (Hs.Cons k) t') }
-                     Nothing -> error ("cannot find destructor" <> h)}
+                     Nothing -> error ("cannot find destructor" <+> pp h)}
             D.FlatCopPat p ->
-              do { v <- freshen "v"
+              do { v <- freshen (Variable "v")
                  ; p' <- transPatternST p
                  ; t' <- transTermST t
                  ; return (Hs.Lam v (Hs.Case (Hs.Var v) [(p',t')]))}
@@ -425,8 +426,8 @@ transPatternST (D.FlatPatCons k vs) =
                                      ; addVarAssoc v v'
                                      ; return v' }
                        ; return (Hs.PCons k' vs') }
-         Nothing -> error (  "untranslated constructor " <> k
-                          <> " in pattern" <> show (D.FlatPatCons k vs)) }
+         Nothing -> error (   "untranslated constructor" <+> pp k
+                          <+> "in pattern" <+> pp (D.FlatPatCons k vs)) }
 
 -----------
 -- Local --
@@ -443,7 +444,7 @@ transTermL (D.FCons k) = Hs.Cons k
 transTermL (D.FCase t (p,u) d) = Hs.Case (transTermL t)
                                          [(transPatL p, transTermL u)
                                          ,(Hs.PWild,transTermL d)]
-transTermL (D.FDest h) = Hs.Var ("_" <> h)
+transTermL (D.FDest h) = Hs.Var (Variable "_" <> h)
 transTermL (D.FCoCase (q,u) d) = transCoaltL (q,u) (transTermL d)
 transTermL (D.FFail) = Hs.Fail
 
@@ -452,7 +453,7 @@ transPatL (D.FlatPatVar v)     = Hs.PVar v
 transPatL (D.FlatPatCons k vs) = Hs.PCons k vs
 
 transCoaltL :: (D.FlatCopattern, D.FlatTerm) -> Hs.Term -> Hs.Term
-transCoaltL (D.FlatCopDest h,u) t = Hs.App (Hs.App (Hs.Var ("set_" <> h)) t)
+transCoaltL (D.FlatCopDest h,u) t = Hs.App (Hs.App (Hs.Var (Variable "set_" <> h)) t)
                                            (transTermL u)
 transCoaltL (D.FlatCopPat _,u) _ = transTermL u
 

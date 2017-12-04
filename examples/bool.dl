@@ -2,6 +2,6 @@ data Bool
   { True  : Bool
   | False : Bool }
 
-(cocase { # False -> 0
-	, # True -> 42 })
+{ □ False → 0
+, □ True  → 42 }
 True
