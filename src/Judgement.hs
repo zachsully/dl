@@ -51,52 +51,48 @@ instance Pretty TypeScheme where
   pp (TyMono ty)     = pp ty
   pp (TyForall v ty) = "∀" <> pp v <> "." <+> pp ty
 
+type CtxTS = [(Variable,TypeScheme)]
+
 inferTSProgram :: Program Term -> Std TypeScheme
-inferTSProgram pgm = inferTS (mkContext . pgmDecls $ pgm)
+inferTSProgram pgm = inferTS (fmap (\(v,t) -> (v,typeClosure t))
+                              . mkContext
+                              . pgmDecls
+                              $ pgm)
                              (pgmTerm pgm)
 
-inferTS :: Ctx -> Term -> Std TypeScheme
-inferTS _ _ = unimplementedErr "inferTS"
+inferTS :: CtxTS -> Term -> Std TypeScheme
+inferTS c (Let x a b) =
+  do { aty <- inferTS c a
+     ; inferTS ((x,aty):c) b }
+inferTS c (Ann a ty) =
+  let ty' = typeClosure ty in
+    do { aty <- inferTS c a
+       ; case aty == ty' of
+           True -> return aty
+           False -> typeErr ("expected"<+> pp ty' <> ", given" <+> pp aty)
+       }
+inferTS _ (Lit _) = return (TyMono TyInt)
+inferTS c (Add a b) =
+  do { aty <- inferTS c a
+     ; case aty of
+         TyMono TyInt ->
+           do { bty <- inferTS c b
+              ; case bty of
+                  TyMono TyInt -> return (TyMono TyInt)
+                  _ -> typeErr ("expected Int, given" <+> pp bty)
+              }
+         _ -> typeErr ("expected Int, given" <+> pp aty)
+     }
+inferTS c (Var v) = lookupStd v c
+inferTS c (Fix v a) = unimplementedErr "inferTS{fix}"
+inferTS _ (App _ _) = unimplementedErr "inferTS{app}"
+inferTS _ (Cons _) = unimplementedErr "inferTS{cons}"
+inferTS _ (Case _ _) = unimplementedErr "inferTS{case}"
+inferTS _ (Dest _) = unimplementedErr "inferTS{dest}"
+inferTS _ (CoCase _) = unimplementedErr "inferTS{cocase}"
+inferTS _ (Prompt _) = unimplementedErr "inferTS{prompt}"
 
--- inferTS _ (Lit _)    = TyMono TyInt
--- inferTS c (Add a b)  = case (inferTS c a,inferTS c b) of
---                          (TyMono TyInt, TyMono TyInt) -> TyMono TyInt
---                          _ -> error "(+) requires it's arguments to be of type Int"
--- inferTS c (Var v)    = case lookup v c of
---                          Just t -> TyMono t
---                          Nothing -> error ("unbound variable " <> v)
--- inferTS c (Fix _ t)  = inferTS c t
--- inferTS c (App a b)  = case inferTS c a of
---                          (TyMono (TyArr aTy0 aTy1)) ->
---                            case inferTS c b of
---                              TyMono bTy ->
---                                case bTy == aTy0 of
---                                  True -> TyMono aTy1
---                                  False -> error ("expecting type" <+> pp aTy1)
---                              t -> error ("must be a function type, given" <+> pp t)
---                          t -> error ("must be a function type, given" <+> pp t)
--- inferTS c (Cons k)   = case lookup k c of
---                          Just t -> TyMono t
---                          Nothing -> error ("unbound constructor " <> k)
--- inferTS c (Case e a) = let _ = inferTS c e
---                            tyAlts = map inferTSAlt a
---                        in case tyAlts of
---                             [] -> error "cannot infer empty case"
---                             (t:ts) -> case all (== t) ts of
---                                         True -> t
---                                         False -> error "all case branches must have the same type"
---   where inferTSAlt :: (Pattern,Term) -> TypeScheme
---         inferTSAlt (_,t) = inferTS c t
 
---         -- inferTSPattern :: Pattern -> TypeScheme
---         -- inferTSPattern PWild        = TyForall "x" (TyVar "x")
---         -- inferTSPattern (PVar _)     = TyForall "x" (TyVar "x")
---         -- inferTSPattern (PCons _ _)  = undefined
-
--- inferTS c (Dest h)   = case lookup h c of
---                          Just t -> TyMono t
---                          Nothing -> error ("unbound destructor " <> h)
--- inferTS c (CoCase a) = undefined c a
 
 typeClosure :: Type -> TypeScheme
 typeClosure ty = foldr (\v -> TyForall v) (TyMono ty) (freeTyVars ty)

@@ -10,6 +10,9 @@ newtype Variable = Variable String
 unVariable :: Variable -> String
 unVariable (Variable s) = s
 
+freshVariable :: Std Variable
+freshVariable = Std $ \(n:ns) -> Right (Variable n,ns)
+
 instance Eq Variable where
   a == b = unVariable a == unVariable b
 
