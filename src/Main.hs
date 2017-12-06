@@ -42,6 +42,7 @@ data EvalMode
 data TypeMode
   = TypeMode
   { tmDebug  :: Bool
+  , tmBidir  :: Bool
   , tmInput  :: FilePath }
 
 data Mode
@@ -82,6 +83,9 @@ parseTypeOf = TypeMode
            <$> switch (  long "debug"
                       <> short 'D'
                       <> help "debug mode" )
+           <*> switch (  long "bidir"
+                      <> short 'B'
+                      <> help "use bidirectional type checking instead DHM type inference." )
            <*> inputFp
 
 selectMode :: Parser Mode
@@ -167,9 +171,15 @@ runEvaluate em pgm =
 runTypeOf :: TypeMode -> D.Program D.Term -> IO ()
 runTypeOf tm pgm =
   do { when (tmDebug tm) $ pprint pgm
-     ; case runStd . typeOfProgram $ pgm of
-         Left e -> putStrLn e
-         Right ty -> putStrLn . pp $ ty
+     ; case tmBidir tm of
+         True ->
+           case runStd . typeOfProgram $ pgm of
+             Left e -> putStrLn e
+             Right ty -> putStrLn . pp $ ty
+         False ->
+           case runStd . inferTSProgram $ pgm of
+             Left e -> putStrLn e
+             Right ty -> putStrLn . pp $ ty
      }
 
 runRepl :: IO ()

@@ -2,27 +2,14 @@
 module Judgement where
 
 import Data.Monoid
+import Data.List
 
 import Utils
 import TypeSyn
 import DualSyn
 import VariableSyn
 
-data TypeScheme :: * where
-  TyMono   :: Type -> TypeScheme
-  TyForall :: Variable -> TypeScheme -> TypeScheme
-  deriving Eq
-
-instance Pretty TypeScheme where
-  pp (TyMono ty)     = pp ty
-  pp (TyForall v ty) = "∀" <+> pp v <> "." <+> pp ty
-
---------------------------------------------------------------------------------
---                              Top Level                                     --
---------------------------------------------------------------------------------
-
-typeOfProgram :: Program Term -> Std Type
-typeOfProgram (Pgm decls term) = infer (mkContext decls) term
+type Ctx = [(Variable,Type)]
 
 --------------------------------------------------------------------------------
 --                                isType                                      --
@@ -52,15 +39,25 @@ isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
                                Nothing -> False
 
 --------------------------------------------------------------------------------
---                              Infer TypeScheme                              --
+--                            Damas-Hindley-Milner                            --
 --------------------------------------------------------------------------------
-{- Type scheme inference with algorithm W. -}
 
--- inferTSProgram :: Program Term -> TypeScheme
--- inferTSProgram pgm = inferTS (mkContext . pgmDecls $ pgm)
---                              (pgmTerm pgm)
+data TypeScheme :: * where
+  TyMono   :: Type -> TypeScheme
+  TyForall :: Variable -> TypeScheme -> TypeScheme
+  deriving Eq
 
--- inferTS :: [(Variable,Type)] -> Term -> TypeScheme
+instance Pretty TypeScheme where
+  pp (TyMono ty)     = pp ty
+  pp (TyForall v ty) = "∀" <> pp v <> "." <+> pp ty
+
+inferTSProgram :: Program Term -> Std TypeScheme
+inferTSProgram pgm = inferTS (mkContext . pgmDecls $ pgm)
+                             (pgmTerm pgm)
+
+inferTS :: Ctx -> Term -> Std TypeScheme
+inferTS _ _ = unimplementedErr "inferTS"
+
 -- inferTS _ (Lit _)    = TyMono TyInt
 -- inferTS c (Add a b)  = case (inferTS c a,inferTS c b) of
 --                          (TyMono TyInt, TyMono TyInt) -> TyMono TyInt
@@ -101,19 +98,16 @@ isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
 --                          Nothing -> error ("unbound destructor " <> h)
 -- inferTS c (CoCase a) = undefined c a
 
--- typeClosure :: Type -> TypeScheme
--- typeClosure ty =
---   case freeTyVars ty of
---     [] -> TyMono ty
---     vs -> foldr (\v' a -> TyForall v' ) v vs
+typeClosure :: Type -> TypeScheme
+typeClosure ty = foldr (\v -> TyForall v) (TyMono ty) (freeTyVars ty)
 
 {- Since there is no forall type, all type variables occur free. -}
 freeTyVars :: Type -> [Variable]
 freeTyVars TyInt = []
-freeTyVars (TyArr a b) = freeTyVars a <> freeTyVars b
+freeTyVars (TyArr a b) = freeTyVars a `union` freeTyVars b
 freeTyVars (TyVar v) = [v]
 freeTyVars (TyCons _) = []
-freeTyVars (TyApp a b) = freeTyVars a <> freeTyVars b
+freeTyVars (TyApp a b) = freeTyVars a `union` freeTyVars b
 
 
 occurs :: Variable -> Type -> Bool
@@ -151,6 +145,9 @@ unify a b = typeErr ("cannot unify" <+> pp a <+> "and" <+> pp b)
 ~infer~ and ~check~ functions because we populate the Ctx with the necessary
 information before running.
 -}
+
+typeOfProgram :: Program Term -> Std Type
+typeOfProgram (Pgm decls term) = infer (mkContext decls) term
 
 -----------
 -- infer --
@@ -323,8 +320,6 @@ lookupDecl v ((Left d):ds) = case v == negTyName d of
 lookupDecl v ((Right d):ds) = case v == posTyName d of
                                True -> Just (Right d)
                                False -> lookupDecl v ds
-
-type Ctx = [(Variable,Type)]
 
 lookupDatum :: Variable -> [Decl] -> Maybe Decl
 lookupDatum _ [] = Nothing
