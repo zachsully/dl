@@ -13,7 +13,7 @@ import TypeSyn
 import Utils
 }
 -- All shift/reduce conflicts
-%expect 10
+%expect 9
 
 %name parseProgram program
 %name parseType type
@@ -140,11 +140,13 @@ term1 :  termA  term              { App $1 $2 }
 
 term2 :: { Term }
 term2 :  term '+' termA                { Add $1 $3 }
+      |  termA ':' type                 { Ann $1 $3 }
       |  'cocase' '{' coalts '}'       { CoCase (reverse $3) }
       |  'fix' var 'in' term           { Fix $2 $4 }
       |  'let' var '=' term 'in' term  { Let $2 $4 $6 }
-      |  'case' term '{' alts '}'      { Case $2 (reverse $4) }
+      |  'case' termA '{' alts '}'     { Case $2 (reverse $4) }
       |  termA                         { $1 }
+
 
 {- We lookup to see if the string is defined as a symbol and a singleton
    constructor, otherwise it is a variable. -}
@@ -158,7 +160,7 @@ termA :  num                      { Lit $1 }
                                         }
                                   }
       | '(' term ')'              { $2 }
-      | '{' coalts '}'                 { CoCase (reverse $2) }
+      | '{' coalts '}'            { CoCase (reverse $2) }
 
 
 --------------

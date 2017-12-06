@@ -50,6 +50,7 @@ data Polarity = Positive | Negative
 important because we only translate flat (co)patterns. -}
 data Term where
   Let :: Variable -> Term -> Term -> Term
+  Ann :: Term -> Type -> Term
 
   -- ^ Number primitives
   Lit :: Int -> Term

@@ -10,7 +10,7 @@ import VariableSyn
 
 data TypeScheme :: * where
   TyMono   :: Type -> TypeScheme
-  TyForall :: Variable -> Type -> TypeScheme
+  TyForall :: Variable -> TypeScheme -> TypeScheme
   deriving Eq
 
 instance Pretty TypeScheme where
@@ -101,6 +101,21 @@ isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
 --                          Nothing -> error ("unbound destructor " <> h)
 -- inferTS c (CoCase a) = undefined c a
 
+-- typeClosure :: Type -> TypeScheme
+-- typeClosure ty =
+--   case freeTyVars ty of
+--     [] -> TyMono ty
+--     vs -> foldr (\v' a -> TyForall v' ) v vs
+
+{- Since there is no forall type, all type variables occur free. -}
+freeTyVars :: Type -> [Variable]
+freeTyVars TyInt = []
+freeTyVars (TyArr a b) = freeTyVars a <> freeTyVars b
+freeTyVars (TyVar v) = [v]
+freeTyVars (TyCons _) = []
+freeTyVars (TyApp a b) = freeTyVars a <> freeTyVars b
+
+
 occurs :: Variable -> Type -> Bool
 occurs _ TyInt       = False
 occurs v (TyArr a b) = occurs v a || occurs v b
@@ -108,25 +123,26 @@ occurs v (TyVar v')  = v == v'
 occurs v (TyCons k)  = v == k
 occurs v (TyApp a b) = occurs v a || occurs v b
 
-unify :: Type -> Type -> [(Variable,Type)]
-unify a@(TyVar a') b@(TyVar b') = case a' == b' of
-                                    True -> [(a',b)]
-                                    False -> error (unwords ["cannot unify"
-                                                            ,pp a,"and"
-                                                            ,pp b])
-unify (TyVar a') b = case occurs a' b of
-                       True -> error "recursion in type"
-                       False -> [(a',b)]
-unify b (TyVar a') = case occurs a' b of
-                       True -> error "recursion in type"
-                       False -> [(a',b)]
+unify :: Type -> Type -> Std Type
+unify a@(TyVar a') b@(TyVar b') =
+  case a' == b' of
+    True -> return a
+    False -> typeErr ("cannot unify" <+> pp a <+> "and" <+> pp b)
+unify (TyVar a') b =
+  case occurs a' b of
+    True -> typeErr ("cannot unify recursion in type" <+> pp b)
+    False -> return b
+unify b (TyVar a') =
+  case occurs a' b of
+    True -> typeErr ("cannot unify recursion in type" <+> pp b)
+    False -> return b
 unify (TyCons a) (TyCons b) =
   case a == b of
-    True -> []
-    False -> error ("unify tyCons" <> pp a <> " and " <> pp b)
-unify (TyApp a b) (TyApp a' b') = unify a b <> unify a' b'
-unify (TyArr a b) (TyArr a' b') = unify a b <> unify a' b'
-unify a b = error (unwords ["cannot unify",pp a,"and",pp b])
+    True -> return (TyCons a)
+    False -> typeErr ("cannot unify" <+> pp a <+> " and " <+> pp b)
+unify (TyApp a b) (TyApp a' b') = TyApp <$> unify a a' <*> unify b b'
+unify (TyArr a b) (TyArr a' b') = TyArr <$> unify a a' <*> unify b b'
+unify a b = typeErr ("cannot unify" <+> pp a <+> "and" <+> pp b)
 
 --------------------------------------------------------------------------------
 --                              Bidirectional Tc                              --
@@ -143,6 +159,8 @@ infer :: Ctx -> Term -> Std Type
 infer c (Let x a b) =
   do { aty <- infer c a
      ; infer ((x,aty):c) b }
+
+infer c (Ann a ty) = check c a ty >> return ty
 
 infer _ (Lit _) = return TyInt
 
@@ -203,6 +221,10 @@ inferCopat _ _ (QVar _ _) = unimplementedErr "inferCopat{qvar}"
 
 check :: Ctx -> Term -> Type -> Std ()
 check _ (Let _ _ _) _ = unimplementedErr "check{Let}"
+check c (Ann a aty) ty =
+  case aty == ty of
+    True -> check c a ty
+    False -> typeErr ("expected type" <+> pp ty <+> "given" <+> pp aty)
 check _ (Lit _) ty =
   case ty == TyInt of
     True -> return ()
@@ -240,7 +262,13 @@ check c (App a b) ty =
                                <+> "' to have return type" <+> pp ty)
          _ -> typeErr ("must have a function type: " ++ pp a)
      }
-check _ (Case _ _) _ = error "check{Case}"
+check c (Case e alts) ty =
+  do { ety <- infer c e
+     ; alttys <- mapM (\(p,u) -> checkPat c p ety >>= \c' -> infer c' u) alts
+     ; case all (== ty) alttys of
+         True  -> return ()
+         False -> typeErr ("alternatives do not have expected type" <+> pp ty)
+     }
 check _ (CoCase _) _ = error "check{CoCase}"
 check c (Prompt t) ty =
   do { ty' <- infer c t
@@ -256,17 +284,23 @@ checkPat c PWild        _ = return c
 checkPat c (PVar v)     t = return ((v,t):c)
 checkPat c (PCons k ps) ty =
   do { kty <- lookupStd k c
-     ; case length ps == funArity kty of
-         True  ->
-           do { cs <- mapM (\(ty',p') -> checkPat c p' ty')
-                           (zip (collectFunArgTys kty) ps)
-              ; return (mconcat cs <> c) }
-         False -> typeErr ("constructor '" <> pp k
-                           <> "' has arity" <+> show (funArity kty))
+     ; case tyCodomain kty == ty of
+         True ->
+           case length ps == funArity kty of
+             True  ->
+               do { cs <- mapM (\(ty',p') -> checkPat c p' ty')
+                               (zip (collectFunArgTys kty) ps)
+                  ; return (mconcat cs <> c) }
+             False -> typeErr ("constructor '" <> pp k
+                               <> "' has arity" <+> show (funArity kty))
+         False -> typeErr (pp k <+> "is not a constructor of type" <+> pp ty)
      }
   where collectFunArgTys :: Type -> [Type]
         collectFunArgTys (TyArr a b) = a : collectFunArgTys b
         collectFunArgTys x = [x]
+        tyCodomain :: Type -> Type
+        tyCodomain (TyArr _ b) = tyCodomain b
+        tyCodomain t = t
 
 --------------------------------------------------------------------------------
 --                                 Utils                                      --
