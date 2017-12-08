@@ -170,8 +170,38 @@ occurs v (TyApp a b) = occurs v a || occurs v b
 
 unify :: Type -> Type -> Std Subst
 unify TyInt TyInt = return []
-unify a b = typeErr ("cannot unify" <+> pp a <+> "and" <+> pp b)
 
+unify (TyArr a b) (TyArr a' b') =
+  do { as <- unify a a'
+     ; bs <- unify b b'
+     ; return (as <> bs) }
+
+unify (TyVar v) (TyVar w) =
+  case v == w of
+    True  -> return []
+    False -> unificationErr (TyVar v) (TyVar w)
+
+unify (TyVar v) ty =
+  case elem v (fvs ty) of
+    True -> unificationErr (TyVar v) ty
+    False -> return [(v,ty)]
+
+unify ty (TyVar v) =
+  case elem v (fvs ty) of
+    True -> unificationErr (TyVar v) ty
+    False -> return [(v,ty)]
+
+unify (TyCons k) (TyCons h) =
+  case k == h of
+    True  -> return []
+    False -> unificationErr (TyCons k) (TyCons h)
+
+unify (TyApp a b) (TyApp a' b') =
+  do { as <- unify a a'
+     ; bs <- unify b b'
+     ; return (as <> bs) }
+
+unify a b = unificationErr a b
 
 --------------------------------------------------------------------------------
 --                              Bidirectional Tc                              --
