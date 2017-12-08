@@ -11,7 +11,7 @@ import qualified HsSyn as Hs
 import qualified MLSyn as ML
 import qualified TypeSyn as Ty
 import VariableSyn
-import Utils
+import Pretty
 
 --------------------------------------------------------------------------------
 --                            Translation Monad                               --

@@ -2,16 +2,14 @@ module VariableSyn where
 
 import Data.Monoid
 
-import Utils
+import Pretty
 
 {- Vars are introduced and consumed by pattern matching within terms. -}
 newtype Variable = Variable String
+  deriving Ord
 
 unVariable :: Variable -> String
 unVariable (Variable s) = s
-
-freshVariable :: Std Variable
-freshVariable = Std $ \(n:ns) -> Right (Variable n,ns)
 
 instance Eq Variable where
   a == b = unVariable a == unVariable b

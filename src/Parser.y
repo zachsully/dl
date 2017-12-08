@@ -11,6 +11,7 @@ import VariableSyn
 import KindSyn
 import TypeSyn
 import Utils
+import Pretty
 }
 -- All shift/reduce conflicts
 %expect 9

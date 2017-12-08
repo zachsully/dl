@@ -1,7 +1,10 @@
 {-# LANGUAGE GADTs, DataKinds, KindSignatures, RankNTypes #-}
 module TypeSyn where
 
+import Data.Set hiding (foldl)
+
 import VariableSyn
+import Pretty
 import Utils
 
 --------------------------------------------------------------------------------
@@ -22,6 +25,13 @@ instance Pretty Type where
   pp (TyVar v) = unVariable v
   pp (TyCons k) = unVariable k
   pp (TyApp a b) = pp a <+> pp b
+
+instance FV Type where
+  fvs TyInt = empty
+  fvs(TyArr a b) = fvs a `union` fvs b
+  fvs (TyVar v) = singleton v
+  fvs (TyCons _) = empty
+  fvs (TyApp a b) = fvs a `union` fvs b
 
 funArity :: Type -> Int
 funArity (TyArr _ b) = 1 + funArity b

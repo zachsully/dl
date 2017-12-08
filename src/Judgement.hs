@@ -2,9 +2,11 @@
 module Judgement where
 
 import Data.Monoid
-import Data.List
+import Data.Set hiding (foldr,map)
+import Control.Arrow (second)
 
 import Utils
+import Pretty
 import TypeSyn
 import DualSyn
 import VariableSyn
@@ -41,6 +43,11 @@ isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
 --------------------------------------------------------------------------------
 --                            Damas-Hindley-Milner                            --
 --------------------------------------------------------------------------------
+{-
+Citations:
+- [http://dev.stephendiehl.com/fun/006_hindley_milner.html#generalization-and-instantiation]
+- Odersky, Sulzmann, and Wehr. /Type Inference with Constrained Types/. 1999.
+-}
 
 data TypeScheme :: * where
   TyMono   :: Type -> TypeScheme
@@ -51,60 +58,108 @@ instance Pretty TypeScheme where
   pp (TyMono ty)     = pp ty
   pp (TyForall v ty) = "∀" <> pp v <> "." <+> pp ty
 
-type CtxTS = [(Variable,TypeScheme)]
+instance FV TypeScheme where
+  fvs (TyMono ty)     = fvs ty
+  fvs (TyForall v tys) = fvs tys \\ singleton v
+
+newtype Env = Env [(Variable,TypeScheme)]
+
+emptyEnv :: Env
+emptyEnv = Env []
+
+instance FV Env where
+  fvs (Env []) = empty
+  fvs (Env ((_,t):e)) = fvs t `union` fvs (Env e)
+
+type Subst = [(Variable,Type)]
+
+applySubst :: Subst -> Type -> Type
+applySubst _ TyInt = TyInt
+applySubst s (TyArr a b) = TyArr (applySubst s a) (applySubst s b)
+applySubst [] (TyVar v) = TyVar v
+applySubst ((s,ty):ss) (TyVar v) =
+  case v == s of
+    True -> ty
+    False -> applySubst ss (TyVar v)
+applySubst _ (TyCons k) = TyCons k
+applySubst s (TyApp a b) = TyApp (applySubst s a) (applySubst s b)
+
+tsElim :: TypeScheme -> Std Type
+tsElim (TyMono ty) = return ty
+tsElim (TyForall v ty) =
+  do { v' <- TyVar <$> freshVariable
+     ; ty' <- tsElim ty
+     ; return (applySubst [(v,v')] ty')
+     }
+
+tsIntro :: Env -> Type -> TypeScheme
+tsIntro e ty = foldr TyForall (TyMono ty) (fvs ty \\ fvs e)
+
+type Constraint = (Type,Type)
 
 inferTSProgram :: Program Term -> Std TypeScheme
-inferTSProgram pgm = inferTS (fmap (\(v,t) -> (v,typeClosure t))
-                              . mkContext
-                              . pgmDecls
-                              $ pgm)
-                             (pgmTerm pgm)
+inferTSProgram pgm
+  = fmap ( typeClosure . fst )
+  $ inferTS ( mkContextTS . pgmDecls $ pgm )
+  $ pgmTerm pgm
 
-inferTS :: CtxTS -> Term -> Std TypeScheme
-inferTS c (Let x a b) =
-  do { aty <- inferTS c a
-     ; inferTS ((x,aty):c) b }
+inferTS :: Env -> Term -> Std (Type, [Constraint])
+inferTS _ (Let _ _ _) = unimplementedErr "inferTS{let}"
+
 inferTS c (Ann a ty) =
-  let ty' = typeClosure ty in
-    do { aty <- inferTS c a
-       ; case aty == ty' of
-           True -> return aty
-           False -> typeErr ("expected"<+> pp ty' <> ", given" <+> pp aty)
-       }
-inferTS _ (Lit _) = return (TyMono TyInt)
-inferTS c (Add a b) =
-  do { aty <- inferTS c a
-     ; case aty of
-         TyMono TyInt ->
-           do { bty <- inferTS c b
-              ; case bty of
-                  TyMono TyInt -> return (TyMono TyInt)
-                  _ -> typeErr ("expected Int, given" <+> pp bty)
-              }
-         _ -> typeErr ("expected Int, given" <+> pp aty)
+  do { (aty,acs) <- inferTS c a
+     ; return (aty, acs <> [(aty,ty)])}
+
+inferTS _ (Lit _) = return (TyInt,[])
+inferTS e (Add a b) =
+  do { (aty,acs) <- inferTS e a
+     ; (bty,bcs) <- inferTS e b
+     ; return (TyInt, acs <> bcs <> [(aty,TyInt),(bty,TyInt)])
      }
-inferTS c (Var v) = lookupStd v c
-inferTS c (Fix v a) = unimplementedErr "inferTS{fix}"
-inferTS _ (App _ _) = unimplementedErr "inferTS{app}"
-inferTS _ (Cons _) = unimplementedErr "inferTS{cons}"
-inferTS _ (Case _ _) = unimplementedErr "inferTS{case}"
-inferTS _ (Dest _) = unimplementedErr "inferTS{dest}"
+
+inferTS (Env e) (Var v) =
+  do { tys <- lookupStd v e
+     ; ty <- tsElim tys
+     ; return (ty,[]) }
+
+inferTS _ (Fix _ _) = unimplementedErr "inferTS{fix}"
+
+inferTS c (App a b) =
+  do { (aty,acs) <- inferTS c a
+     ; (bty,bcs) <- inferTS c b
+     ; retTy <- TyVar <$> freshVariable
+     ; return (retTy, acs <> bcs <> [(aty, TyArr bty retTy)])
+     }
+
+inferTS (Env e) (Cons k) =
+  do { tys <- lookupStd k e
+     ; ty <- tsElim tys
+     ; return (ty,[]) }
+
+inferTS c (Case a _) = inferTS c a
+
+inferTS (Env e) (Dest h) =
+  do { tys <- lookupStd h e
+     ; ty <- tsElim tys
+     ; return (ty,[]) }
+
 inferTS _ (CoCase _) = unimplementedErr "inferTS{cocase}"
-inferTS _ (Prompt _) = unimplementedErr "inferTS{prompt}"
+inferTS c (Prompt a) = inferTS c a
 
+inferTSPattern :: Env -> Pattern -> Std Env
+inferTSPattern e PWild = return e
+inferTSPattern (Env e) (PVar v) =
+  do { v' <- freshVariable
+     ; return . Env $ e <> [(v,TyForall v' (TyMono (TyVar v')))] }
+inferTSPattern (Env e) (PCons k _) =
+  do { _ <- lookupStd k e
+     ; unimplementedErr "inferTSPattern" }
 
+inferTSCopattern :: Env -> CoPattern -> Std Env
+inferTSCopattern _ _ = unimplementedErr "inferTSCopattern"
 
 typeClosure :: Type -> TypeScheme
-typeClosure ty = foldr (\v -> TyForall v) (TyMono ty) (freeTyVars ty)
-
-{- Since there is no forall type, all type variables occur free. -}
-freeTyVars :: Type -> [Variable]
-freeTyVars TyInt = []
-freeTyVars (TyArr a b) = freeTyVars a `union` freeTyVars b
-freeTyVars (TyVar v) = [v]
-freeTyVars (TyCons _) = []
-freeTyVars (TyApp a b) = freeTyVars a `union` freeTyVars b
-
+typeClosure ty = foldr (\v -> TyForall v) (TyMono ty) (fvs ty)
 
 occurs :: Variable -> Type -> Bool
 occurs _ TyInt       = False
@@ -113,26 +168,10 @@ occurs v (TyVar v')  = v == v'
 occurs v (TyCons k)  = v == k
 occurs v (TyApp a b) = occurs v a || occurs v b
 
-unify :: Type -> Type -> Std Type
-unify a@(TyVar a') b@(TyVar b') =
-  case a' == b' of
-    True -> return a
-    False -> typeErr ("cannot unify" <+> pp a <+> "and" <+> pp b)
-unify (TyVar a') b =
-  case occurs a' b of
-    True -> typeErr ("cannot unify recursion in type" <+> pp b)
-    False -> return b
-unify b (TyVar a') =
-  case occurs a' b of
-    True -> typeErr ("cannot unify recursion in type" <+> pp b)
-    False -> return b
-unify (TyCons a) (TyCons b) =
-  case a == b of
-    True -> return (TyCons a)
-    False -> typeErr ("cannot unify" <+> pp a <+> " and " <+> pp b)
-unify (TyApp a b) (TyApp a' b') = TyApp <$> unify a a' <*> unify b b'
-unify (TyArr a b) (TyArr a' b') = TyArr <$> unify a a' <*> unify b b'
+unify :: Type -> Type -> Std Subst
+unify TyInt TyInt = return []
 unify a b = typeErr ("cannot unify" <+> pp a <+> "and" <+> pp b)
+
 
 --------------------------------------------------------------------------------
 --                              Bidirectional Tc                              --
@@ -201,8 +240,8 @@ infer c (Prompt t) = infer c t
 inferCopat :: Ctx -> Type -> CoPattern -> Std (Type,Ctx)
 inferCopat c ety QHead = return (ety,c)
 inferCopat c ety (QDest h q) =
-  do { (qty,c') <- inferCopat c ety q
-     ; hty <- lookupStd h c'
+  do { (_,c') <- inferCopat c ety q
+     ; _ <- lookupStd h c'
      ; return (TyInt,c') }
 
 inferCopat _ _ (QPat _ _) = unimplementedErr "inferCopat"
@@ -307,6 +346,9 @@ mkContext (d:ds) =
                     (projections neg)
      Right pos -> map (\i -> (injName i, injType i)) (injections pos)
   ) <> (mkContext ds)
+
+mkContextTS :: [Decl] -> Env
+mkContextTS = Env . fmap (second typeClosure) . mkContext
 
 lookupDecl :: Variable -> [Decl] -> Maybe Decl
 lookupDecl _ [] = Nothing

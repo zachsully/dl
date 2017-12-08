@@ -17,6 +17,7 @@ import Translation
 import Interpreter
 import Judgement
 import Utils
+import Pretty
 
 
 --------------------------------------------------------------------------------

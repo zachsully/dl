@@ -5,11 +5,12 @@ module DualSyn where
 
 import Control.Monad.State
 import Data.Monoid ((<>))
+import Data.Set ((\\),singleton,empty,union,unions,Set)
 
 import TypeSyn
 import VariableSyn
+import Pretty
 import Utils
-
 
 --------------------------------------------------------------------------------
 --                             Top Level                                      --
@@ -95,8 +96,25 @@ instance Pretty Term where
                             $ coalts)
                         <-> indent (i+1) "}"
 
-{- `collectArgs` will recur down an application to find the constructor and its
-   arguments -}
+instance FV Term where
+  fvs (Let v a b) = fvs a `union` (fvs b \\ singleton v)
+  fvs (Ann a _) = fvs a
+  fvs (Lit _) = empty
+  fvs (Add a b) = fvs a `union` fvs b
+  fvs (Var v) = singleton v
+  fvs (Fix v a) = fvs a \\ singleton v
+  fvs (App a b) =  fvs a `union` fvs b
+  fvs (Cons _) = empty
+  fvs (Case a alts) =
+    fvs a `union` (unions (fmap (\(p,u) -> fvs u \\ patBinds p) alts))
+  fvs (Dest _) = empty
+  fvs (CoCase coalts) = unions . fmap (\(q,u) -> fvs u \\ copBinds q) $ coalts
+  fvs (Prompt a) = fvs a
+
+{-
+`collectArgs` will recur down an application to find the constructor and its
+arguments
+-}
 collectArgs :: Term -> Maybe (Variable,[Term])
 collectArgs (App e t) = collectArgs e >>= \(k,ts) -> return (k,t:ts)
 collectArgs (Cons k)  = return (k,[])
@@ -124,6 +142,11 @@ instance Pretty Pattern where
   pp (PVar s)     = pp s
   pp (PCons k ps) = pp k <+> (smconcat . fmap (parens . pp) $ ps)
 
+patBinds :: Pattern -> Set Variable
+patBinds PWild = empty
+patBinds (PVar v) = singleton v
+patBinds (PCons _ ps) = unions (fmap patBinds ps)
+
 {- Copatterns -}
 {- NOTE: we often use 'q' for a copattern variables -}
 data CoPattern where
@@ -135,9 +158,15 @@ data CoPattern where
 
 instance Pretty CoPattern where
   pp QHead       = "□"
-  pp (QDest h q) = pp h <+> (parens . pp $ q)
-  pp (QPat q p)  = (parens . pp $ q) <+> (parens . pp $ p)
+  pp (QDest h q) = pp h <+> (brackets . pp $ q)
+  pp (QPat q p)  = (brackets . pp $ q) <+> (parens . pp $ p)
+  pp (QVar v q)  = pp v <+> (brackets . pp $ q)
 
+copBinds :: CoPattern -> Set Variable
+copBinds QHead = empty
+copBinds (QDest _ q) = copBinds q
+copBinds (QPat q p) = patBinds p `union` copBinds q
+copBinds (QVar v q) = singleton v `union` copBinds q
 
 -----------------------------
 -- Some smart constructors --

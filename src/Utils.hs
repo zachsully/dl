@@ -1,54 +1,17 @@
 module Utils where
 
-import Data.Monoid
 import Control.Monad
+import Data.Set
+
+import VariableSyn
+import Pretty
 
 --------------------------------------------------------------------------------
---                                  Pretty                                    --
+--                          Free Variable Typeclass                           --
 --------------------------------------------------------------------------------
-{- A class for pretty printing -}
-class Pretty a where
-  {-# MINIMAL ppInd | pp #-}
-  pp :: a -> String
-  pp = ppInd 0
 
-  ppInd :: Int -> a -> String
-  ppInd = const pp
-
-pprint :: Pretty a => a -> IO ()
-pprint = putStrLn . pp
-
-infixr 0 <+>
-(<+>) :: String -> String -> String
-a <+> b = a <> " " <> b
-
-infixr 1 <->
-(<->) :: String -> String -> String
-a <-> b = a <> "\n" <> b
-
-indent :: Int -> String -> String
-indent lvl s = replicate (lvl*2) ' ' <> s
-
-stringmconcat :: String -> [String] -> String
-stringmconcat _ []     = []
-stringmconcat _ (x:[]) = x
-stringmconcat s (x:xs) = x <> s <> stringmconcat s xs
-
-{- concatenates terms with a space between them -}
-smconcat :: [String] -> String
-smconcat = stringmconcat " "
-
-{- concatenates terms with a newline between them -}
-vmconcat :: [String] -> String
-vmconcat = stringmconcat "\n"
-
-ppPrec :: Int -> Int -> String -> String
-ppPrec p p' s = case p > p' of
-                  True -> parens s
-                  False -> s
-
-parens :: String -> String
-parens s = "(" <> s <> ")"
+class FV a where
+  fvs :: a -> Set Variable
 
 --------------------------------------------------------------------------------
 --                               Standard Monad                               --
@@ -86,6 +49,9 @@ lookupStd a ((x,v):xs) =
   case x == a of
     True  -> return v
     False -> lookupStd a xs
+
+freshVariable :: Std Variable
+freshVariable = Std $ \(n:ns) -> Right (Variable n,ns)
 
 instance Functor Std where
   fmap f m = Std $ \ns ->

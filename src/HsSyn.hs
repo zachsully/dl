@@ -4,7 +4,7 @@ module HsSyn where
 import Data.Monoid
 
 import VariableSyn
-import Utils
+import Pretty
 
 data Program
   = Pgm

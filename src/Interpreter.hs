@@ -6,6 +6,7 @@ import Data.Monoid
 import Utils
 import VariableSyn
 import DualSyn
+import Pretty
 
 data Value :: * where
   VLit     :: Int -> Value

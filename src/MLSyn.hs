@@ -3,7 +3,7 @@ module MLSyn where
 
 import Data.Monoid
 
-import Utils
+import Pretty
 
 data Program
   = Pgm
