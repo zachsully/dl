@@ -23,7 +23,7 @@ data Std a = Std { apStd :: [String] -> Either String (a,[String]) }
 
 names :: [String]
 names = names' (0 :: Int)
-  where names' x = ("x" ++ show x) : names' (x+1)
+  where names' x = ("τ" ++ show x) : names' (x+1)
 
 runStd :: Std a -> Either String a
 runStd m =
@@ -47,7 +47,7 @@ unboundErr :: String -> Std a
 unboundErr = failure . ("<unbound variable>" <+>)
 
 lookupStd :: (Eq a, Pretty a) => a -> [(a,b)] -> Std b
-lookupStd a [] = failure ("<unbound>" <+> pp a)
+lookupStd a [] = failure ("<unbound variable>" <+> pp a)
 lookupStd a ((x,v):xs) =
   case x == a of
     True  -> return v

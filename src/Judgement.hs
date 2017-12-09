@@ -1,15 +1,17 @@
 {-# LANGUAGE GADTs,KindSignatures #-}
 module Judgement where
 
+import Prelude hiding (id)
 import Data.Monoid
 import Data.Set hiding (foldr,map)
-import Control.Arrow (second)
+import Control.Arrow hiding ((<+>))
 
 import Utils
 import Pretty
 import TypeSyn
 import DualSyn
 import VariableSyn
+import DualPrelude (prelude)
 
 type Ctx = [(Variable,Type)]
 
@@ -41,11 +43,12 @@ isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
                                Nothing -> False
 
 --------------------------------------------------------------------------------
---                            Damas-Hindley-Milner                            --
+--                            Type Scheme Inference                           --
 --------------------------------------------------------------------------------
 {-
 Citations:
-- [http://dev.stephendiehl.com/fun/006_hindley_milner.html#generalization-and-instantiation]
+- Lee and Yi. /Proofs about a Folklore Let-Polymorphic Type Inference
+  Algorithm/. 1998.
 - Odersky, Sulzmann, and Wehr. /Type Inference with Constrained Types/. 1999.
 -}
 
@@ -58,11 +61,22 @@ instance Pretty TypeScheme where
   pp (TyMono ty)     = pp ty
   pp (TyForall v ty) = "∀" <> pp v <> "." <+> pp ty
 
+instance Show TypeScheme where
+  show = pp
+
 instance FV TypeScheme where
   fvs (TyMono ty)     = fvs ty
   fvs (TyForall v tys) = fvs tys \\ singleton v
 
+{-
+The environment and substitution types are closely related. The difference
+between the two is that environments map to type-schemes and substitutions map
+types.
+-}
 newtype Env = Env [(Variable,TypeScheme)]
+
+unEnv :: Env -> [(Variable,TypeScheme)]
+unEnv (Env e) = e
 
 emptyEnv :: Env
 emptyEnv = Env []
@@ -71,92 +85,112 @@ instance FV Env where
   fvs (Env []) = empty
   fvs (Env ((_,t):e)) = fvs t `union` fvs (Env e)
 
-type Subst = [(Variable,Type)]
+instance Monoid Env where
+  mempty = Env []
+  mappend (Env a) (Env b) = Env (a <> b)
 
-applySubst :: Subst -> Type -> Type
-applySubst _ TyInt = TyInt
-applySubst s (TyArr a b) = TyArr (applySubst s a) (applySubst s b)
-applySubst [] (TyVar v) = TyVar v
-applySubst ((s,ty):ss) (TyVar v) =
-  case v == s of
-    True -> ty
-    False -> applySubst ss (TyVar v)
-applySubst _ (TyCons k) = TyCons k
-applySubst s (TyApp a b) = TyApp (applySubst s a) (applySubst s b)
+newtype Subst = Subst (Env -> Env)
+
+app :: Subst -> Env -> Env
+app = unSubst
+
+unSubst :: Subst -> (Env -> Env)
+unSubst (Subst f) = f
+
+idSubst :: Subst
+idSubst = undefined
+
+infixr 1 ./.
+(./.) :: Type -> Variable -> Subst
+t ./. v =
+  Subst (  Env
+         . fmap (\(v',t') ->
+                  case v' == v of
+                    True -> (v',t')
+                    False -> (v,typeClosure t))
+         . unEnv)
+
+infixr 0 ∘
+(∘) :: Subst -> Subst -> Subst
+(Subst f) ∘ (Subst g) = Subst (f . g)
 
 tsElim :: TypeScheme -> Std Type
 tsElim (TyMono ty) = return ty
 tsElim (TyForall v ty) =
   do { v' <- TyVar <$> freshVariable
      ; ty' <- tsElim ty
-     ; return (applySubst [(v,v')] ty')
+     ; return undefined
+     -- ; return (app (Subst [(v,v')]) ty')
      }
 
 tsIntro :: Env -> Type -> TypeScheme
 tsIntro e ty = foldr TyForall (TyMono ty) (fvs ty \\ fvs e)
 
-type Constraint = (Type,Type)
-
 inferTSProgram :: Program Term -> Std TypeScheme
-inferTSProgram pgm
-  = fmap ( typeClosure . fst )
-  $ inferTS ( mkContextTS . pgmDecls $ pgm )
-  $ pgmTerm pgm
+inferTSProgram pgm = undefined
+--   = fmap ( typeClosure . fst )
+--   $ inferTS ( mkContextTS . pgmDecls $ pgm )
+--   $ pgmTerm pgm
 
-inferTS :: Env -> Term -> Std (Type, [Constraint])
-inferTS _ (Let _ _ _) = unimplementedErr "inferTS{let}"
+-- inferTSTerm :: Term -> Std TypeScheme
+-- inferTSTerm = fmap ( typeClosure . fst ) <$> inferTS (mkContextTS prelude)
 
-inferTS c (Ann a ty) =
-  do { (aty,acs) <- inferTS c a
-     ; return (aty, acs <> [(aty,ty)])}
+-- inferTS :: Env -> Term -> Type -> Std Subst
+-- inferTS _ (Let _ _ _) = unimplementedErr "inferTS{let}"
 
-inferTS _ (Lit _) = return (TyInt,[])
-inferTS e (Add a b) =
-  do { (aty,acs) <- inferTS e a
-     ; (bty,bcs) <- inferTS e b
-     ; return (TyInt, acs <> bcs <> [(aty,TyInt),(bty,TyInt)])
-     }
+-- inferTS c (Ann a ty) =
+--   do { (aty,acs) <- inferTS c a
+--      ; return (aty, acs <> [(aty,ty)])}
 
-inferTS (Env e) (Var v) =
-  do { tys <- lookupStd v e
-     ; ty <- tsElim tys
-     ; return (ty,[]) }
+-- inferTS _ (Lit _) = return (TyInt,[])
+-- inferTS e (Add a b) =
+--   do { (aty,acs) <- inferTS e a
+--      ; (bty,bcs) <- inferTS e b
+--      ; return (TyInt, acs <> bcs <> [(aty,TyInt),(bty,TyInt)])
+--      }
 
-inferTS _ (Fix _ _) = unimplementedErr "inferTS{fix}"
+-- inferTS e (Var v) =
+--   do { tys <- lookupStd v (unEnv e)
+--      ; ty <- tsElim tys
+--      ; return (ty,[]) }
 
-inferTS c (App a b) =
-  do { (aty,acs) <- inferTS c a
-     ; (bty,bcs) <- inferTS c b
-     ; retTy <- TyVar <$> freshVariable
-     ; return (retTy, acs <> bcs <> [(aty, TyArr bty retTy)])
-     }
+-- inferTS e (Fix v t) =
+--   do { ty <- TyVar <$> freshVariable
+--      ; inferTS (pEnv (v,TyMono ty) <> e) t }
 
-inferTS (Env e) (Cons k) =
-  do { tys <- lookupStd k e
-     ; ty <- tsElim tys
-     ; return (ty,[]) }
+-- inferTS e (App a b) =
+--   do { (aty,acs) <- inferTS e a
+--      ; (bty,bcs) <- inferTS e b
+--      ; retTy <- TyVar <$> freshVariable
+--      ; return (retTy, acs <> bcs <> [(aty, TyArr bty retTy)])
+--      }
 
-inferTS c (Case a _) = inferTS c a
+-- inferTS e (Cons k) =
+--   do { tys <- lookupStd k (unEnv e)
+--      ; ty <- tsElim tys
+--      ; return (ty,[]) }
 
-inferTS (Env e) (Dest h) =
-  do { tys <- lookupStd h e
-     ; ty <- tsElim tys
-     ; return (ty,[]) }
+-- inferTS e (Case a _) = inferTS e a
 
-inferTS _ (CoCase _) = unimplementedErr "inferTS{cocase}"
-inferTS c (Prompt a) = inferTS c a
+-- inferTS e (Dest h) =
+--   do { tys <- lookupStd h (unEnv e)
+--      ; ty <- tsElim tys
+--      ; return (ty,[]) }
 
-inferTSPattern :: Env -> Pattern -> Std Env
-inferTSPattern e PWild = return e
-inferTSPattern (Env e) (PVar v) =
-  do { v' <- freshVariable
-     ; return . Env $ e <> [(v,TyForall v' (TyMono (TyVar v')))] }
-inferTSPattern (Env e) (PCons k _) =
-  do { _ <- lookupStd k e
-     ; unimplementedErr "inferTSPattern" }
+-- inferTS _ (CoCase _) = unimplementedErr "inferTS{cocase}"
+-- inferTS e (Prompt a) = inferTS e a
 
-inferTSCopattern :: Env -> CoPattern -> Std Env
-inferTSCopattern _ _ = unimplementedErr "inferTSCopattern"
+-- inferTSPattern :: Env -> Pattern -> Std Env
+-- inferTSPattern e PWild = return e
+-- inferTSPattern (Env e) (PVar v) =
+--   do { v' <- freshVariable
+--      ; return . Env $ e <> [(v,TyForall v' (TyMono (TyVar v')))] }
+-- inferTSPattern (Env e) (PCons k _) =
+--   do { _ <- lookupStd k e
+--      ; unimplementedErr "inferTSPattern" }
+
+-- inferTSCopattern :: Env -> CoPattern -> Std Env
+-- inferTSCopattern _ _ = unimplementedErr "inferTSCopattern"
 
 typeClosure :: Type -> TypeScheme
 typeClosure ty = foldr (\v -> TyForall v) (TyMono ty) (fvs ty)
@@ -169,37 +203,37 @@ occurs v (TyCons k)  = v == k
 occurs v (TyApp a b) = occurs v a || occurs v b
 
 unify :: Type -> Type -> Std Subst
-unify TyInt TyInt = return []
+unify TyInt TyInt = return idSubst
 
 unify (TyArr a b) (TyArr a' b') =
   do { as <- unify a a'
      ; bs <- unify b b'
-     ; return (as <> bs) }
+     ; return (as ∘ bs) }
 
 unify (TyVar v) (TyVar w) =
   case v == w of
-    True  -> return []
+    True  -> return idSubst
     False -> unificationErr (TyVar v) (TyVar w)
 
 unify (TyVar v) ty =
   case elem v (fvs ty) of
     True -> unificationErr (TyVar v) ty
-    False -> return [(v,ty)]
+    False -> return (ty ./. v)
 
 unify ty (TyVar v) =
   case elem v (fvs ty) of
     True -> unificationErr (TyVar v) ty
-    False -> return [(v,ty)]
+    False -> return (ty ./. v)
 
 unify (TyCons k) (TyCons h) =
   case k == h of
-    True  -> return []
+    True  -> return idSubst
     False -> unificationErr (TyCons k) (TyCons h)
 
 unify (TyApp a b) (TyApp a' b') =
   do { as <- unify a a'
      ; bs <- unify b b'
-     ; return (as <> bs) }
+     ; return (as ∘ bs) }
 
 unify a b = unificationErr a b
 

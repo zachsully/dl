@@ -9,7 +9,11 @@ import VariableSyn
 import TypeSyn
 
 prelude :: [Decl]
-prelude = [unitDecl,pairDecl,copairDecl]
+prelude = [unitDecl
+          ,pairDecl
+          ,copairDecl
+          ,listDecl
+          ,streamDecl]
 
 --------------------------------------------------------------------------------
 --                             Declarations                                   --
@@ -34,22 +38,16 @@ pairDecl = Right
               (TyApp (TyApp (TyVar (Variable "Pair")) (TyVar (Variable "a")))
                      (TyVar (Variable "B")))))])
 
--- eitherDecl :: Decl
--- eitherDecl = Decl Positive
---                   (TySymbol "Either")
---                   [TyVariable "A",TyVariable "B"]
---                   [Data (Symbol "inl") (TyVar (TyVariable "A"))
---                   ,Data (Symbol "inr") (TyVar (TyVariable "B"))]
-
--- listDecl :: Decl
--- listDecl = Decl Negative
---                 (TySymbol "List")
---                 [TyVariable "A"]
---                 [Data (Symbol "nil") (TyCons (TySymbol "List")
---                                      [TyVar (TyVariable "A")])
---                 ,Data (Symbol "cons") (TyArr (TyVar (TyVariable "A"))
---                                              (TyCons (TySymbol "List")
---                                                      [TyVar (TyVariable "A")]))]
+listDecl :: Decl
+listDecl = Right
+  (PosTyCons (Variable "List") [Variable "A"]
+   [Inj (Variable "Nil")
+     (TyApp (TyVar (Variable "List")) (TyVar (Variable "A")))
+   ,Inj (Variable "Cons")
+     (TyArr (TyVar (Variable "A"))
+       (TyArr (TyApp (TyVar (Variable "List")) (TyVar (Variable "A")))
+              (TyApp (TyVar (Variable "List")) (TyVar (Variable "A")))))]
+  )
 
 --------------
 -- Negative --
@@ -61,20 +59,16 @@ copairDecl = Left $
     [Proj (Variable "Fst") (TyVar (Variable "A"))
     ,Proj (Variable "Snd") (TyVar (Variable "B"))]
 
--- streamDecl :: Decl
--- streamDecl = Decl Negative
---                   (TySymbol "Stream")
---                   [TyVariable "A"]
---                   [Data (Symbol "head") (TyCons (TySymbol "Stream")
---                                                 [TyVar (TyVariable "A")])
---                   ,Data (Symbol "tail") (TyCons (TySymbol "Stream")
---                                                 [TyVar (TyVariable "A")])]
-
--- funDecl :: Decl
--- funDecl = Decl Negative
---                (TySymbol "fun")
---                [TyVariable "A",TyVariable "B"]
---                [Data (Symbol "app") (TyVar (TyVariable "A"))]
+streamDecl :: Decl
+streamDecl = Left $
+  (NegTyCons (Variable "Stream") [Variable "A"]
+   [Proj (Variable "Head")
+     (TyArr (TyApp (TyVar (Variable "Stream")) (TyVar (Variable "A")))
+       (TyVar (Variable "A")))
+   ,Proj (Variable "Tail")
+     (TyArr (TyApp (TyVar (Variable "Stream")) (TyVar (Variable "A")))
+       (TyApp (TyVar (Variable "Stream")) (TyVar (Variable "A"))))]
+  )
 
 
 --------------------------------------------------------------------------------

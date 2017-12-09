@@ -268,4 +268,14 @@ getPolarity s = get >>= \(_,ss) -> return (lookup s ss)
 
 pfail :: [Token] -> ParserM a
 pfail ts = ParserM $ \_ -> Left ("<parse error>: " ++ show ts)
+
+
+parseString :: String -> Term
+parseString s =
+  case lexString s of
+    Left e -> error e
+    Right ts ->
+      case runParserM (parseTerm ts) ([],[]) of
+        Left e -> error e
+        Right (t,_) -> t
 }
