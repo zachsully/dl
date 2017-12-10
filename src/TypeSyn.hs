@@ -28,7 +28,7 @@ instance Pretty Type where
 
 instance FV Type where
   fvs TyInt = empty
-  fvs(TyArr a b) = fvs a `union` fvs b
+  fvs (TyArr a b) = fvs a `union` fvs b
   fvs (TyVar v) = singleton v
   fvs (TyCons _) = empty
   fvs (TyApp a b) = fvs a `union` fvs b
@@ -36,6 +36,11 @@ instance FV Type where
 funArity :: Type -> Int
 funArity (TyArr _ b) = 1 + funArity b
 funArity _ = 0
+
+codomain :: Type -> Type
+codomain (TyArr _ b) = codomain b
+codomain x = x
+
 
 collectTyArgs :: Type -> Maybe (Variable,[Type])
 collectTyArgs (TyApp e t) = collectTyArgs e >>= \(k,ts) -> return (k,t:ts)

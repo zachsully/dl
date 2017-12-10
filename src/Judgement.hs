@@ -1,10 +1,10 @@
 {-# LANGUAGE GADTs,KindSignatures #-}
 module Judgement where
 
-import Prelude hiding (id)
 import Data.Monoid
 import Data.Set hiding (foldr,map)
 import Control.Arrow hiding ((<+>))
+import Control.Monad
 
 import Utils
 import Pretty
@@ -68,18 +68,32 @@ instance FV TypeScheme where
   fvs (TyMono ty)     = fvs ty
   fvs (TyForall v tys) = fvs tys \\ singleton v
 
+arity :: TypeScheme -> Int
+arity (TyMono t) = funArity t
+arity (TyForall _ s) = arity s
+
+codom :: TypeScheme -> Type
+codom (TyMono t) = codomain t
+codom (TyForall _ s) = codom s
+
 {-
 The environment and substitution types are closely related. The difference
 between the two is that environments map to type-schemes and substitutions map
 types.
+
+Environments are finite maps from variables to type schemes.
 -}
 newtype Env = Env [(Variable,TypeScheme)]
+  deriving Show
 
 unEnv :: Env -> [(Variable,TypeScheme)]
 unEnv (Env e) = e
 
 emptyEnv :: Env
 emptyEnv = Env []
+
+extendEnv :: Variable -> TypeScheme -> Env -> Env
+extendEnv v s = Env . ((v,s):) . unEnv
 
 instance FV Env where
   fvs (Env []) = empty
@@ -89,26 +103,36 @@ instance Monoid Env where
   mempty = Env []
   mappend (Env a) (Env b) = Env (a <> b)
 
-newtype Subst = Subst (Env -> Env)
+{-
 
-app :: Subst -> Env -> Env
-app = unSubst
+-}
+newtype Subst = Subst (Type -> Type)
 
-unSubst :: Subst -> (Env -> Env)
+apply :: Subst -> Type -> Type
+apply = unSubst
+
+unSubst :: Subst -> (Type -> Type)
 unSubst (Subst f) = f
 
 idSubst :: Subst
-idSubst = undefined
+idSubst = Subst id
 
 infixr 1 ./.
 (./.) :: Type -> Variable -> Subst
 t ./. v =
-  Subst (  Env
-         . fmap (\(v',t') ->
-                  case v' == v of
-                    True -> (v',t')
-                    False -> (v,typeClosure t))
-         . unEnv)
+   Subst (substVar t v)
+   where substVar :: Type -> Variable -> Type -> Type
+         substVar _ _ TyInt = TyInt
+         substVar t' v' (TyArr a b) = TyArr (substVar t' v' a)
+                                            (substVar t' v' b)
+         substVar t' v' (TyVar v'') =
+           case v' == v'' of
+             True -> t'
+             False -> TyVar v''
+         substVar _ _ (TyCons c) = TyCons c
+         substVar t' v' (TyApp a b) = TyApp (substVar t' v' a)
+                                            (substVar t' v' b)
+
 
 infixr 0 ∘
 (∘) :: Subst -> Subst -> Subst
@@ -116,31 +140,32 @@ infixr 0 ∘
 
 tsElim :: TypeScheme -> Std Type
 tsElim (TyMono ty) = return ty
-tsElim (TyForall v ty) =
-  do { v' <- TyVar <$> freshVariable
-     ; ty' <- tsElim ty
-     ; return undefined
-     -- ; return (app (Subst [(v,v')]) ty')
+tsElim (TyForall v s) =
+  do { ty <- TyVar <$> freshVariable
+     ; ty' <- tsElim s
+     ; return (apply (ty ./. v) ty')
      }
 
 tsIntro :: Env -> Type -> TypeScheme
 tsIntro e ty = foldr TyForall (TyMono ty) (fvs ty \\ fvs e)
 
 inferTSProgram :: Program Term -> Std TypeScheme
-inferTSProgram pgm = undefined
---   = fmap ( typeClosure . fst )
---   $ inferTS ( mkContextTS . pgmDecls $ pgm )
---   $ pgmTerm pgm
+inferTSProgram pgm
+  = undefined
+  $ inferTS ( mkContextTS . pgmDecls $ pgm )
+  $ pgmTerm pgm
 
--- inferTSTerm :: Term -> Std TypeScheme
--- inferTSTerm = fmap ( typeClosure . fst ) <$> inferTS (mkContextTS prelude)
+inferTS :: Env -> Term -> Type -> Std Subst
+inferTS e (Let x a b) ρ =
+  do { sa <- inferTS e a =<< TyVar <$> freshVariable
+     ; sb <- inferTS e b (apply sa ρ)
+     ; return (sa ∘ sb)
+     }
 
--- inferTS :: Env -> Term -> Type -> Std Subst
--- inferTS _ (Let _ _ _) = unimplementedErr "inferTS{let}"
-
--- inferTS c (Ann a ty) =
---   do { (aty,acs) <- inferTS c a
---      ; return (aty, acs <> [(aty,ty)])}
+inferTS e (Ann a ty) ρ =
+  do { sa <- inferTS e a ρ
+     ; unify ty (apply sa ρ)
+     }
 
 -- inferTS _ (Lit _) = return (TyInt,[])
 -- inferTS e (Add a b) =
@@ -149,10 +174,10 @@ inferTSProgram pgm = undefined
 --      ; return (TyInt, acs <> bcs <> [(aty,TyInt),(bty,TyInt)])
 --      }
 
--- inferTS e (Var v) =
---   do { tys <- lookupStd v (unEnv e)
---      ; ty <- tsElim tys
---      ; return (ty,[]) }
+inferTS e (Var v) ρ =
+  do { s <- lookupStd v (unEnv e)
+     ; ty <- tsElim s
+     ; unify ρ ty }
 
 -- inferTS e (Fix v t) =
 --   do { ty <- TyVar <$> freshVariable
@@ -180,20 +205,30 @@ inferTSProgram pgm = undefined
 -- inferTS _ (CoCase _) = unimplementedErr "inferTS{cocase}"
 -- inferTS e (Prompt a) = inferTS e a
 
--- inferTSPattern :: Env -> Pattern -> Std Env
--- inferTSPattern e PWild = return e
--- inferTSPattern (Env e) (PVar v) =
---   do { v' <- freshVariable
---      ; return . Env $ e <> [(v,TyForall v' (TyMono (TyVar v')))] }
--- inferTSPattern (Env e) (PCons k _) =
---   do { _ <- lookupStd k e
---      ; unimplementedErr "inferTSPattern" }
+inferTSPattern :: Env -> Pattern -> Std (Type,Env)
+inferTSPattern e PWild =
+  do { t <- TyVar <$> freshVariable
+     ; return (t,e) }
+inferTSPattern e (PVar v) =
+  do { t <- TyVar <$> freshVariable
+     ; return (t, extendEnv v (typeClosure e t) e) }
+inferTSPattern e (PCons k ps) =
+  do { s <- lookupStd k (unEnv e)
+     ; case length ps == arity s of
+         True  -> foldM undefined (codom s,e)  ps
+         False -> typeErr ("incorrect pattern arity for" <+> pp k)
+     }
 
--- inferTSCopattern :: Env -> CoPattern -> Std Env
--- inferTSCopattern _ _ = unimplementedErr "inferTSCopattern"
+inferTSCopattern :: Env -> CoPattern -> Std Type
+inferTSCopattern e QHead = TyVar <$> freshVariable
+inferTSCopattern e (QDest h q) =
+  do { ty <- lookupStd h (unEnv e)
+     ; return undefined }
+inferTSCopattern e (QPat q p) = undefined
+inferTSCopattern e (QVar v q) = undefined
 
-typeClosure :: Type -> TypeScheme
-typeClosure ty = foldr (\v -> TyForall v) (TyMono ty) (fvs ty)
+typeClosure :: Env -> Type -> TypeScheme
+typeClosure e ty = foldr TyForall (TyMono ty) (fvs ty \\ fvs e)
 
 occurs :: Variable -> Type -> Bool
 occurs _ TyInt       = False
@@ -412,7 +447,7 @@ mkContext (d:ds) =
   ) <> (mkContext ds)
 
 mkContextTS :: [Decl] -> Env
-mkContextTS = Env . fmap (second typeClosure) . mkContext
+mkContextTS = Env . fmap (second (typeClosure emptyEnv)) . mkContext
 
 lookupDecl :: Variable -> [Decl] -> Maybe Decl
 lookupDecl _ [] = Nothing
