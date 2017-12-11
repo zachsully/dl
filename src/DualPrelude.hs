@@ -15,6 +15,12 @@ prelude = [unitDecl
           ,listDecl
           ,streamDecl]
 
+{-
+PROBLEMA: Because the prelude is not in scope when parsing, constructors and
+destructors are captured as just variables. So we need to traverse the AST to
+replace the variable occurrences with Dest and Cons.
+-}
+
 --------------------------------------------------------------------------------
 --                             Declarations                                   --
 --------------------------------------------------------------------------------
@@ -26,7 +32,7 @@ prelude = [unitDecl
 unitDecl :: Decl
 unitDecl = Right
   (PosTyCons (Variable "1") []
-    [Inj (Variable "()") (TyVar (Variable "1"))])
+    [Inj (Variable "unit") (TyCons (Variable "1"))])
 
 pairDecl :: Decl
 pairDecl = Right
@@ -35,18 +41,18 @@ pairDecl = Right
       (TyArr
        (TyVar (Variable "A"))
        (TyArr (TyVar (Variable "B"))
-              (TyApp (TyApp (TyVar (Variable "Pair")) (TyVar (Variable "a")))
+              (TyApp (TyApp (TyCons (Variable "Pair")) (TyVar (Variable "A")))
                      (TyVar (Variable "B")))))])
 
 listDecl :: Decl
 listDecl = Right
   (PosTyCons (Variable "List") [Variable "A"]
    [Inj (Variable "Nil")
-     (TyApp (TyVar (Variable "List")) (TyVar (Variable "A")))
+     (TyApp (TyCons (Variable "List")) (TyVar (Variable "A")))
    ,Inj (Variable "Cons")
      (TyArr (TyVar (Variable "A"))
-       (TyArr (TyApp (TyVar (Variable "List")) (TyVar (Variable "A")))
-              (TyApp (TyVar (Variable "List")) (TyVar (Variable "A")))))]
+       (TyArr (TyApp (TyCons (Variable "List")) (TyVar (Variable "A")))
+              (TyApp (TyCons (Variable "List")) (TyVar (Variable "A")))))]
   )
 
 --------------
@@ -56,18 +62,24 @@ listDecl = Right
 copairDecl :: Decl
 copairDecl = Left $
   NegTyCons (Variable "Copair") [Variable "A",Variable "B"]
-    [Proj (Variable "Fst") (TyVar (Variable "A"))
-    ,Proj (Variable "Snd") (TyVar (Variable "B"))]
+    [Proj (Variable "Fst")
+     (TyArr (TyApp (TyApp (TyCons (Variable "Copair")) (TyVar (Variable "A")))
+               (TyVar (Variable "B")))
+       (TyVar (Variable "A")))
+    ,Proj (Variable "Snd")
+     (TyArr (TyApp (TyApp (TyCons (Variable "Copair")) (TyVar (Variable "A")))
+              (TyVar (Variable "B")))
+       (TyVar (Variable "B")))]
 
 streamDecl :: Decl
 streamDecl = Left $
   (NegTyCons (Variable "Stream") [Variable "A"]
    [Proj (Variable "Head")
-     (TyArr (TyApp (TyVar (Variable "Stream")) (TyVar (Variable "A")))
+     (TyArr (TyApp (TyCons (Variable "Stream")) (TyVar (Variable "A")))
        (TyVar (Variable "A")))
    ,Proj (Variable "Tail")
-     (TyArr (TyApp (TyVar (Variable "Stream")) (TyVar (Variable "A")))
-       (TyApp (TyVar (Variable "Stream")) (TyVar (Variable "A"))))]
+     (TyArr (TyApp (TyCons (Variable "Stream")) (TyVar (Variable "A")))
+       (TyApp (TyCons (Variable "Stream")) (TyVar (Variable "A"))))]
   )
 
 

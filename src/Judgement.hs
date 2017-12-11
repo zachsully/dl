@@ -53,28 +53,27 @@ Citations:
 -}
 
 data TypeScheme :: * where
-  TyMono   :: Type -> TypeScheme
-  TyForall :: Variable -> TypeScheme -> TypeScheme
+  TyForall :: Set Variable -> Type -> TypeScheme
   deriving Eq
 
 instance Pretty TypeScheme where
-  pp (TyMono ty)     = pp ty
-  pp (TyForall v ty) = "∀" <> pp v <> "." <+> pp ty
+  pp (TyForall vs τ) =
+    case size vs == 0 of
+      True -> pp τ
+      False -> "∀" <+> (smconcat . fmap pp . toList $ vs) <> "."
+                    <+> pp τ
 
 instance Show TypeScheme where
   show = pp
 
 instance FV TypeScheme where
-  fvs (TyMono ty)     = fvs ty
-  fvs (TyForall v tys) = fvs tys \\ singleton v
+  fvs (TyForall vs τs) = fvs τs \\  vs
 
 arity :: TypeScheme -> Int
-arity (TyMono t) = funArity t
-arity (TyForall _ s) = arity s
+arity (TyForall _ τ) = funArity τ
 
 codom :: TypeScheme -> Type
-codom (TyMono t) = codomain t
-codom (TyForall _ s) = codom s
+codom (TyForall _ τ) = codomain τ
 
 {-
 The environment and substitution types are closely related. The difference
@@ -103,13 +102,16 @@ instance Monoid Env where
   mempty = Env []
   mappend (Env a) (Env b) = Env (a <> b)
 
-{-
-
--}
 newtype Subst = Subst (Type -> Type)
 
 apply :: Subst -> Type -> Type
 apply = unSubst
+
+applyScheme :: Subst -> TypeScheme -> TypeScheme
+applyScheme σ (TyForall vs τ) = TyForall vs (apply σ τ)
+
+applyEnv :: Subst -> Env -> Env
+applyEnv σ = Env . fmap (\(v,s) -> (v,applyScheme σ s)) . unEnv
 
 unSubst :: Subst -> (Type -> Type)
 unSubst (Subst f) = f
@@ -139,71 +141,83 @@ infixr 0 ∘
 (Subst f) ∘ (Subst g) = Subst (f . g)
 
 tsElim :: TypeScheme -> Std Type
-tsElim (TyMono ty) = return ty
-tsElim (TyForall v s) =
-  do { ty <- TyVar <$> freshVariable
-     ; ty' <- tsElim s
-     ; return (apply (ty ./. v) ty')
-     }
+tsElim (TyForall vs τ) = foldM (\τ' v ->
+                                  do { α <- TyVar <$> freshVariable
+                                     ; return (apply (α ./. v) τ') })
+                               τ
+                               (toList vs)
 
-tsIntro :: Env -> Type -> TypeScheme
-tsIntro e ty = foldr TyForall (TyMono ty) (fvs ty \\ fvs e)
+typeClosure :: Env -> Type -> TypeScheme
+typeClosure e τ = TyForall (fvs τ \\ fvs e) τ
 
 inferTSProgram :: Program Term -> Std TypeScheme
-inferTSProgram pgm
-  = undefined
-  $ inferTS ( mkContextTS . pgmDecls $ pgm )
-  $ pgmTerm pgm
+inferTSProgram pgm =
+  do { α <- TyVar <$> freshVariable
+     ; s <- inferTS ( mkContextTS . (<> prelude) . pgmDecls $ pgm )
+                    ( pgmTerm pgm )
+                    α
+     ; return . typeClosure emptyEnv . apply s $ α }
 
 inferTS :: Env -> Term -> Type -> Std Subst
-inferTS e (Let x a b) ρ =
-  do { sa <- inferTS e a =<< TyVar <$> freshVariable
-     ; sb <- inferTS e b (apply sa ρ)
-     ; return (sa ∘ sb)
+inferTS e (Let v a b) ρ =
+  do { α <- TyVar <$> freshVariable
+     ; sa <- inferTS e a α
+     ; let e' = extendEnv v (typeClosure e (apply sa α)) (applyEnv sa e)
+`     ; sb <- inferTS e' b (apply sa ρ)
+     ; return (sb ∘ sa)
      }
 
 inferTS e (Ann a ty) ρ =
-  do { sa <- inferTS e a ρ
+  do { sa <- inferTS e a ty
      ; unify ty (apply sa ρ)
      }
 
--- inferTS _ (Lit _) = return (TyInt,[])
--- inferTS e (Add a b) =
---   do { (aty,acs) <- inferTS e a
---      ; (bty,bcs) <- inferTS e b
---      ; return (TyInt, acs <> bcs <> [(aty,TyInt),(bty,TyInt)])
---      }
+inferTS _ (Lit _) ρ = unify ρ TyInt
+
+inferTS e (Add a b) ρ =
+  do { sa <- inferTS e a TyInt
+     ; sb <- inferTS (applyEnv sa e) b TyInt
+     ; unify TyInt (apply (sb ∘ sa) ρ)
+     }
 
 inferTS e (Var v) ρ =
   do { s <- lookupStd v (unEnv e)
-     ; ty <- tsElim s
-     ; unify ρ ty }
+     ; α <- tsElim s
+     ; unify ρ α }
 
--- inferTS e (Fix v t) =
---   do { ty <- TyVar <$> freshVariable
---      ; inferTS (pEnv (v,TyMono ty) <> e) t }
+inferTS e (Fix v t) ρ =
+  do { α <- TyVar <$> freshVariable
+     ; let e' = extendEnv v (typeClosure e α) e
+     ; st <- inferTS e' t ρ
+     ; return st
+     }
 
--- inferTS e (App a b) =
---   do { (aty,acs) <- inferTS e a
---      ; (bty,bcs) <- inferTS e b
---      ; retTy <- TyVar <$> freshVariable
---      ; return (retTy, acs <> bcs <> [(aty, TyArr bty retTy)])
---      }
+inferTS e (App a b) ρ =
+  do { β <- TyVar <$> freshVariable
+     ; sa <- inferTS e a (TyArr β ρ)
+     ; sb <- inferTS (applyEnv sa e) b (apply sa β)
+     ; return (sb ∘ sa)
+     }
 
--- inferTS e (Cons k) =
---   do { tys <- lookupStd k (unEnv e)
---      ; ty <- tsElim tys
---      ; return (ty,[]) }
+inferTS e (Cons k) ρ =
+  do { s <- lookupStd k (unEnv e)
+     ; α <- tsElim s
+     ; unify ρ α }
 
--- inferTS e (Case a _) = inferTS e a
+inferTS e (Case t alts) ρ =
+  do { α <- TyVar <$> freshVariable
+     ; _ <- inferTS e t α
+     ; undefined alts (TyArr α ρ)
+     }
 
--- inferTS e (Dest h) =
---   do { tys <- lookupStd h (unEnv e)
---      ; ty <- tsElim tys
---      ; return (ty,[]) }
+inferTS e (Dest h) ρ =
+  do { s <- lookupStd h (unEnv e)
+     ; α <- tsElim s
+     ; unify ρ α }
 
--- inferTS _ (CoCase _) = unimplementedErr "inferTS{cocase}"
--- inferTS e (Prompt a) = inferTS e a
+inferTS _ (CoCase _) _ = unimplementedErr "inferTS{cocase}"
+
+inferTS _ (Prompt _) _ = unimplementedErr "inferTS{prompt}"
 
 inferTSPattern :: Env -> Pattern -> Std (Type,Env)
 inferTSPattern e PWild =
@@ -220,15 +234,12 @@ inferTSPattern e (PCons k ps) =
      }
 
 inferTSCopattern :: Env -> CoPattern -> Std Type
-inferTSCopattern e QHead = TyVar <$> freshVariable
-inferTSCopattern e (QDest h q) =
-  do { ty <- lookupStd h (unEnv e)
+inferTSCopattern _ QHead = TyVar <$> freshVariable
+inferTSCopattern e (QDest h _) =
+  do { _ <- lookupStd h (unEnv e)
      ; return undefined }
-inferTSCopattern e (QPat q p) = undefined
-inferTSCopattern e (QVar v q) = undefined
-
-typeClosure :: Env -> Type -> TypeScheme
-typeClosure e ty = foldr TyForall (TyMono ty) (fvs ty \\ fvs e)
+inferTSCopattern _ (QPat _ _) = undefined
+inferTSCopattern _ (QVar _ _) = undefined
 
 occurs :: Variable -> Type -> Bool
 occurs _ TyInt       = False
