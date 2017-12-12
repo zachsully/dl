@@ -84,7 +84,7 @@ instance Pretty Term where
                         <+> ppInd i t
                         <-> indent (i+1) "{"
                         <+> ( stringmconcat ("\n" <> (indent (i+1) "| "))
-                            . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+2) u)
+                            . fmap (\(p,u) -> pp p <+> "→" <+> ppInd (i+2) u)
                             $ alts)
                         <-> indent (i+1) "}"
   ppInd _ (Dest h)        = pp h
@@ -92,7 +92,7 @@ instance Pretty Term where
   ppInd i (CoCase coalts) = "cocase"
                         <-> indent (i+1) "{ "
                         <>  ( stringmconcat ("\n" <> (indent (i+1) ", "))
-                            . fmap (\(q,u) -> pp q <+> "->" <+> ppInd (i+2) u)
+                            . fmap (\(q,u) -> pp q <+> "→" <+> ppInd (i+2) u)
                             $ coalts)
                         <-> indent (i+1) "}"
 

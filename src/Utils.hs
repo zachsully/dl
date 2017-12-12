@@ -23,7 +23,7 @@ data Std a = Std { apStd :: [String] -> Either String (a,[String]) }
 
 names :: [String]
 names = names' (0 :: Int)
-  where names' x = ("τ" ++ show x) : names' (x+1)
+  where names' x = show x : names' (x+1)
 
 runStd :: Std a -> Either String a
 runStd m =
@@ -54,7 +54,10 @@ lookupStd a ((x,v):xs) =
     False -> lookupStd a xs
 
 freshVariable :: Std Variable
-freshVariable = Std $ \(n:ns) -> Right (Variable n,ns)
+freshVariable = Std $ \(n:ns) -> Right (Variable ("n" ++ n),ns)
+
+freshen :: Variable -> Std Variable
+freshen (Variable v) = Std $ \(n:ns) -> Right (Variable (v ++ n),ns)
 
 instance Functor Std where
   fmap f m = Std $ \ns ->

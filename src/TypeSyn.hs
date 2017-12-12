@@ -21,7 +21,7 @@ data Type :: * where
 
 instance Pretty Type where
   pp TyInt = "Int"
-  pp (TyArr a b) = pp a <+> "->" <+> pp b
+  pp (TyArr a b) = pp a <+> "→" <+> pp b
   pp (TyVar v) = unVariable v
   pp (TyCons k) = unVariable k
   pp (TyApp a b) = pp a <+> pp b

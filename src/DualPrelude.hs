@@ -9,11 +9,10 @@ import VariableSyn
 import TypeSyn
 
 prelude :: [Decl]
-prelude = [unitDecl
-          ,pairDecl
-          ,copairDecl
-          ,listDecl
-          ,streamDecl]
+prelude = [unitDecl,pairDecl,eitherDecl,boolDecl,listDecl
+
+          ,copairDecl,streamDecl
+          ]
 
 {-
 PROBLEMA: Because the prelude is not in scope when parsing, constructors and
@@ -53,6 +52,26 @@ listDecl = Right
      (TyArr (TyVar (Variable "A"))
        (TyArr (TyApp (TyCons (Variable "List")) (TyVar (Variable "A")))
               (TyApp (TyCons (Variable "List")) (TyVar (Variable "A")))))]
+  )
+
+eitherDecl :: Decl
+eitherDecl = Right
+  (PosTyCons (Variable "Either") [Variable "A",Variable "B"]
+   [Inj (Variable "Left")
+     (TyArr (TyVar (Variable "A"))
+      (TyApp (TyApp (TyCons (Variable "Either")) (TyVar (Variable "A")))
+        (TyVar (Variable "B"))))
+   ,Inj (Variable "Right")
+     (TyArr (TyVar (Variable "A"))
+      (TyApp (TyApp (TyCons (Variable "Either")) (TyVar (Variable "A")))
+        (TyVar (Variable "B"))))]
+  )
+
+boolDecl :: Decl
+boolDecl = Right
+  (PosTyCons (Variable "Bool") []
+    [Inj (Variable "True") (TyCons (Variable "Bool"))
+    ,Inj (Variable "True") (TyCons (Variable "Bool"))]
   )
 
 --------------

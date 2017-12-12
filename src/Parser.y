@@ -14,7 +14,7 @@ import Utils
 import Pretty
 }
 -- All shift/reduce conflicts
-%expect 9
+%expect 32
 
 %name parseProgram program
 %name parseType type
@@ -135,19 +135,24 @@ term :: { Term }
 term : term1                      { $1 }
 
 term1 :: { Term }
-term1 :  termA  term              { App $1 $2 }
-      |  '▪' termA               { Prompt $2 }
-      |  term2                    { $1 }
+term1 :  term '+' term                 { Add $1 $3 }
+      |  term ':' type                 { Ann $1 $3 }
+      |  term2                         { $1 }
 
 term2 :: { Term }
-term2 :  term '+' termA                { Add $1 $3 }
-      |  termA ':' type                 { Ann $1 $3 }
-      |  'cocase' '{' coalts '}'       { CoCase (reverse $3) }
+term2 :  'cocase' '{' coalts '}'       { CoCase (reverse $3) }
       |  'fix' var 'in' term           { Fix $2 $4 }
       |  'let' var '=' term 'in' term  { Let $2 $4 $6 }
       |  'case' termA '{' alts '}'     { Case $2 (reverse $4) }
-      |  termA                         { $1 }
+      |  term3                         { $1 }
 
+term3 :: { Term }
+term3 :  '▪' term                { Prompt $2 }
+      |  term4                    { $1 }
+
+term4 :: { Term }
+term4 :  term termA               { App $1 $2 }
+      |  termA                    { $1 }
 
 {- We lookup to see if the string is defined as a symbol and a singleton
    constructor, otherwise it is a variable. -}

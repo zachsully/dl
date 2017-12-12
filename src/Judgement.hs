@@ -60,7 +60,7 @@ instance Pretty TypeScheme where
   pp (TyForall vs τ) =
     case size vs == 0 of
       True -> pp τ
-      False -> "∀" <+> (smconcat . fmap pp . toList $ vs) <> "."
+      False -> "∀" <+> (smconcat . fmap pp . toList $ vs) <+> "⇒"
                     <+> pp τ
 
 instance Show TypeScheme where
@@ -142,7 +142,7 @@ infixr 0 ∘
 
 tsElim :: TypeScheme -> Std Type
 tsElim (TyForall vs τ) = foldM (\τ' v ->
-                                  do { α <- TyVar <$> freshVariable
+                                  do { α <- TyVar <$> freshen v
                                      ; return (apply (α ./. v) τ') })
                                τ
                                (toList vs)
@@ -152,24 +152,24 @@ typeClosure e τ = TyForall (fvs τ \\ fvs e) τ
 
 inferTSProgram :: Program Term -> Std TypeScheme
 inferTSProgram pgm =
-  do { α <- TyVar <$> freshVariable
+  do { τ <- TyVar <$> freshVariable
      ; s <- inferTS ( mkContextTS . (<> prelude) . pgmDecls $ pgm )
                     ( pgmTerm pgm )
-                    α
-     ; return . typeClosure emptyEnv . apply s $ α }
+                    τ
+     ; return . typeClosure emptyEnv . apply s $ τ }
 
 inferTS :: Env -> Term -> Type -> Std Subst
 inferTS e (Let v a b) ρ =
   do { α <- TyVar <$> freshVariable
      ; sa <- inferTS e a α
      ; let e' = extendEnv v (typeClosure e (apply sa α)) (applyEnv sa e)
-`     ; sb <- inferTS e' b (apply sa ρ)
+     ; sb <- inferTS e' b (apply sa ρ)
      ; return (sb ∘ sa)
      }
 
-inferTS e (Ann a ty) ρ =
-  do { sa <- inferTS e a ty
-     ; unify ty (apply sa ρ)
+inferTS e (Ann a τ) ρ =
+  do { sa <- inferTS e a τ
+     ; unify τ (apply sa ρ)
      }
 
 inferTS _ (Lit _) ρ = unify ρ TyInt
@@ -186,14 +186,15 @@ inferTS e (Var v) ρ =
      ; unify ρ α }
 
 inferTS e (Fix v t) ρ =
-  do { α <- TyVar <$> freshVariable
-     ; let e' = extendEnv v (typeClosure e α) e
+  do { τ <- TyVar <$> freshVariable
+     ; let e' = extendEnv v (typeClosure e τ) e
      ; st <- inferTS e' t ρ
      ; return st
      }
 
 inferTS e (App a b) ρ =
   do { β <- TyVar <$> freshVariable
+     -- ; error $ show β <+> show e
      ; sa <- inferTS e a (TyArr β ρ)
      ; sb <- inferTS (applyEnv sa e) b (apply sa β)
      ; return (sb ∘ sa)
@@ -205,9 +206,12 @@ inferTS e (Cons k) ρ =
      ; unify ρ α }
 
 inferTS e (Case t alts) ρ =
-  do { α <- TyVar <$> freshVariable
-     ; _ <- inferTS e t α
-     ; undefined alts (TyArr α ρ)
+  do { τ <- TyVar <$> freshVariable
+     ; st <- inferTS e t τ
+     ; salts <- forM alts $ \(p,u) ->
+         do { e' <- inferTSPattern (applyEnv st e) p τ
+            ; inferTS e' u ρ }
+     ; return (foldr (∘) st salts)
      }
 
 inferTS e (Dest h) ρ =
@@ -215,31 +219,34 @@ inferTS e (Dest h) ρ =
      ; α <- tsElim s
      ; unify ρ α }
 
-inferTS _ (CoCase _) _ = unimplementedErr "inferTS{cocase}"
+inferTS e (CoCase coalts) ρ =
+  do { scoalts <- forM coalts $ \(q,u) ->
+         do { e' <- inferTSCopattern e q ρ
+            ; inferTS e' u ρ }
+     ; return (foldr (∘) idSubst scoalts)
+     }
 
 inferTS _ (Prompt _) _ = unimplementedErr "inferTS{prompt}"
 
-inferTSPattern :: Env -> Pattern -> Std (Type,Env)
-inferTSPattern e PWild =
-  do { t <- TyVar <$> freshVariable
-     ; return (t,e) }
-inferTSPattern e (PVar v) =
-  do { t <- TyVar <$> freshVariable
-     ; return (t, extendEnv v (typeClosure e t) e) }
-inferTSPattern e (PCons k ps) =
+inferTSPattern :: Env -> Pattern -> Type -> Std Env
+inferTSPattern e PWild _ = return e
+inferTSPattern e (PVar v) ρ = return (extendEnv v (typeClosure e ρ) e)
+inferTSPattern e (PCons k ps) _ =
   do { s <- lookupStd k (unEnv e)
      ; case length ps == arity s of
-         True  -> foldM undefined (codom s,e)  ps
+         True  -> undefined
          False -> typeErr ("incorrect pattern arity for" <+> pp k)
      }
 
-inferTSCopattern :: Env -> CoPattern -> Std Type
-inferTSCopattern _ QHead = TyVar <$> freshVariable
-inferTSCopattern e (QDest h _) =
-  do { _ <- lookupStd h (unEnv e)
-     ; return undefined }
-inferTSCopattern _ (QPat _ _) = undefined
-inferTSCopattern _ (QVar _ _) = undefined
+inferTSCopattern :: Env -> CoPattern -> Type -> Std Env
+inferTSCopattern e QHead _ = return e
+inferTSCopattern e (QDest h q) ρ =
+  do { δ <- tsElim =<< lookupStd h (unEnv e)
+     ; e' <- inferTSCopattern e q δ
+     ; return e'
+     }
+inferTSCopattern _ (QPat _ _) _ = unimplementedErr "inferTSCopattern{qpat}"
+inferTSCopattern _ (QVar _ _) _ = unimplementedErr "inferTSCopattern{qvar}"
 
 occurs :: Variable -> Type -> Bool
 occurs _ TyInt       = False
@@ -254,12 +261,7 @@ unify TyInt TyInt = return idSubst
 unify (TyArr a b) (TyArr a' b') =
   do { as <- unify a a'
      ; bs <- unify b b'
-     ; return (as ∘ bs) }
-
-unify (TyVar v) (TyVar w) =
-  case v == w of
-    True  -> return idSubst
-    False -> unificationErr (TyVar v) (TyVar w)
+     ; return (bs ∘ as) }
 
 unify (TyVar v) ty =
   case elem v (fvs ty) of
@@ -279,7 +281,7 @@ unify (TyCons k) (TyCons h) =
 unify (TyApp a b) (TyApp a' b') =
   do { as <- unify a a'
      ; bs <- unify b b'
-     ; return (as ∘ bs) }
+     ; return (bs ∘ as) }
 
 unify a b = unificationErr a b
 
