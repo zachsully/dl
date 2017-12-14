@@ -209,7 +209,7 @@ copattern : copattern patternA   { QPat $1 $2 }
 copattern0 :: { CoPattern }
 copattern0 : var copatternA      {% do { mp <- getPolarity $1
                                        ; case mp of
-                                           Nothing -> return (QVar $1 $2)
+                                           Nothing -> return (QDest $1 $2)
                                            Just Negative -> return (QDest $1 $2)
                                            Just Positive ->
                                              error ("constructor" <+> pp $1 <+>

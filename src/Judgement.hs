@@ -56,6 +56,10 @@ data TypeScheme :: * where
   TyForall :: Set Variable -> Type -> TypeScheme
   deriving Eq
 
+-- instance EqAlpha TypeScheme where
+--   eqAlpha (TyForall [] α) (TyForall [] β) = α == β
+--   eqAlpha (TyForall (v:vs) α) (TyForall _ β) =
+
 instance Pretty TypeScheme where
   pp (TyForall vs τ) =
     case size vs == 0 of
@@ -194,7 +198,6 @@ inferTS e (Fix v t) ρ =
 
 inferTS e (App a b) ρ =
   do { β <- TyVar <$> freshVariable
-     -- ; error $ show β <+> show e
      ; sa <- inferTS e a (TyArr β ρ)
      ; sb <- inferTS (applyEnv sa e) b (apply sa β)
      ; return (sb ∘ sa)
@@ -231,12 +234,17 @@ inferTS _ (Prompt _) _ = unimplementedErr "inferTS{prompt}"
 inferTSPattern :: Env -> Pattern -> Type -> Std Env
 inferTSPattern e PWild _ = return e
 inferTSPattern e (PVar v) ρ = return (extendEnv v (typeClosure e ρ) e)
-inferTSPattern e (PCons k ps) _ =
-  do { s <- lookupStd k (unEnv e)
-     ; case length ps == arity s of
-         True  -> undefined
-         False -> typeErr ("incorrect pattern arity for" <+> pp k)
+inferTSPattern e (PCons k ps) ρ =
+  do { α <- tsElim =<< lookupStd k (unEnv e)
+     ; foldPList e ps α
      }
+  where foldPList :: Env -> [Pattern] -> Type -> Std Env
+        foldPList e (p:ps) (TyArr a b) =
+          do { e' <- inferTSPattern e p a
+             ; foldPList e' ps b }
+        foldPList _ [] (TyArr _ _) =
+          typeErr "incorrect number of arguments in pattern"
+        foldPList e [] _ = return e
 
 inferTSCopattern :: Env -> CoPattern -> Type -> Std Env
 inferTSCopattern e QHead _ = return e
@@ -246,7 +254,6 @@ inferTSCopattern e (QDest h q) ρ =
      ; return e'
      }
 inferTSCopattern _ (QPat _ _) _ = unimplementedErr "inferTSCopattern{qpat}"
-inferTSCopattern _ (QVar _ _) _ = unimplementedErr "inferTSCopattern{qvar}"
 
 occurs :: Variable -> Type -> Bool
 occurs _ TyInt       = False

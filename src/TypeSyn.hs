@@ -19,6 +19,9 @@ data Type :: * where
   TyApp  :: Type -> Type -> Type
   deriving (Eq,Show)
 
+instance EqAlpha Type where
+  eqAlpha = (==)
+
 instance Pretty Type where
   pp TyInt = "Int"
   pp (TyArr a b) = pp a <+> "→" <+> pp b
@@ -40,7 +43,6 @@ funArity _ = 0
 codomain :: Type -> Type
 codomain (TyArr _ b) = codomain b
 codomain x = x
-
 
 collectTyArgs :: Type -> Maybe (Variable,[Type])
 collectTyArgs (TyApp e t) = collectTyArgs e >>= \(k,ts) -> return (k,t:ts)
