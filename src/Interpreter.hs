@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, KindSignatures #-}
+{-# LANGUAGE GADTs, KindSignatures, UnicodeSyntax #-}
 module Interpreter where
 
 import Data.Monoid
@@ -55,6 +55,9 @@ lookupEnv v (Env e) = lookupStd v e
 instance Monoid Env where
   mempty = Env []
   mappend (Env a) (Env b) = Env (a <> b)
+
+interpPgm :: Program Term → Std Value
+interpPgm = interpEmpty . pgmTerm
 
 interpEmpty :: Term -> Std Value
 interpEmpty = interp EEmpty mempty
