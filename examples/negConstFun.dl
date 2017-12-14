@@ -1,15 +1,15 @@
 codata Const a
-  { Const : Const a -> a }
+  { Const : Const a → a }
 
 codata NegPair a b
-  { Fst : NegPair a b -> a
-  , Snd : NegPair a b -> b }
+  { Fst : NegPair a b → a
+  , Snd : NegPair a b → b }
 
 data Bool
   { True  : Bool
   | False : Bool }
 
-(Fst (Const (cocase { (Fst (Const #)) True -> 0
-                    , (Snd (Const #)) -> 2
-		    , (Fst (Const #)) False -> 1 })))
+(Fst (Const { [Fst [Const □]] True  → 0
+            , [Snd [Const □]]       → 2
+	    , [Fst [Const □]] False → 1 }))
 True

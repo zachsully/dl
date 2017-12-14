@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 module Main where
 
 import Data.Monoid
@@ -18,6 +17,7 @@ import Interpreter
 import Judgement
 import Utils
 import Pretty
+import IO
 
 --------------------------------------------------------------------------------
 --                              Cmdline Options                               --
@@ -120,19 +120,6 @@ main = do { mode <- parseMode
               TypeOf tm   -> runTypeOf tm =<< getProgram (tmInput tm)
               Repl        -> runRepl
           }
-
-getProgram :: FilePath -> IO (D.Program D.Term)
-getProgram fp =
-  do { !tokens <- case fp of
-                    "-" -> lexContents
-                    _   -> lexFile fp
-     ; case tokens of
-         Left e -> error e
-         Right ts ->
-           case runParserM (parseProgram ts) emptyState of
-             Left e -> error e
-             Right (p,_) -> return p
-     }
 
 runFlatten :: FlattenMode -> D.Program D.Term -> IO ()
 runFlatten _ pgm =

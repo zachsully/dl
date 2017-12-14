@@ -1,16 +1,16 @@
 codata Stream a
-  { Head : Stream a -> a
-  , Tail : Stream a -> Stream a }
+  { Head : Stream a → a
+  , Tail : Stream a → Stream a }
 
 data Nat
   { Zero : Nat
-  | Succ : Nat -> Nat }
+  | Succ : Nat → Nat }
 
 Head (Tail (Tail
 (
 fix nats in
-cocase { Head (# x) -> x
-       , Tail (# x) -> nats (Succ x) }
+cocase { Head [□ x] → x
+       , Tail [□ x] → nats (Succ x) }
 )
 Zero
 ))

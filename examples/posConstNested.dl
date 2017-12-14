@@ -1,5 +1,5 @@
 data Const a
-  { Const : a -> Const a }
+  { Const : a → Const a }
 
-case Const (Const 42)
-  { Const (Const x) -> x }
+case (Const (Const 42))
+  { Const (Const x) → x }

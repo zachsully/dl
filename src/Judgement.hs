@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs,KindSignatures #-}
+{-# LANGUAGE GADTs,KindSignatures,UnicodeSyntax #-}
 module Judgement where
 
 import Data.Monoid
@@ -20,15 +20,15 @@ type Ctx = [(Variable,Type)]
 --------------------------------------------------------------------------------
 {- Checks whether a type is well formed -}
 
-isType :: [Decl]              -- ^ A set of type signatures
-       -> [(Variable,Type)] -- ^ A context of bindings of type variables
-       -> Type
-       -> Bool
+isType :: [Decl]            -- ^ A set of type signatures
+       → [(Variable,Type)] -- ^ A context of bindings of type variables
+       → Type
+       → Bool
 isType _ _   TyInt         = True
 isType s ctx (TyArr a b)   = isType s ctx a && isType s ctx b
 isType s ctx (TyVar v)     = case lookup v ctx of
-                               Just t -> isType s ctx t
-                               Nothing -> False
+                               Just t → isType s ctx t
+                               Nothing → False
 
 {- A standalone type constructor is only valid if its arity is 0 -}
 isType s _   (TyCons tc)   = case lookupDecl tc s of
@@ -53,7 +53,7 @@ Citations:
 -}
 
 data TypeScheme :: * where
-  TyForall :: Set Variable -> Type -> TypeScheme
+  TyForall :: Set Variable → Type → TypeScheme
   deriving Eq
 
 -- instance EqAlpha TypeScheme where
@@ -73,10 +73,10 @@ instance Show TypeScheme where
 instance FV TypeScheme where
   fvs (TyForall vs τs) = fvs τs \\  vs
 
-arity :: TypeScheme -> Int
+arity :: TypeScheme → Int
 arity (TyForall _ τ) = funArity τ
 
-codom :: TypeScheme -> Type
+codom :: TypeScheme → Type
 codom (TyForall _ τ) = codomain τ
 
 {-
@@ -89,13 +89,13 @@ Environments are finite maps from variables to type schemes.
 newtype Env = Env [(Variable,TypeScheme)]
   deriving Show
 
-unEnv :: Env -> [(Variable,TypeScheme)]
+unEnv :: Env → [(Variable,TypeScheme)]
 unEnv (Env e) = e
 
 emptyEnv :: Env
 emptyEnv = Env []
 
-extendEnv :: Variable -> TypeScheme -> Env -> Env
+extendEnv :: Variable → TypeScheme → Env → Env
 extendEnv v s = Env . ((v,s):) . unEnv
 
 instance FV Env where
@@ -106,188 +106,188 @@ instance Monoid Env where
   mempty = Env []
   mappend (Env a) (Env b) = Env (a <> b)
 
-newtype Subst = Subst (Type -> Type)
+newtype Subst = Subst (Type → Type)
 
-apply :: Subst -> Type -> Type
+apply :: Subst → Type → Type
 apply = unSubst
 
-applyScheme :: Subst -> TypeScheme -> TypeScheme
+applyScheme :: Subst → TypeScheme → TypeScheme
 applyScheme σ (TyForall vs τ) = TyForall vs (apply σ τ)
 
-applyEnv :: Subst -> Env -> Env
-applyEnv σ = Env . fmap (\(v,s) -> (v,applyScheme σ s)) . unEnv
+applyEnv :: Subst → Env → Env
+applyEnv σ = Env . fmap (\(v,s) → (v,applyScheme σ s)) . unEnv
 
-unSubst :: Subst -> (Type -> Type)
+unSubst :: Subst → (Type → Type)
 unSubst (Subst f) = f
 
 idSubst :: Subst
 idSubst = Subst id
 
 infixr 1 ./.
-(./.) :: Type -> Variable -> Subst
+(./.) :: Type → Variable → Subst
 t ./. v =
    Subst (substVar t v)
-   where substVar :: Type -> Variable -> Type -> Type
+   where substVar :: Type → Variable → Type → Type
          substVar _ _ TyInt = TyInt
          substVar t' v' (TyArr a b) = TyArr (substVar t' v' a)
                                             (substVar t' v' b)
          substVar t' v' (TyVar v'') =
            case v' == v'' of
-             True -> t'
-             False -> TyVar v''
+             True → t'
+             False → TyVar v''
          substVar _ _ (TyCons c) = TyCons c
          substVar t' v' (TyApp a b) = TyApp (substVar t' v' a)
                                             (substVar t' v' b)
 
 
 infixr 0 ∘
-(∘) :: Subst -> Subst -> Subst
+(∘) :: Subst → Subst → Subst
 (Subst f) ∘ (Subst g) = Subst (f . g)
 
-tsElim :: TypeScheme -> Std Type
-tsElim (TyForall vs τ) = foldM (\τ' v ->
-                                  do { α <- TyVar <$> freshen v
+tsElim :: TypeScheme → Std Type
+tsElim (TyForall vs τ) = foldM (\τ' v →
+                                  do { α ← TyVar <$> freshen v
                                      ; return (apply (α ./. v) τ') })
                                τ
                                (toList vs)
 
-typeClosure :: Env -> Type -> TypeScheme
+typeClosure :: Env → Type → TypeScheme
 typeClosure e τ = TyForall (fvs τ \\ fvs e) τ
 
-inferTSProgram :: Program Term -> Std TypeScheme
+inferTSProgram :: Program Term → Std TypeScheme
 inferTSProgram pgm =
-  do { τ <- TyVar <$> freshVariable
-     ; s <- inferTS ( mkContextTS . (<> prelude) . pgmDecls $ pgm )
+  do { τ ← TyVar <$> freshVariable
+     ; s ← inferTS ( mkContextTS . (<> prelude) . pgmDecls $ pgm )
                     ( pgmTerm pgm )
                     τ
      ; return . typeClosure emptyEnv . apply s $ τ }
 
-inferTS :: Env -> Term -> Type -> Std Subst
+inferTS :: Env → Term → Type → Std Subst
 inferTS e (Let v a b) ρ =
-  do { α <- TyVar <$> freshVariable
-     ; sa <- inferTS e a α
+  do { α ← TyVar <$> freshVariable
+     ; sa ← inferTS e a α
      ; let e' = extendEnv v (typeClosure e (apply sa α)) (applyEnv sa e)
-     ; sb <- inferTS e' b (apply sa ρ)
+     ; sb ← inferTS e' b (apply sa ρ)
      ; return (sb ∘ sa)
      }
 
 inferTS e (Ann a τ) ρ =
-  do { sa <- inferTS e a τ
+  do { sa ← inferTS e a τ
      ; unify τ (apply sa ρ)
      }
 
 inferTS _ (Lit _) ρ = unify ρ TyInt
 
 inferTS e (Add a b) ρ =
-  do { sa <- inferTS e a TyInt
-     ; sb <- inferTS (applyEnv sa e) b TyInt
+  do { sa ← inferTS e a TyInt
+     ; sb ← inferTS (applyEnv sa e) b TyInt
      ; unify TyInt (apply (sb ∘ sa) ρ)
      }
 
 inferTS e (Var v) ρ =
-  do { s <- lookupStd v (unEnv e)
-     ; α <- tsElim s
+  do { s ← lookupStd v (unEnv e)
+     ; α ← tsElim s
      ; unify ρ α }
 
 inferTS e (Fix v t) ρ =
-  do { τ <- TyVar <$> freshVariable
+  do { τ ← TyVar <$> freshVariable
      ; let e' = extendEnv v (typeClosure e τ) e
-     ; st <- inferTS e' t ρ
+     ; st ← inferTS e' t ρ
      ; return st
      }
 
 inferTS e (App a b) ρ =
-  do { β <- TyVar <$> freshVariable
-     ; sa <- inferTS e a (TyArr β ρ)
-     ; sb <- inferTS (applyEnv sa e) b (apply sa β)
+  do { β ← TyVar <$> freshVariable
+     ; sa ← inferTS e a (TyArr β ρ)
+     ; sb ← inferTS (applyEnv sa e) b (apply sa β)
      ; return (sb ∘ sa)
      }
 
 inferTS e (Cons k) ρ =
-  do { s <- lookupStd k (unEnv e)
-     ; α <- tsElim s
+  do { s ← lookupStd k (unEnv e)
+     ; α ← tsElim s
      ; unify ρ α }
 
 inferTS e (Case t alts) ρ =
-  do { τ <- TyVar <$> freshVariable
-     ; st <- inferTS e t τ
-     ; salts <- forM alts $ \(p,u) ->
-         do { e' <- inferTSPattern (applyEnv st e) p τ
+  do { τ ← TyVar <$> freshVariable
+     ; st ← inferTS e t τ
+     ; salts ← forM alts $ \(p,u) →
+         do { e' ← inferTSPattern (applyEnv st e) p τ
             ; inferTS e' u ρ }
      ; return (foldr (∘) st salts)
      }
 
 inferTS e (Dest h) ρ =
-  do { s <- lookupStd h (unEnv e)
-     ; α <- tsElim s
+  do { s ← lookupStd h (unEnv e)
+     ; α ← tsElim s
      ; unify ρ α }
 
 inferTS e (CoCase coalts) ρ =
-  do { scoalts <- forM coalts $ \(q,u) ->
-         do { e' <- inferTSCopattern e q ρ
+  do { scoalts ← forM coalts $ \(q,u) →
+         do { e' ← inferTSCopattern e q ρ
             ; inferTS e' u ρ }
      ; return (foldr (∘) idSubst scoalts)
      }
 
 inferTS _ (Prompt _) _ = unimplementedErr "inferTS{prompt}"
 
-inferTSPattern :: Env -> Pattern -> Type -> Std Env
+inferTSPattern :: Env → Pattern → Type → Std Env
 inferTSPattern e PWild _ = return e
 inferTSPattern e (PVar v) ρ = return (extendEnv v (typeClosure e ρ) e)
 inferTSPattern e (PCons k ps) ρ =
-  do { α <- tsElim =<< lookupStd k (unEnv e)
+  do { α ← tsElim =<< lookupStd k (unEnv e)
      ; foldPList e ps α
      }
-  where foldPList :: Env -> [Pattern] -> Type -> Std Env
+  where foldPList :: Env → [Pattern] → Type → Std Env
         foldPList e (p:ps) (TyArr a b) =
-          do { e' <- inferTSPattern e p a
+          do { e' ← inferTSPattern e p a
              ; foldPList e' ps b }
         foldPList _ [] (TyArr _ _) =
           typeErr "incorrect number of arguments in pattern"
         foldPList e [] _ = return e
 
-inferTSCopattern :: Env -> CoPattern -> Type -> Std Env
+inferTSCopattern :: Env → CoPattern → Type → Std Env
 inferTSCopattern e QHead _ = return e
 inferTSCopattern e (QDest h q) ρ =
-  do { δ <- tsElim =<< lookupStd h (unEnv e)
-     ; e' <- inferTSCopattern e q δ
+  do { δ ← tsElim =<< lookupStd h (unEnv e)
+     ; e' ← inferTSCopattern e q δ
      ; return e'
      }
 inferTSCopattern _ (QPat _ _) _ = unimplementedErr "inferTSCopattern{qpat}"
 
-occurs :: Variable -> Type -> Bool
+occurs :: Variable → Type → Bool
 occurs _ TyInt       = False
 occurs v (TyArr a b) = occurs v a || occurs v b
 occurs v (TyVar v')  = v == v'
 occurs v (TyCons k)  = v == k
 occurs v (TyApp a b) = occurs v a || occurs v b
 
-unify :: Type -> Type -> Std Subst
+unify :: Type → Type → Std Subst
 unify TyInt TyInt = return idSubst
 
 unify (TyArr a b) (TyArr a' b') =
-  do { as <- unify a a'
-     ; bs <- unify b b'
+  do { as ← unify a a'
+     ; bs ← unify b b'
      ; return (bs ∘ as) }
 
 unify (TyVar v) ty =
   case elem v (fvs ty) of
-    True -> unificationErr (TyVar v) ty
-    False -> return (ty ./. v)
+    True → unificationErr (TyVar v) ty
+    False → return (ty ./. v)
 
 unify ty (TyVar v) =
   case elem v (fvs ty) of
-    True -> unificationErr (TyVar v) ty
-    False -> return (ty ./. v)
+    True → unificationErr (TyVar v) ty
+    False → return (ty ./. v)
 
 unify (TyCons k) (TyCons h) =
   case k == h of
-    True  -> return idSubst
-    False -> unificationErr (TyCons k) (TyCons h)
+    True  → return idSubst
+    False → unificationErr (TyCons k) (TyCons h)
 
 unify (TyApp a b) (TyApp a' b') =
-  do { as <- unify a a'
-     ; bs <- unify b b'
+  do { as ← unify a a'
+     ; bs ← unify b b'
      ; return (bs ∘ as) }
 
 unify a b = unificationErr a b
