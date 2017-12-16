@@ -14,7 +14,8 @@ executable dl
   main-is:             Main.hs
   GHC-Options :       -Wall -j6
   hs-source-dirs:      src
-  other-modules:       Lexer,
+  other-modules:       AlphaEq,
+                       Lexer,
                        Parser,
                        Pretty,
                        DualSyn,
@@ -43,7 +44,8 @@ test-suite tests
   type:                exitcode-stdio-1.0
   main-is:             Tests.hs
   hs-source-dirs:      tests,src
-  other-modules:       Lexer,
+  other-modules:       AlphaEq,
+                       Lexer,
                        Parser,
                        Pretty,
                        DualSyn,

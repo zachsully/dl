@@ -11,7 +11,6 @@ import Pretty
 import TypeSyn
 import DualSyn
 import VariableSyn
-import DualPrelude (prelude)
 
 type Ctx = [(Variable,Type)]
 
@@ -47,6 +46,7 @@ isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
 --------------------------------------------------------------------------------
 {-
 Citations:
+- Damas and Milner. /Principal type-schemes for functional programs/. 1982.
 - Lee and Yi. /Proofs about a Folklore Let-Polymorphic Type Inference
   Algorithm/. 1998.
 - Odersky, Sulzmann, and Wehr. /Type Inference with Constrained Types/. 1999.
@@ -55,10 +55,6 @@ Citations:
 data TypeScheme :: * where
   TyForall :: Set Variable → Type → TypeScheme
   deriving Eq
-
--- instance EqAlpha TypeScheme where
---   eqAlpha (TyForall [] α) (TyForall [] β) = α == β
---   eqAlpha (TyForall (v:vs) α) (TyForall _ β) =
 
 instance Pretty TypeScheme where
   pp (TyForall vs τ) =
@@ -123,6 +119,7 @@ unSubst (Subst f) = f
 idSubst :: Subst
 idSubst = Subst id
 
+{- Create a subsitution -}
 infixr 1 ./.
 (./.) :: Type → Variable → Subst
 t ./. v =
@@ -140,31 +137,34 @@ t ./. v =
                                             (substVar t' v' b)
 
 
+{- A composition operation for substitutions. -}
 infixr 0 ∘
 (∘) :: Subst → Subst → Subst
 (Subst f) ∘ (Subst g) = Subst (f . g)
 
 tsElim :: TypeScheme → Std Type
-tsElim (TyForall vs τ) = foldM (\τ' v →
-                                  do { α ← TyVar <$> freshen v
-                                     ; return (apply (α ./. v) τ') })
-                               τ
-                               (toList vs)
+tsElim (TyForall vs τ) =
+  foldM (\τ' v →
+            do { α ← TyVar <$> freshen v
+               ; return (apply (α ./. v) τ') })
+         τ
+        (toList vs)
 
 typeClosure :: Env → Type → TypeScheme
 typeClosure e τ = TyForall (fvs τ \\ fvs e) τ
 
+{- Top level -}
 inferTSProgram :: Program Term → Std TypeScheme
 inferTSProgram pgm =
   do { τ ← TyVar <$> freshVariable
-     ; s ← inferTS ( mkContextTS . (<> prelude) . pgmDecls $ pgm )
+     ; s ← inferTS ( mkContextTS . pgmDecls $ pgm )
                     ( pgmTerm pgm )
                     τ
      ; return . typeClosure emptyEnv . apply s $ τ }
 
 inferTS :: Env → Term → Type → Std Subst
 inferTS e (Let v a b) ρ =
-  do { α ← TyVar <$> freshVariable
+  do { α  ← TyVar <$> freshVariable
      ; sa ← inferTS e a α
      ; let e' = extendEnv v (typeClosure e (apply sa α)) (applyEnv sa e)
      ; sb ← inferTS e' b (apply sa ρ)
@@ -184,10 +184,7 @@ inferTS e (Add a b) ρ =
      ; unify TyInt (apply (sb ∘ sa) ρ)
      }
 
-inferTS e (Var v) ρ =
-  do { s ← lookupStd v (unEnv e)
-     ; α ← tsElim s
-     ; unify ρ α }
+inferTS e (Var v) ρ = unify ρ =<< tsElim =<< lookupStd v (unEnv e)
 
 inferTS e (Fix v t) ρ =
   do { τ ← TyVar <$> freshVariable
@@ -203,10 +200,7 @@ inferTS e (App a b) ρ =
      ; return (sb ∘ sa)
      }
 
-inferTS e (Cons k) ρ =
-  do { s ← lookupStd k (unEnv e)
-     ; α ← tsElim s
-     ; unify ρ α }
+inferTS e (Cons k) ρ = unify ρ =<< tsElim =<< lookupStd k (unEnv e)
 
 inferTS e (Case t alts) ρ =
   do { τ ← TyVar <$> freshVariable
@@ -217,10 +211,7 @@ inferTS e (Case t alts) ρ =
      ; return (foldr (∘) st salts)
      }
 
-inferTS e (Dest h) ρ =
-  do { s ← lookupStd h (unEnv e)
-     ; α ← tsElim s
-     ; unify ρ α }
+inferTS e (Dest h) ρ = unify ρ =<< tsElim =<< lookupStd h (unEnv e)
 
 inferTS e (CoCase coalts) ρ =
   do { scoalts ← forM coalts $ \(q,u) →
@@ -461,9 +452,9 @@ mkContext :: [Decl] -> [(Variable,Type)]
 mkContext [] = []
 mkContext (d:ds) =
   (case d of
-     Left neg -> map (\p -> (projName p, projType p))
+     Left neg -> map (arr projName &&& arr projType)
                     (projections neg)
-     Right pos -> map (\i -> (injName i, injType i)) (injections pos)
+     Right pos -> map (arr injName &&& arr injType) (injections pos)
   ) <> (mkContext ds)
 
 mkContextTS :: [Decl] -> Env

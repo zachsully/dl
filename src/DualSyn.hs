@@ -20,6 +20,7 @@ data Program t
   = Pgm
   { pgmDecls :: [Decl]
   , pgmTerm  :: t }
+  deriving Show
 
 instance Pretty t => Pretty (Program t) where
   pp pgm = (stringmconcat "\n\n" . fmap pp . pgmDecls $ pgm)

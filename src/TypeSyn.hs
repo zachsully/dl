@@ -1,4 +1,8 @@
-{-# LANGUAGE GADTs, DataKinds, KindSignatures, RankNTypes #-}
+{-# LANGUAGE DataKinds,
+             GADTs,
+             KindSignatures,
+             RankNTypes,
+             UnicodeSyntax #-}
 module TypeSyn where
 
 import Data.Set hiding (foldl)
@@ -19,15 +23,12 @@ data Type :: * where
   TyApp  :: Type -> Type -> Type
   deriving (Eq,Show)
 
-instance EqAlpha Type where
-  eqAlpha = (==)
-
 instance Pretty Type where
   pp TyInt = "Int"
   pp (TyArr a b) = pp a <+> "→" <+> pp b
   pp (TyVar v) = unVariable v
   pp (TyCons k) = unVariable k
-  pp (TyApp a b) = pp a <+> pp b
+  pp (TyApp a b) = pp a <+> (parens . pp $ b)
 
 instance FV Type where
   fvs TyInt = empty
@@ -61,6 +62,7 @@ data NegativeTyCons
   { negTyName   :: Variable
   , negTyFVars  :: [Variable]
   , projections :: [Projection] }
+  deriving Show
 
 instance Pretty NegativeTyCons where
   pp tc = "codata" <+> pp (negTyName tc)
@@ -72,12 +74,14 @@ data Projection
   = Proj
   { projName :: Variable
   , projType  :: Type }
+  deriving Show
 
 data PositiveTyCons
   = PosTyCons
   { posTyName  :: Variable
   , posTyFVars :: [Variable]
   , injections :: [Injection]  }
+  deriving Show
 
 instance Pretty PositiveTyCons where
   pp tc = "data" <+> pp (posTyName tc)
@@ -89,5 +93,6 @@ data Injection
   = Inj
   { injName :: Variable
   , injType  :: Type }
+  deriving Show
   {- the domain is a maybe value because unary constructors do not take
      arguments, e.g. () : Unit -}

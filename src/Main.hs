@@ -157,7 +157,7 @@ runEvaluate em pgm =
 
 runTypeOf :: TypeMode -> D.Program D.Term -> IO ()
 runTypeOf tm pgm =
-  do { when (tmDebug tm) $ pprint pgm
+  do { when (tmDebug tm) $ print pgm
      ; case tmBidir tm of
          True ->
            case runStd . typeOfProgram $ pgm of

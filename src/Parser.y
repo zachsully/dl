@@ -21,7 +21,7 @@ import Pretty
 %name parseTerm term
 %tokentype { Token }
 %error { pfail }
-%monad { ParserM }{ (>>=) }{ return }
+%monad { ParserM }
 
 %token
   num      { TokLit $$ }
@@ -72,12 +72,19 @@ program :: { Program Term }
 program : decls term                           { Pgm $1 $2 }
 
 decl :: { Decl }
-decl : 'codata' var vars '{' projs '}'         { Left (NegTyCons $2
-                                                        (reverse $3)
-                                                        (reverse $5)) }
-     | 'data'   var vars '{' injs  '}'         { Right (PosTyCons $2
-                                                          (reverse $3)
-                                                          (reverse $5)) }
+decl : 'codata' var vars '{' projs '}'         {% addTyCons $2 >>
+                                                  (return . replaceWithCons $2 $
+                                                    Left (NegTyCons $2
+                                                           (reverse $3)
+                                                           (reverse $5)))
+                                               }
+
+     | 'data'   var vars '{' injs  '}'         {% (addTyCons $2) >>
+                                                  (return . replaceWithCons $2 $
+                                                    Right (PosTyCons $2
+                                                            (reverse $3)
+                                                            (reverse $5)))
+                                               }
 
 decls :: { [Decl] }
 decls : decl decls                             { $1 : $2 }
@@ -120,11 +127,10 @@ type1 :  type '->' type                { TyArr $1 $3 }
 typeA :: { Type }
 typeA : '(' type ')'                   { $2 }
       | 'tyint'                        { TyInt }
-      | var                            {% do { b <- isTyCons $1
-                                             ; return (case b of
-                                                         True -> TyCons $1
-                                                         False -> TyVar $1)
-                                             }
+      | var                            {% isTyCons $1 >>= \b ->
+                                          case b of
+                                            True -> return (TyCons $1)
+                                            False -> return (TyVar $1)
                                        }
 
 --------------------------------------------------------------------------------
@@ -274,7 +280,6 @@ getPolarity s = get >>= \(_,ss) -> return (lookup s ss)
 pfail :: [Token] -> ParserM a
 pfail ts = ParserM $ \_ -> Left ("<parse error>: " ++ show ts)
 
-
 parseString :: String -> Term
 parseString s =
   case lexString s of
@@ -283,4 +288,21 @@ parseString s =
       case runParserM (parseTerm ts) ([],[]) of
         Left e -> error e
         Right (t,_) -> t
+
+replaceWithCons :: Variable -> Decl -> Decl
+replaceWithCons v d =
+  case d of
+    Left n  -> Left  (n { projections = replaceProj <$> projections n })
+    Right n -> Right (n { injections = replaceInj <$> injections n })
+  where replaceProj p = p { projType = replaceType (projType p) }
+        replaceInj i = i { injType = replaceType (injType i) }
+        replaceType TyInt = TyInt
+        replaceType (TyArr a b) = TyArr (replaceType a) (replaceType b)
+        replaceType (TyVar v') =
+          case v == v' of
+            True -> TyCons v
+            False -> TyVar v'
+        replaceType (TyCons k) = TyCons k
+        replaceType (TyApp a b) = TyApp (replaceType a) (replaceType b)
+
 }
