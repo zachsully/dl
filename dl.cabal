@@ -12,6 +12,7 @@ cabal-version:       >=1.10
 
 executable dl
   main-is:             Main.hs
+  default-extensions:  UnicodeSyntax
   GHC-Options :       -Wall -j6
   hs-source-dirs:      src
   other-modules:       AlphaEq,
@@ -43,6 +44,7 @@ executable dl
 test-suite tests
   type:                exitcode-stdio-1.0
   main-is:             Tests.hs
+  default-extensions:  UnicodeSyntax
   hs-source-dirs:      tests,src
   other-modules:       AlphaEq,
                        Lexer,

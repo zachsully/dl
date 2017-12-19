@@ -74,7 +74,7 @@ alexScanTokens' s = go ('\n',[],s)
   where go inp@(_,_,s') =
           case alexScan inp 0 of
             AlexEOF -> Right []
-            AlexError _ -> Left "<lexical error>"
+            AlexError e -> Left ( "<lexical error> " ++ show e )
             AlexSkip inp' _ -> go inp'
             AlexToken inp' len act ->
               case go inp' of

@@ -69,8 +69,11 @@ instance Show TypeScheme where
 instance FV TypeScheme where
   fvs (TyForall vs τs) = fvs τs \\  vs
 
-arity :: TypeScheme → Int
-arity (TyForall _ τ) = funArity τ
+instance Arity TypeScheme where
+  arity (TyForall _ τ) = arity τ
+
+applyScheme :: Subst → TypeScheme → TypeScheme
+applyScheme σ (TyForall vs τ) = TyForall vs (applyType σ τ)
 
 codom :: TypeScheme → Type
 codom (TyForall _ τ) = codomain τ
@@ -98,23 +101,22 @@ instance FV Env where
   fvs (Env []) = empty
   fvs (Env ((_,t):e)) = fvs t `union` fvs (Env e)
 
+applyEnv :: Subst → Env → Env
+applyEnv σ = Env . fmap (\(v,s) → (v,applyScheme σ s)) . unEnv
+
 instance Monoid Env where
   mempty = Env []
   mappend (Env a) (Env b) = Env (a <> b)
 
-newtype Subst = Subst (Type → Type)
 
-apply :: Subst → Type → Type
-apply = unSubst
+{-
+Substitutions map types to types. This actually maps type variables within types
+to types.
+-}
+data Subst = Subst { unSubst :: Type → Type }
 
-applyScheme :: Subst → TypeScheme → TypeScheme
-applyScheme σ (TyForall vs τ) = TyForall vs (apply σ τ)
-
-applyEnv :: Subst → Env → Env
-applyEnv σ = Env . fmap (\(v,s) → (v,applyScheme σ s)) . unEnv
-
-unSubst :: Subst → (Type → Type)
-unSubst (Subst f) = f
+applyType :: Subst → Type → Type
+applyType = unSubst
 
 idSubst :: Subst
 idSubst = Subst id
@@ -122,8 +124,7 @@ idSubst = Subst id
 {- Create a subsitution -}
 infixr 1 ./.
 (./.) :: Type → Variable → Subst
-t ./. v =
-   Subst (substVar t v)
+t ./. v = Subst (substVar t v)
    where substVar :: Type → Variable → Type → Type
          substVar _ _ TyInt = TyInt
          substVar t' v' (TyArr a b) = TyArr (substVar t' v' a)
@@ -142,117 +143,136 @@ infixr 0 ∘
 (∘) :: Subst → Subst → Subst
 (Subst f) ∘ (Subst g) = Subst (f . g)
 
+{- Other helpers -}
 tsElim :: TypeScheme → Std Type
 tsElim (TyForall vs τ) =
   foldM (\τ' v →
             do { α ← TyVar <$> freshen v
-               ; return (apply (α ./. v) τ') })
+               ; return (applyType (α ./. v) τ') })
          τ
         (toList vs)
 
 typeClosure :: Env → Type → TypeScheme
 typeClosure e τ = TyForall (fvs τ \\ fvs e) τ
 
-{- Top level -}
+newTyVar :: Std Type
+newTyVar = TyVar <$> freshVariable
+
+{-
+The top level inference creates an environment filled with binds which will be
+used for construction, observation, and the creation of (co)patterns.
+
+It then obtains a substituion by running ~inferTS~ and applies that to a top
+level variable to return the final type scheme of the program.
+-}
 inferTSProgram :: Program Term → Std TypeScheme
 inferTSProgram pgm =
-  do { τ ← TyVar <$> freshVariable
+  do { τ ← newTyVar
      ; s ← inferTS ( mkContextTS . pgmDecls $ pgm )
                     ( pgmTerm pgm )
                     τ
-     ; return . typeClosure emptyEnv . apply s $ τ }
+     ; return . typeClosure emptyEnv . applyType s $ τ }
 
+{-
+~inferTS~ uses a modified version of algorithm M presented by Lee and Yi. The
+type argument ~ρ~ is type information propagated down from the root. Instead of
+generating a type and substitution as a result as in algorithm W (Damas and
+Milner), algorithm M constrains the type as an argument. We use unification to
+check that our type satisfies the constraint /and/ to create substitutions.
+-}
 inferTS :: Env → Term → Type → Std Subst
 inferTS e (Let v a b) ρ =
-  do { α  ← TyVar <$> freshVariable
+  do { α  ← newTyVar
      ; sa ← inferTS e a α
-     ; let e' = extendEnv v (typeClosure e (apply sa α)) (applyEnv sa e)
-     ; sb ← inferTS e' b (apply sa ρ)
-     ; return (sb ∘ sa)
-     }
+     ; sb ← inferTS (applyEnv sa (extendEnv v (typeClosure e α) e))
+                     b
+                     (applyType sa ρ)
+     ; return (sb ∘ sa) }
 
 inferTS e (Ann a τ) ρ =
   do { sa ← inferTS e a τ
-     ; unify τ (apply sa ρ)
-     }
+     ; unify τ (applyType sa ρ) }
 
 inferTS _ (Lit _) ρ = unify ρ TyInt
 
 inferTS e (Add a b) ρ =
   do { sa ← inferTS e a TyInt
      ; sb ← inferTS (applyEnv sa e) b TyInt
-     ; unify TyInt (apply (sb ∘ sa) ρ)
-     }
+     ; unify (applyType (sb ∘ sa) ρ) TyInt  }
 
 inferTS e (Var v) ρ = unify ρ =<< tsElim =<< lookupStd v (unEnv e)
 
-inferTS e (Fix v t) ρ =
-  do { τ ← TyVar <$> freshVariable
-     ; let e' = extendEnv v (typeClosure e τ) e
-     ; st ← inferTS e' t ρ
-     ; return st
-     }
+inferTS e (Fix v t) ρ = inferTS (extendEnv v (typeClosure e ρ) e) t ρ
 
 inferTS e (App a b) ρ =
-  do { β ← TyVar <$> freshVariable
+  do { β ← newTyVar
      ; sa ← inferTS e a (TyArr β ρ)
-     ; sb ← inferTS (applyEnv sa e) b (apply sa β)
-     ; return (sb ∘ sa)
-     }
+     ; sb ← inferTS (applyEnv sa e) b (applyType sa β)
+     ; return (sb ∘ sa) }
 
 inferTS e (Cons k) ρ = unify ρ =<< tsElim =<< lookupStd k (unEnv e)
 
 inferTS e (Case t alts) ρ =
-  do { τ ← TyVar <$> freshVariable
+  do { τ ← newTyVar
      ; st ← inferTS e t τ
-     ; salts ← forM alts $ \(p,u) →
-         do { e' ← inferTSPattern (applyEnv st e) p τ
-            ; inferTS e' u ρ }
-     ; return (foldr (∘) st salts)
+     ; salts ← mapM (\(p,u) → inferTSAlt (applyEnv st e)
+                      p u (applyType st τ) (applyType st ρ))
+                     alts
+     ; unify ρ (applyType (foldr (∘) st salts) ρ)
      }
 
 inferTS e (Dest h) ρ = unify ρ =<< tsElim =<< lookupStd h (unEnv e)
 
+{- Cocase inference:
+We must be able to unify the types of all the branches of a cocase, e.g.
+{ Head [□ x] → x ; Tail [□ x] → nats } both branches must unify to ~Stream Int~.
+The judgement of the types is actually done by coalternative inference.
+-}
 inferTS e (CoCase coalts) ρ =
-  do { scoalts ← forM coalts $ \(q,u) →
-         do { e' ← inferTSCopattern e q ρ
-            ; inferTS e' u ρ }
-     ; return (foldr (∘) idSubst scoalts)
+  do { τVars ← replicateM (length coalts) (TyVar <$> freshVariable)
+     -- ; scoalts ← forM (zip vs coalts) $ unimplementedErr "inferTS{cocase}"
+     ; unimplementedErr "inferTS{cocase}"
+     -- ; foldM unify ρ undefined
      }
 
 inferTS _ (Prompt _) _ = unimplementedErr "inferTS{prompt}"
 
-inferTSPattern :: Env → Pattern → Type → Std Env
-inferTSPattern e PWild _ = return e
-inferTSPattern e (PVar v) ρ = return (extendEnv v (typeClosure e ρ) e)
+{-
+The first of the type arguments describes the type of the interrogated term.
+The second of the type arguments describes the output type of the alternative
+statement.
+-}
+inferTSAlt :: Env → Pattern → Term → Type → Type → Std Subst
+inferTSAlt e p u τ σ =
+  do { (e',sp) ← inferTSPattern e p τ
+     ; inferTS (applyEnv sp e') u (applyType sp σ) }
+
+inferTSPattern :: Env → Pattern → Type → Std (Env,Subst)
+inferTSPattern e PWild _ = return (e,idSubst)
+inferTSPattern e (PVar v) ρ = return (extendEnv v (typeClosure e ρ) e, idSubst)
 inferTSPattern e (PCons k ps) ρ =
-  do { α ← tsElim =<< lookupStd k (unEnv e)
-     ; foldPList e ps α
+  do { κ ← tsElim =<< lookupStd k (unEnv e)
+     ; case length ps == arity κ of
+         False → typeErr ("constructor" <+> pp k <+> "requires"
+                          <+> show (arity κ) <+> "arguments")
+         True → do { sκ ← unify ρ κ
+                    ; return (e,sκ) }
      }
-  where foldPList :: Env → [Pattern] → Type → Std Env
-        foldPList e (p:ps) (TyArr a b) =
-          do { e' ← inferTSPattern e p a
-             ; foldPList e' ps b }
-        foldPList _ [] (TyArr _ _) =
-          typeErr "incorrect number of arguments in pattern"
-        foldPList e [] _ = return e
 
-inferTSCopattern :: Env → CoPattern → Type → Std Env
-inferTSCopattern e QHead _ = return e
-inferTSCopattern e (QDest h q) ρ =
-  do { δ ← tsElim =<< lookupStd h (unEnv e)
-     ; e' ← inferTSCopattern e q δ
-     ; return e'
-     }
-inferTSCopattern _ (QPat _ _) _ = unimplementedErr "inferTSCopattern{qpat}"
+{-
+Unlike infering the type of an alternative, coalternatives do not necessarily
+have an interrogated term.
+-}
+inferTSCoalt :: Env → CoPattern → Term → Type → Std Subst
+inferTSCoalt _ _ _ _ = unimplementedErr "inferTSCoalt"
 
-occurs :: Variable → Type → Bool
-occurs _ TyInt       = False
-occurs v (TyArr a b) = occurs v a || occurs v b
-occurs v (TyVar v')  = v == v'
-occurs v (TyCons k)  = v == k
-occurs v (TyApp a b) = occurs v a || occurs v b
+inferTSCopattern :: Env → CoPattern → Type → Std (Env,Subst)
+inferTSCopattern e QHead _ = return (e,idSubst)
 
+{-
+Type unification, this is standard (i.e. unmodified from other unification
+algorithms).
+-}
 unify :: Type → Type → Std Subst
 unify TyInt TyInt = return idSubst
 
@@ -261,15 +281,15 @@ unify (TyArr a b) (TyArr a' b') =
      ; bs ← unify b b'
      ; return (bs ∘ as) }
 
-unify (TyVar v) ty =
-  case elem v (fvs ty) of
-    True → unificationErr (TyVar v) ty
-    False → return (ty ./. v)
+unify (TyVar v) τ =
+  case occurs v τ of
+    True → unificationErr (TyVar v) τ
+    False → return (τ ./. v)
 
-unify ty (TyVar v) =
-  case elem v (fvs ty) of
-    True → unificationErr (TyVar v) ty
-    False → return (ty ./. v)
+unify τ (TyVar v) =
+  case occurs v τ of
+    True → unificationErr (TyVar v) τ
+    False → return (τ ./. v)
 
 unify (TyCons k) (TyCons h) =
   case k == h of
@@ -281,7 +301,10 @@ unify (TyApp a b) (TyApp a' b') =
      ; bs ← unify b b'
      ; return (bs ∘ as) }
 
-unify a b = unificationErr a b
+unify α β = unificationErr α β
+
+occurs :: Variable → Type → Bool
+occurs v τ = elem v (fvs τ)
 
 --------------------------------------------------------------------------------
 --                              Bidirectional Tc                              --
@@ -428,13 +451,13 @@ checkPat c (PCons k ps) ty =
   do { kty <- lookupStd k c
      ; case tyCodomain kty == ty of
          True ->
-           case length ps == funArity kty of
+           case length ps == arity kty of
              True  ->
                do { cs <- mapM (\(ty',p') -> checkPat c p' ty')
                                (zip (collectFunArgTys kty) ps)
                   ; return (mconcat cs <> c) }
              False -> typeErr ("constructor '" <> pp k
-                               <> "' has arity" <+> show (funArity kty))
+                               <> "' has arity" <+> show (arity kty))
          False -> typeErr (pp k <+> "is not a constructor of type" <+> pp ty)
      }
   where collectFunArgTys :: Type -> [Type]

@@ -14,11 +14,11 @@ class EqAlpha a where
   eqAlpha :: a -> a -> Bool
 
 --------------------------------------------------------------------------------
---                          Free Variable Typeclass                           --
+--                              Arity Typeclass                               --
 --------------------------------------------------------------------------------
 
-class FV a where
-  fvs :: a -> Set Variable
+class Arity a where
+  arity :: a → Int
 
 --------------------------------------------------------------------------------
 --                               Standard Monad                               --
@@ -83,3 +83,11 @@ instance Monad Std where
       case apStd m ns of
         Left s -> Left s
         Right (a,ns') -> apStd (f a) ns'
+
+
+--------------------------------------------------------------------------------
+--                          Free Variable Typeclass                           --
+--------------------------------------------------------------------------------
+
+class FV α where
+  fvs   :: α → Set Variable

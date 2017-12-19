@@ -197,7 +197,11 @@ coalts : coalt                   { [$1] }
 
 pattern :: { Pattern }
 pattern : var patterns           { PCons $1 (reverse $2) }
-        | var                    { PCons $1 [] }
+        | var                    {% do { mp <- getPolarity $1
+                                       ; case mp of
+                                           Nothing -> return (PVar $1)
+                                           _ -> return (PCons $1 []) }
+                                 }
 
 patternA :: { Pattern }
 patternA : '_'                   { PWild }

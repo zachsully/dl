@@ -1,0 +1,7 @@
+codata Stream a
+  { Head : Stream a → a
+  , Tail : Stream a → Stream a }
+
+fix answers in
+{ Head [□ x] → x
+, Tail [□ x] → answers (x + 42) }

@@ -1,6 +1,7 @@
 module VariableSyn where
 
 import Data.Monoid
+import Data.Set
 
 import Pretty
 

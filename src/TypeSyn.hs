@@ -37,9 +37,9 @@ instance FV Type where
   fvs (TyCons _) = empty
   fvs (TyApp a b) = fvs a `union` fvs b
 
-funArity :: Type -> Int
-funArity (TyArr _ b) = 1 + funArity b
-funArity _ = 0
+instance Arity Type where
+  arity (TyArr _ b) = 1 + arity b
+  arity _ = 0
 
 codomain :: Type -> Type
 codomain (TyArr _ b) = codomain b
