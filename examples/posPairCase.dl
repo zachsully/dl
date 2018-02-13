@@ -1,0 +1,5 @@
+data PosPair a b
+  { Pair : a -> b -> PosPair a b }
+
+case (Pair 42 0)
+  { Pair x y → x + y }

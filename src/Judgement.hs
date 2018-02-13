@@ -75,8 +75,8 @@ instance Arity TypeScheme where
 applyScheme :: Subst → TypeScheme → TypeScheme
 applyScheme σ (TyForall vs τ) = TyForall vs (applyType σ τ)
 
-codom :: TypeScheme → Type
-codom (TyForall _ τ) = codomain τ
+codomainTS :: TypeScheme → Maybe Type
+codomainTS (TyForall _ τ) = codomain τ
 
 {-
 The environment and substitution types are closely related. The difference
@@ -229,10 +229,10 @@ We must be able to unify the types of all the branches of a cocase, e.g.
 The judgement of the types is actually done by coalternative inference.
 -}
 inferTS e (CoCase coalts) ρ =
-  do { τVars ← replicateM (length coalts) (TyVar <$> freshVariable)
-     -- ; scoalts ← forM (zip vs coalts) $ unimplementedErr "inferTS{cocase}"
+  do { vs ← replicateM (length coalts) (TyVar <$> freshVariable)
+     ; scoalts ← mapM (\(v,(q,u)) → inferTSCoalt e q u v) (zip vs coalts)
      ; unimplementedErr "inferTS{cocase}"
-     -- ; foldM unify ρ undefined
+     -- ; foldM (unify ρ) idSubst scoalts
      }
 
 inferTS _ (Prompt _) _ = unimplementedErr "inferTS{prompt}"
@@ -255,8 +255,12 @@ inferTSPattern e (PCons k ps) ρ =
      ; case length ps == arity κ of
          False → typeErr ("constructor" <+> pp k <+> "requires"
                           <+> show (arity κ) <+> "arguments")
-         True → do { sκ ← unify ρ κ
-                    ; return (e,sκ) }
+         True →
+           case collectTyArgs κ of
+             Just (k,args) →
+               do { _ ← mapM (\(τ,p) → inferTSPattern e p τ) (zip args ps)
+                  ; unimplementedErr "inferTSPattern{PCons}" }
+             Nothing → typeErr "pattern not constructor"
      }
 
 {-
@@ -264,10 +268,25 @@ Unlike infering the type of an alternative, coalternatives do not necessarily
 have an interrogated term.
 -}
 inferTSCoalt :: Env → CoPattern → Term → Type → Std Subst
-inferTSCoalt _ _ _ _ = unimplementedErr "inferTSCoalt"
+inferTSCoalt e q u ρ =
+  do { (e',sq) ← inferTSCopattern e q ρ
+     ; inferTS (applyEnv sq e') u (applyType sq ρ) }
 
 inferTSCopattern :: Env → CoPattern → Type → Std (Env,Subst)
 inferTSCopattern e QHead _ = return (e,idSubst)
+inferTSCopattern e (QDest h q) ρ =
+  do { η ← tsElim =<< lookupStd h (unEnv e)
+     ; (e',s) ← inferTSCopattern e q ρ
+     ; unimplementedErr "inferTSCopattern{qdest}" }
+
+inferTSCopattern e (QPat q p) ρ =
+  do { σ ← newTyVar
+     ; ε ← newTyVar
+     ; (e',s) ← inferTSPattern e p σ
+     ; (e'',s') ← inferTSCopattern e' q (applyType s ε)
+     ; s'' ← unify ρ (applyType s' (TyArr σ ε))
+     ; return (e'', s'') }
+inferTSCopattern _ _ _ = unimplementedErr "inferTSCopattern{qvar}"
 
 {-
 Type unification, this is standard (i.e. unmodified from other unification

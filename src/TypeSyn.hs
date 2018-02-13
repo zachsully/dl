@@ -41,9 +41,15 @@ instance Arity Type where
   arity (TyArr _ b) = 1 + arity b
   arity _ = 0
 
-codomain :: Type -> Type
-codomain (TyArr _ b) = codomain b
-codomain x = x
+domain :: Type → Maybe Type
+domain (TyArr a _) = Just a
+domain _ = Nothing
+
+codomain :: Type → Maybe Type
+codomain (TyArr _ b) = Just (codomain' b)
+  where codomain' (TyArr _ y) = codomain' y
+        codomain' x = x
+codomain _ = Nothing
 
 collectTyArgs :: Type -> Maybe (Variable,[Type])
 collectTyArgs (TyApp e t) = collectTyArgs e >>= \(k,ts) -> return (k,t:ts)
