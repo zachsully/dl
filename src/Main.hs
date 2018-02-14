@@ -8,6 +8,7 @@ import System.IO
 
 -- local
 import qualified DualSyn as D
+import Flatten
 import qualified HsSyn as H
 import qualified MLSyn as ML
 import Lexer
@@ -29,7 +30,6 @@ data FlattenMode
 data CompileMode
   = CompileMode
   { cmDebug  :: Bool
-  , cmLocal  :: Bool
   , cmML     :: Bool
   , cmInput  :: FilePath
   , cmOutput :: FilePath }
@@ -63,9 +63,6 @@ parseCompile = CompileMode
            <$> switch (  long "debug"
                       <> short 'D'
                       <> help "debug mode" )
-           <*> switch (  long "local"
-                      <> short 'L'
-                      <> help "local compile, that is using a naming convention." )
            <*> switch (  long "ocaml"
                       <> help "compile to Ocaml." )
            <*> inputFp
@@ -125,21 +122,19 @@ runFlatten :: FlattenMode -> D.Program D.Term -> IO ()
 runFlatten _ pgm =
   do { pprint pgm
      ; putStrLn "\n->>R\n"
-     ; pprint . D.flatten . D.pgmTerm $ pgm }
+     ; pprint . flatten . D.pgmTerm $ pgm }
 
 runCompile :: CompileMode -> D.Program D.Term -> IO ()
 runCompile cm pgm =
-  let pgm' = D.flattenPgm pgm in
+  let pgm' = flattenPgm pgm in
     do { when (cmDebug cm) $
          do { pprint pgm
             ; putStrLn "\n->>R\n"
             ; pprint pgm'
             ; putStrLn "\n=>\n" }
-       ; let !prog' = case cmML cm of
-                        True -> ML.ppProgram . translateProgramCBV $ pgm'
-                        False -> H.ppProgram . (case cmLocal cm of
-                                                   True -> translateProgramLocal
-                                                   False -> translateProgramST) $ pgm'
+       ; let !prog' = (case cmML cm of
+                         True -> ML.ppProgram . translate
+                         False -> H.ppProgram . translate) $ pgm'
        ; case cmOutput cm of
            "-" -> putStrLn prog'
            fp  -> writeFile fp prog'

@@ -3,8 +3,13 @@ module HsSyn where
 
 import Data.Monoid
 
+import qualified DualSyn as D
+import qualified TypeSyn as Ty
+import Flatten
+import Translation
 import VariableSyn
 import Pretty
+import Utils
 
 data Program
   = Pgm
@@ -162,3 +167,104 @@ ppTerm (Case t alts) i p =
         ppPattern (PVar s) = pp s
         ppPattern (PCons s vs) = pp s <+> smconcat . fmap pp $ vs
 ppTerm Fail _ _ = "(error \"match fail\")"
+
+--------------------------------------------------------------------------------
+--                              Translation                                   --
+--------------------------------------------------------------------------------
+
+instance Translate Program where
+  translate = trans
+
+{- Local translation defines new functions when a declaration is transformed.
+These functions must be in scope for the term. -}
+trans :: D.Program FlatTerm -> Program
+trans dpgm =
+  let (f,decls') = foldr (\d (f,ds) ->
+                           let (df,d') = transDecl d
+                           in  (df . f, d':ds) )
+                         (id,[])
+                         (D.pgmDecls dpgm)
+  in Pgm decls' ( f . transTerm . D.pgmTerm $ dpgm )
+
+transType :: Ty.Type -> Type
+transType Ty.TyInt       = TyInt
+transType (Ty.TyArr a b) = TyArr (transType a) (transType b)
+transType (Ty.TyApp a b) = TyApp (transType a) (transType b)
+transType (Ty.TyVar v)   = TyVar v
+transType (Ty.TyCons k)  = TyCons k
+
+typeCodom :: Type -> Type
+typeCodom (TyArr _ b) = b
+typeCodom x = error ("type" <+> ppType x 0 <+> "is not a projection")
+
+transDecl
+  :: D.Decl
+  -> (Term -> Term, Either DataTyCons RecordTyCons)
+transDecl (Right d) =
+  (id, Left (DataTyCons (Ty.posTyName d)
+                           (Ty.posTyFVars d)
+                           (fmap mkDataCon . Ty.injections $ d)))
+  where mkDataCon :: Ty.Injection -> DataCon
+        mkDataCon inj = DataCon (Ty.injName inj)
+                                   (typeCodom . transType . Ty.injType $ inj)
+
+transDecl (Left d)  =
+  ( addSetters (Ty.projections d) 0
+  , Right (RecordTyCons name
+                           (Ty.negTyFVars d)
+                           (fmap mkRecordField (Ty.projections d))))
+  where name = Variable "Mk" <> Ty.negTyName d
+        pname p = Variable "_" <> Ty.projName p
+
+        numProjs = length . Ty.projections $ d
+
+        -- an association between projections and their index
+        pIndexAssoc :: [(Int,Ty.Projection)]
+        pIndexAssoc = foldrWithIndex (\i p a -> (i,p):a) [] (Ty.projections d)
+
+        addSetters :: [Ty.Projection] -> Int -> (Term -> Term)
+        addSetters [] _ = id
+        addSetters (p:ps) i =
+          (Let
+            setterName
+            (Lam (Variable "d")
+              (Lam (Variable "x")
+                (foldlWithIndex (\j c p ->
+                                  let t = case i == j of
+                                            True  -> Var (Variable "x")
+                                            False -> App (Var (pname p))
+                                                            (Var (Variable "d"))
+                                  in App c t
+                                )
+                                (Cons name)
+                                (Ty.projections d))))) --App(App (Cons name) (Var "x"))))))
+          . (addSetters ps (i+1))
+          where setterName = Variable "set_" <> Ty.projName p
+
+        mkRecordField :: Ty.Projection -> Field
+        mkRecordField p = Field (pname p)
+                                   (typeCodom . transType . Ty.projType $ p)
+
+transTerm :: FlatTerm -> Term
+transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
+transTerm (FLit i) = Lit i
+transTerm (FAdd a b) = Add (transTerm a) (transTerm b)
+transTerm (FVar v) = Var v
+transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
+transTerm (FApp a b) = App (transTerm a) (transTerm b)
+transTerm (FCons k) = Cons k
+transTerm (FCase t (p,u) d) = Case (transTerm t)
+                                         [(transPat p, transTerm u)
+                                         ,(PWild,transTerm d)]
+transTerm (FDest h) = Var (Variable "_" <> h)
+transTerm (FCoCase (q,u) d) = transCoalt (q,u) (transTerm d)
+transTerm (FFail) = Fail
+
+transPat :: FlatPattern -> Pattern
+transPat (FlatPatVar v)     = PVar v
+transPat (FlatPatCons k vs) = PCons k vs
+
+transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
+transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set_" <> h)) t)
+                                           (transTerm u)
+transCoalt (FlatCopPat _,u) _ = transTerm u

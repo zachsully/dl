@@ -6,6 +6,12 @@ import Data.Set
 import VariableSyn
 import Pretty
 
+foldrWithIndex :: (Int -> a -> b -> b) -> b -> [a] -> b
+foldrWithIndex f b = snd . Prelude.foldr (\a (i,x) -> (i+1,f i a x)) (0,b)
+
+foldlWithIndex :: (Int -> b -> a -> b) -> b -> [a] -> b
+foldlWithIndex f b = snd . Prelude.foldl (\(i,x) a -> (i+1,f i x a)) (0,b)
+
 --------------------------------------------------------------------------------
 --                             α-equiv Typeclass                              --
 --------------------------------------------------------------------------------

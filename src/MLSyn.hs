@@ -3,6 +3,11 @@ module MLSyn where
 
 import Data.Monoid
 
+import qualified DualSyn as D
+import qualified TypeSyn as Ty
+import Flatten
+import Translation
+import VariableSyn
 import Pretty
 
 data Program
@@ -21,18 +26,16 @@ declaration. -}
 data Type where
   TyInt  :: Type
   TyArr  :: Type -> Type -> Type
-  TyVar  :: TyVariable -> Type
-  TyCons :: TyVariable -> Type
+  TyVar  :: Variable -> Type
+  TyCons :: Variable -> Type
   TyApp  :: Type -> Type -> Type
   TyLazy :: Type -> Type
   deriving (Eq,Show)
 
-type TyVariable = String
-
 data DataTyCons
   = DataTyCons
-  { dataName  :: TyVariable
-  , dataFVars :: [TyVariable]
+  { dataName  :: Variable
+  , dataFVars :: [Variable]
   , dataCons  :: [DataCon] }
   deriving (Eq,Show)
 
@@ -76,8 +79,6 @@ data Pattern where
   PCons :: Variable -> [Variable] -> Pattern
   deriving (Eq,Show)
 
-type Variable = String
-
 --------------------------------------------------------------------------------
 --                              Pretty Print                                  --
 --------------------------------------------------------------------------------
@@ -90,32 +91,32 @@ ppProgram pgm = "open Lazy\n"
 
 ppDecl :: DataTyCons -> String
 ppDecl tc =
-  (smconcat ["type",dataName tc,smconcat . dataFVars $ tc])
+  (smconcat ["type",unVariable . dataName $ tc,smconcat . fmap unVariable . dataFVars $ tc])
   <-> (vmconcat . fmap ppDataCon . dataCons $ tc)
   <> "\n"
 
 ppDataCon :: DataCon -> String
 ppDataCon dc =
-  indent 1 (conName dc <+> ":" <+> flip ppType 9 . conType $ dc)
+  indent 1 ((unVariable . conName $ dc) <+> ":" <+> flip ppType 9 . conType $ dc)
 
 ppType :: Type -> Int -> String
 ppType TyInt       _ = "int"
 ppType (TyArr a b) p = ppPrec 1 p (ppType a p <+> "->" <+> ppType b p)
-ppType (TyVar s)   _ = s
-ppType (TyCons s)  _ = s
+ppType (TyVar s)   _ = unVariable s
+ppType (TyCons s)  _ = unVariable s
 ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
 
 {- The Int passed in is the indentation level and precedence -}
 ppTerm :: Term -> Int -> Int -> String
-ppTerm (Let s a b)   i p = smconcat ["let",s,"=",ppTerm a i p,"in"]
+ppTerm (Let s a b)   i p = smconcat ["let",unVariable s,"=",ppTerm a i p,"in"]
                            <-> indent i (ppTerm b i p)
 ppTerm (Lit n)       _ _ = show n
 ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
-ppTerm (Var s)       _ _ = s
-ppTerm (Lam s t)     i p = parens ( "\\" <> s <+> "->"
+ppTerm (Var s)       _ _ = unVariable s
+ppTerm (Lam s t)     i p = parens ( "\\" <> unVariable s <+> "->"
                                   <-> indent i (ppTerm t (i+1) p))
 ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> ppTerm b i p)
-ppTerm (Cons s)      _ _ = s
+ppTerm (Cons s)      _ _ = unVariable s
 ppTerm (Case t alts) i p =
   "case" <+> ppTerm t i 0 <+> "of"
     <-> (vmconcat . map (indent i . ppAlt) $ alts)
@@ -126,5 +127,103 @@ ppTerm (Case t alts) i p =
 
         ppPattern :: Pattern -> String
         ppPattern PWild = "_"
-        ppPattern (PVar s) = s
-        ppPattern (PCons s vs) = s <+> smconcat vs
+        ppPattern (PVar s) = unVariable s
+        ppPattern (PCons s vs) = (unVariable s) <+> (smconcat . map unVariable $ vs)
+
+--------------------------------------------------------------------------------
+--                              Translation                                   --
+--------------------------------------------------------------------------------
+
+
+instance Translate Program where
+  translate = trans
+
+{- Local translation defines new functions when a declaration is transformed.
+These functions must be in scope for the term. -}
+trans :: D.Program FlatTerm -> Program
+trans dpgm =
+  let (f,decls') = foldr (\d (f,ds) ->
+                           let (df,d') = transDecl d
+                           in  (df . f, d':ds) )
+                         (id,[])
+                         (D.pgmDecls dpgm)
+  in Pgm decls' ( f . transTerm . D.pgmTerm $ dpgm )
+
+-- transType :: Ty.Type -> Type
+-- transType Ty.TyInt       = TyInt
+-- transType (Ty.TyArr a b) = TyArr (transType a) (transType b)
+-- transType (Ty.TyApp a b) = TyApp (transType a) (transType b)
+-- transType (Ty.TyVar v)   = TyVar v
+-- transType (Ty.TyCons k)  = TyCons k
+
+-- transDecl
+--   :: D.Decl
+--   -> (Term -> Term, Either DataTyCons RecordTyCons)
+-- transDecl (Right d) =
+--   (id, Left (DataTyCons (Ty.posTyName d)
+--                            (Ty.posTyFVars d)
+--                            (fmap mkDataCon . Ty.injections $ d)))
+--   where mkDataCon :: Ty.Injection -> DataCon
+--         mkDataCon inj = DataCon (Ty.injName inj)
+--                                    (transType . Ty.injType $ inj)
+
+-- transDecl (Left d)  = undefined
+--   ( addSetters (Ty.projections d) 0
+--   , Right (RecordTyCons name
+--                            (Ty.negTyFVars d)
+--                            (fmap mkRecordField (Ty.projections d))))
+--   where name = Variable "Mk" <> Ty.negTyName d
+--         pname p = Variable "_" <> Ty.projName p
+
+--         numProjs = length . Ty.projections $ d
+
+--         -- an association between projections and their index
+--         pIndexAssoc :: [(Int,Ty.Projection)]
+--         pIndexAssoc = foldrWithIndex (\i p a -> (i,p):a) [] (Ty.projections d)
+
+--         addSetters :: [Ty.Projection] -> Int -> (Term -> Term)
+--         addSetters [] _ = id
+--         addSetters (p:ps) i =
+--           (Let
+--             setterName
+--             (Lam (Variable "d")
+--               (Lam (Variable "x")
+--                 (foldlWithIndex (\j c p ->
+--                                   let t = case i == j of
+--                                             True  -> Var (Variable "x")
+--                                             False -> App (Var (pname p))
+--                                                             (Var (Variable "d"))
+--                                   in App c t
+--                                 )
+--                                 (Cons name)
+--                                 (Ty.projections d))))) --App(App (Cons name) (Var "x"))))))
+--           . (addSetters ps (i+1))
+--           where setterName = Variable "set_" <> Ty.projName p
+
+--         mkRecordField :: Ty.Projection -> Field
+--         mkRecordField p = Field (pname p)
+--                                    (transType . Ty.projType $ p)
+
+-- transTerm :: FlatTerm -> Term
+-- transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
+-- transTerm (FLit i) = Lit i
+-- transTerm (FAdd a b) = Add (transTerm a) (transTerm b)
+-- transTerm (FVar v) = Var v
+-- transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
+-- transTerm (FApp a b) = App (transTerm a) (transTerm b)
+-- transTerm (FCons k) = Cons k
+-- transTerm (FCase t (p,u) d) = Case (transTerm t)
+--                                          [(transPat p, transTerm u)
+--                                          ,(PWild,transTerm d)]
+-- transTerm (FDest h) = Var (Variable "_" <> h)
+-- transTerm (FCoCase (q,u) d) = transCoalt (q,u) (transTerm d)
+-- transTerm (FFail) = Fail
+
+-- transPat :: FlatPattern -> Pattern
+-- transPat (FlatPatVar v)     = PVar v
+-- transPat (FlatPatCons k vs) = PCons k vs
+
+-- transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
+-- transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set_" <> h)) t)
+--                                            (transTerm u)
+-- transCoalt (FlatCopPat _,u) _ = transTerm u
