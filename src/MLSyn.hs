@@ -108,7 +108,11 @@ ppDecl = either ppDataDecl ppRecordDecl
 
 ppDataDecl :: DataTyCons -> String
 ppDataDecl tc =
-  (smconcat ["type",unVariable . dataName $ tc,smconcat . fmap unVariable . dataFVars $ tc])
+  (smconcat [ "type"
+            , parens . stringmconcat " , " . fmap unVariable . dataFVars $ tc
+            , unVariable . dataName $ tc
+            ]
+  )
   <-> (vmconcat . fmap ppDataCon . dataCons $ tc)
   <> "\n"
 
@@ -117,24 +121,23 @@ ppDataCon dc =
   indent 1 ((unVariable . conName $ dc) <+> ":" <+> flip ppType 9 . conType $ dc)
 
 ppRecordDecl :: RecordTyCons -> String
-ppRecordDecl r = "data"
-             <+> pp (recordName r)
-             <+> (smconcat . fmap pp . recordFVars $ r)
-             <-> indent 1 "="
-             <+> pp (recordName r)
-             <-> indent 1 "{" <+> (stringmconcat (indent 1 ", ")
-                                   (fmap ppRecordField . recordFields $ r))
-             <> indent 1 "} deriving Show"
+ppRecordDecl r
+  =   "type"
+  <+> parens (stringmconcat " , " . fmap (("'"<>). pp) . recordFVars $ r)
+  <+> pp (recordName r)
+  <> indent 1 "="
+  <> indent 1 "{" <+> smconcat (fmap ((<>";") . ppRecordField) . recordFields $ r)
+  <>  indent 1 "}"
 
 ppRecordField :: Field -> String
 ppRecordField f = pp (fieldName f)
-  <+> "::"
-  <+> (flip ppType 9 . fieldType $ f) <> "\n"
+  <+> ":"
+  <+> (flip ppType 9 . fieldType $ f)
 
 ppType :: Type -> Int -> String
 ppType TyInt       _ = "int"
 ppType (TyArr a b) p = ppPrec 1 p (ppType a p <+> "->" <+> ppType b p)
-ppType (TyVar s)   _ = unVariable s
+ppType (TyVar s)   _ = "'" <> unVariable s
 ppType (TyCons s)  _ = unVariable s
 ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
 ppType (TyLazy a)  p = parens (ppType a p) <+> "lazy_t"
@@ -149,7 +152,7 @@ ppTerm (Force t)     i p = "force" <+> parens (ppTerm t i p)
 ppTerm (Lit n)       _ _ = show n
 ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
 ppTerm (Var s)       _ _ = unVariable s
-ppTerm (Lam s t)     i p = parens ( "\\" <> unVariable s <+> "->"
+ppTerm (Lam s t)     i p = parens ( "fun" <+> unVariable s <+> "->"
                                   <-> indent i (ppTerm t (i+1) p))
 ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> ppTerm b i p)
 ppTerm (Cons s)      _ _ = unVariable s
@@ -193,6 +196,10 @@ transType (Ty.TyApp a b) = TyApp (transType a) (transType b)
 transType (Ty.TyVar v)   = TyVar v
 transType (Ty.TyCons k)  = TyCons k
 
+typeCodom :: Type -> Type
+typeCodom (TyArr _ b) = b
+typeCodom x = error ("type" <+> ppType x 0 <+> "is not a projection")
+
 transDecl
   :: D.Decl
   -> (Term -> Term, Either DataTyCons RecordTyCons)
@@ -209,8 +216,8 @@ transDecl (Left d)  =
   , Right (RecordTyCons name
                            (Ty.negTyFVars d)
                            (fmap mkRecordField (Ty.projections d))))
-  where name = Variable "Mk" <> Ty.negTyName d
-        pname p = Variable "_" <> Ty.projName p
+  where name = Variable "mk" <> Ty.negTyName d
+        pname p = Variable "get" <> Ty.projName p
 
         numProjs = length . Ty.projections $ d
 
@@ -235,11 +242,11 @@ transDecl (Left d)  =
                                 (Cons name)
                                 (Ty.projections d))))) --App(App (Cons name) (Var "x"))))))
           . (addSetters ps (i+1))
-          where setterName = Variable "set_" <> Ty.projName p
+          where setterName = Variable "set" <> Ty.projName p
 
         mkRecordField :: Ty.Projection -> Field
         mkRecordField p = Field (pname p)
-                                   (transType . Ty.projType $ p)
+                                   (typeCodom . transType . Ty.projType $ p)
 
 transTerm :: FlatTerm -> Term
 transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
@@ -252,7 +259,7 @@ transTerm (FCons k) = Cons k
 transTerm (FCase t (p,u) d) = Case (transTerm t)
                                          [(transPat p, transTerm u)
                                          ,(PWild,transTerm d)]
-transTerm (FDest h) = Var (Variable "_" <> h)
+transTerm (FDest h) = Var (Variable "get" <> h)
 transTerm (FCoCase (q,u) d) = transCoalt (q,u) (transTerm d)
 transTerm (FFail) = Fail
 
@@ -261,6 +268,6 @@ transPat (FlatPatVar v)     = PVar v
 transPat (FlatPatCons k vs) = PCons k vs
 
 transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
-transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set_" <> h)) t)
+transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set" <> h)) t)
                                            (transTerm u)
 transCoalt (FlatCopPat _,u) _ = transTerm u

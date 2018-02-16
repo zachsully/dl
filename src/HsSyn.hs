@@ -206,7 +206,7 @@ transDecl (Right d) =
                            (fmap mkDataCon . Ty.injections $ d)))
   where mkDataCon :: Ty.Injection -> DataCon
         mkDataCon inj = DataCon (Ty.injName inj)
-                                   (typeCodom . transType . Ty.injType $ inj)
+                                   (transType . Ty.injType $ inj)
 
 transDecl (Left d)  =
   ( addSetters (Ty.projections d) 0

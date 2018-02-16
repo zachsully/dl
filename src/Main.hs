@@ -27,10 +27,12 @@ import IO
 data FlattenMode
   = FlattenMode { fmInput :: FilePath }
 
+data Strategy = CallByName | CallByValue
+
 data CompileMode
   = CompileMode
   { cmDebug  :: Bool
-  , cmML     :: Bool
+  , cmStrat  :: Strategy
   , cmInput  :: FilePath
   , cmOutput :: FilePath }
 
@@ -63,10 +65,16 @@ parseCompile = CompileMode
            <$> switch (  long "debug"
                       <> short 'D'
                       <> help "debug mode" )
-           <*> switch (  long "ocaml"
-                      <> help "compile to Ocaml." )
+           <*> argument (str >>= \s ->
+                            case s of
+                              "call-by-value" -> return CallByValue
+                              "call-by-name" -> return CallByName
+                              _ -> readerError (s <+> "is not a valid evaluation strategy.")
+                        )
+                        (   metavar "STRATEGY"
+                         <> help "specify 'call-by-value' or 'call-by-name' evaluation strategy")
            <*> inputFp
-           <*> strArgument (metavar "OUTPUT" <> help "output Haskell file")
+           <*> strArgument (metavar "OUTPUT" <> help "output source file")
 
 parseEvaluate :: Parser EvalMode
 parseEvaluate = EvalMode
@@ -132,9 +140,9 @@ runCompile cm pgm =
             ; putStrLn "\n->>R\n"
             ; pprint pgm'
             ; putStrLn "\n=>\n" }
-       ; let !prog' = (case cmML cm of
-                         True -> ML.ppProgram . translate
-                         False -> H.ppProgram . translate) $ pgm'
+       ; let !prog' = (case cmStrat cm of
+                         CallByValue -> ML.ppProgram . translate
+                         CallByName -> H.ppProgram . translate) $ pgm'
        ; case cmOutput cm of
            "-" -> putStrLn prog'
            fp  -> writeFile fp prog'
