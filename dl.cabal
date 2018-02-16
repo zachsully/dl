@@ -28,6 +28,7 @@ executable dl
                        Flatten,
                        HsSyn,
                        MLSyn,
+                       RacketSyn,
                        Translation,
                        Utils,
                        VariableSyn,
