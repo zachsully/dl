@@ -177,7 +177,7 @@ ppTerm (Lit n)       _ _ = show n
 ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
 ppTerm (Var s)       _ _ = unVariable s
 ppTerm (Lam s t)     i p = parens ( "fun" <+> allLower (unVariable s) <+> "->"
-                                  <-> indent i (ppTerm t (i+1) p))
+                                  <-> indent (i+1) (ppTerm t (i+1) p))
 ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> ppTerm b i p)
 ppTerm (Cons s)      _ _ = unVariable s
 {- only exceptions can be upper case -}
@@ -321,4 +321,7 @@ transPat (FlatPatCons k vs) = PCons k vs
 transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
 transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set" <> h)) t)
                                            (Lazy . transTerm $ u)
-transCoalt (FlatCopPat _,u) _ = transTerm u
+transCoalt (FlatCopPat p,u) t =
+  Lam (Variable "z") (Force (Case (Var (Variable "z"))
+                                  [(transPat p, Lazy . transTerm $ u)
+                                  ,(PWild,t)]))
