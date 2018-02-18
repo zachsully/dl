@@ -141,8 +141,9 @@ runCompile cm pgm =
             ; pprint pgm'
             ; putStrLn "\n=>\n" }
        ; let !prog' = (case cmStrat cm of
-                         CallByValue -> ML.ppProgram . translate
-                         CallByName -> H.ppProgram . translate) $ pgm'
+                         CallByValue -> (pp :: ML.Program -> String) . translate
+                         CallByName  -> (pp :: H.Program -> String) . translate)
+                    $ pgm'
        ; case cmOutput cm of
            "-" -> putStrLn prog'
            fp  -> writeFile fp prog'

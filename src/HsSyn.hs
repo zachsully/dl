@@ -96,11 +96,11 @@ data Pattern where
 --                              Pretty Print                                  --
 --------------------------------------------------------------------------------
 
-ppProgram :: Program -> String
-ppProgram pgm = "{-# LANGUAGE GADTs #-}\n"
-            <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
-            <-> ("\nmain = print $")
-            <-> indent 1 ((\t -> ppTerm t 1 9) . pgmTerm $ pgm)
+instance Pretty Program where
+  pp pgm = "{-# LANGUAGE GADTs #-}\n"
+         <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
+         <-> ("\nmain = print $")
+         <-> indent 1 ((\t -> ppTerm t 1 9) . pgmTerm $ pgm)
 
 ppDecl :: Either DataTyCons RecordTyCons -> String
 ppDecl = either ppDataDecl ppRecordDecl

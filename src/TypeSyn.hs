@@ -80,7 +80,7 @@ data Projection
   = Proj
   { projName :: Variable
   , projType  :: Type }
-  deriving Show
+  deriving (Eq,Show)
 
 data PositiveTyCons
   = PosTyCons

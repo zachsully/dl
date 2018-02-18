@@ -10,21 +10,19 @@ let setfst cd br =
       in lazy cdn with
     Unmatched -> lazy { getFst = Some br; getSnd = None; }
 let obsfst cd =
-  try (match (force cd).getFst with
-         None -> force bot
-       | Some br -> force br) with
-    Unmatched -> raise Unmatched;;
+  match (force cd).getFst with
+    None -> force bot
+  | Some br -> force br;;
 let setsnd cd br =
   try let cdn = { getFst = (force cd).getFst; getSnd = Some br; }
       in lazy cdn with
     Unmatched -> lazy { getFst = None; getSnd = Some br; }
 let obssnd cd =
-  try (match (force cd).getSnd with
-         None -> force bot
-       | Some br -> force br) with
-    Unmatched -> raise Unmatched;;
+  match (force cd).getSnd with
+    None -> force bot
+  | Some br -> force br;;
 
-let prog = (obssnd (setfst bot (lazy 42)));;
+let prog = (obsfst (setsnd (setfst bot (lazy 42)) (lazy 0)));;
 
 print_int prog;;
 print_newline ();;

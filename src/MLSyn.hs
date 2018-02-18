@@ -9,12 +9,12 @@ import Flatten
 import Translation
 import VariableSyn
 import Pretty
-import Utils
 
 data Program
   = Pgm
-  { pgmDecls :: [Either DataTyCons RecordTyCons]
-  , pgmTerm  :: Term }
+  { pgmTyDecls  :: [Either DataTyCons RecordTyCons]
+  , pgmFunDecls :: [FunDecl]
+  , pgmTerm     :: Term }
   deriving (Show,Eq)
 
 --------------------------------------------------------------------------------
@@ -31,6 +31,7 @@ data Type where
   TyCons :: Variable -> Type
   TyApp  :: Type -> Type -> Type
   TyLazy :: Type -> Type
+  TyOpt  :: Type -> Type
   deriving (Eq,Show)
 
 data DataTyCons
@@ -59,6 +60,14 @@ data Field
   , fieldType :: Type }
   deriving (Eq,Show)
 
+
+data FunDecl
+  = FunDecl
+  { funName :: Variable
+  , funArgs :: [Variable]
+  , funRhs  :: Term }
+  deriving (Eq,Show)
+
 --------------------------------------------------------------------------------
 --                                 Terms                                      --
 --------------------------------------------------------------------------------
@@ -67,24 +76,27 @@ used as an application. The destructor and cocase terms are not present. The
 `fix` term is actually a let. For ML we also introduct Lazy and Force. -}
 
 data Term where
-  Let   :: Variable -> Term -> Term -> Term
-  Lazy  :: Term -> Term
-  Force :: Term -> Term
-  Lit   :: Int -> Term
-  Add   :: Term -> Term -> Term
-  Var   :: Variable -> Term
-  Lam   :: Variable -> Term -> Term
-  App   :: Term -> Term -> Term
-  Cons  :: Variable -> Term
-  Case  :: Term -> [(Pattern,Term)] -> Term
-  Fail  :: Term
+  Let    :: Variable -> Term -> Term -> Term
+  Lazy   :: Term -> Term
+  Force  :: Term -> Term
+  Lit    :: Int -> Term
+  Add    :: Term -> Term -> Term
+  Var    :: Variable -> Term
+  Lam    :: Variable -> Term -> Term
+  App    :: Term -> Term -> Term
+  Cons   :: Variable -> Term
+  Case   :: Term -> [(Pattern,Term)] -> Term
+  Try    :: Term -> (Variable,Term) -> Term
+  Raise  :: Variable -> Term
+  Proj   :: Variable -> Term -> Term
+  Record :: [(Variable,Term)] -> Term
+  Fail   :: Term
   deriving (Eq,Show)
 
 {- `distributeArgs` will take a constructor and its arguments and construct a
    term applying the constructor to all of its arguments -}
 distributeArgs :: (Variable,[Term]) -> Term
 distributeArgs (k,ts) = foldl App (Cons k) ts
-
 
 {- Only need flat patterns here -}
 data Pattern where
@@ -97,20 +109,30 @@ data Pattern where
 --                              Pretty Print                                  --
 --------------------------------------------------------------------------------
 
-ppProgram :: Program -> String
-ppProgram pgm = "open Lazy\n"
-            <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
-            <-> ("\nlet prog =" <+> ((\t -> ppTerm t 2 9) . pgmTerm $ pgm) <> ";;")
-            <-> "\nprint_int prog;;\nprint_newline ();;\n"
+instance Pretty Program where
+  pp pgm = "open Lazy\n"
+         <-> (vmconcat (map ppTyDecl . pgmTyDecls $ pgm))
+         <-> "exception Unmatched"
+         <-> "let unmatched = lazy (raise Unmatched);;"
+         <-> (vmconcat . fmap pp . pgmFunDecls $ pgm)
+         <-> ("\nlet prog =" <-> indent 1 ((\t -> ppTerm t 2 9) . pgmTerm $ pgm) <> ";;")
+         <-> "\nprint_int prog;;\nprint_newline ();;\n"
 
-ppDecl :: Either DataTyCons RecordTyCons -> String
-ppDecl = either ppDataDecl ppRecordDecl
+instance Pretty FunDecl where
+  pp fd = "let"
+        <+> (unVariable . funName $ fd)
+        <+> (smconcat . fmap (allLower . unVariable) . funArgs $ fd)
+        <+> "="
+        <-> indent 1 (ppTerm (funRhs fd) 1 9) <> ";;"
+
+ppTyDecl :: Either DataTyCons RecordTyCons -> String
+ppTyDecl = either ppDataDecl ppRecordDecl
 
 ppDataDecl :: DataTyCons -> String
 ppDataDecl tc =
   (smconcat [ "type"
             , parens . stringmconcat " , " . fmap unVariable . dataFVars $ tc
-            , unVariable . dataName $ tc
+            , allLower . unVariable . dataName $ tc
             ]
   )
   <-> (vmconcat . fmap ppDataCon . dataCons $ tc)
@@ -124,10 +146,10 @@ ppRecordDecl :: RecordTyCons -> String
 ppRecordDecl r
   =   "type"
   <+> parens (stringmconcat " , " . fmap (("'"<>). pp) . recordFVars $ r)
-  <+> pp (recordName r)
+  <+> (allLower . pp . recordName $ r)
   <> indent 1 "="
   <> indent 1 "{" <+> smconcat (fmap ((<>";") . ppRecordField) . recordFields $ r)
-  <>  indent 1 "}"
+  <> indent 1 "}"
 
 ppRecordField :: Field -> String
 ppRecordField f = pp (fieldName f)
@@ -137,38 +159,47 @@ ppRecordField f = pp (fieldName f)
 ppType :: Type -> Int -> String
 ppType TyInt       _ = "int"
 ppType (TyArr a b) p = ppPrec 1 p (ppType a p <+> "->" <+> ppType b p)
-ppType (TyVar s)   _ = "'" <> unVariable s
-ppType (TyCons s)  _ = unVariable s
+ppType (TyVar s)   _ = "'" <> allLower (unVariable s)
+ppType (TyCons s)  _ = allLower (unVariable s)
 ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
 ppType (TyLazy a)  p = parens (ppType a p) <+> "lazy_t"
+ppType (TyOpt a)   p = parens (ppType a p) <+> "option"
 
 {- The Int passed in is the indentation level and precedence -}
 ppTerm :: Term -> Int -> Int -> String
-ppTerm (Let s a b)   i p = smconcat ["let",unVariable s,"=",ppTerm a i p,"in"]
+ppTerm (Let s a b)   i p = smconcat ["let",unVariable s,"="
+                                    ,ppTerm a i p,"in"]
                            <-> indent i (ppTerm b i p)
-ppTerm (Lazy t)      i p = "lazy" <+> parens (ppTerm t i p)
-ppTerm (Force t)     i p = "force" <+> parens (ppTerm t i p)
+ppTerm (Lazy t)      i p = ppPrec 10 p ("lazy" <+> parens (ppTerm t i p))
+ppTerm (Force t)     i p = ppPrec 10 p ("force" <+> parens (ppTerm t i p))
 
 ppTerm (Lit n)       _ _ = show n
 ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
 ppTerm (Var s)       _ _ = unVariable s
-ppTerm (Lam s t)     i p = parens ( "fun" <+> unVariable s <+> "->"
+ppTerm (Lam s t)     i p = parens ( "fun" <+> allLower (unVariable s) <+> "->"
                                   <-> indent i (ppTerm t (i+1) p))
 ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> ppTerm b i p)
 ppTerm (Cons s)      _ _ = unVariable s
-ppTerm Fail          _ _ = "(Error.of_string \"unmatched (co)pattern\")"
+{- only exceptions can be upper case -}
+ppTerm (Try a (v,b)) i p =
+  "try" <+> ppTerm a i p <+> "with"
+    <-> indent (i+1) (unVariable v <+> "->" <+> ppTerm b (i+1) p)
+ppTerm (Raise v)     _ _ = parens . ("raise"<+>) . unVariable $ v
+ppTerm Fail          _ _ = "unmatched"
 ppTerm (Case t alts) i p =
-  "case" <+> ppTerm t i 0 <+> "of"
-    <-> (vmconcat . map (indent i . ppAlt) $ alts)
+  "match" <+> ppTerm t i 0 <+> "with"
+    <-> indent (i+1) (stringmconcat ("\n" <> indent i "| ") . fmap ppAlt $ alts)
   where ppAlt :: (Pattern,Term) -> String
         ppAlt (pat,t') = ppPattern pat
                          <+> "->"
-                         <-> indent (i+1) (ppTerm t' (i+2) p)
-
+                         <-> indent (i+2) (ppTerm t' (i+2) p)
         ppPattern :: Pattern -> String
         ppPattern PWild = "_"
-        ppPattern (PVar s) = unVariable s
-        ppPattern (PCons s vs) = (unVariable s) <+> (smconcat . map unVariable $ vs)
+        ppPattern (PVar s) = allLower (unVariable s)
+        ppPattern (PCons s vs) = unVariable s <+> (smconcat . map unVariable $ vs)
+ppTerm (Proj v a)    i p = parens (ppTerm a i p) <> "." <> unVariable v
+ppTerm (Record fs)   i p = braces . pad . smconcat . fmap ppField $ fs
+  where ppField (v,a) = unVariable v <+> "=" <+> ppTerm a (i+1) p <> ";"
 
 --------------------------------------------------------------------------------
 --                              Translation                                   --
@@ -182,12 +213,14 @@ instance Translate Program where
 These functions must be in scope for the term. -}
 trans :: D.Program FlatTerm -> Program
 trans dpgm =
-  let (f,decls') = foldr (\d (f,ds) ->
-                           let (df,d') = transDecl d
-                           in  (df . f, d':ds) )
-                         (id,[])
+  let (decls',fds) = foldr (\d (ds,fds') ->
+                           let (d',fds'') = transDecl d
+                           in  (d':ds,fds'++fds'') )
+                         ([],[])
                          (D.pgmDecls dpgm)
-  in Pgm decls' ( f . transTerm . D.pgmTerm $ dpgm )
+  in Pgm { pgmTyDecls = decls'
+         , pgmFunDecls = fds
+         , pgmTerm = transTerm . D.pgmTerm $ dpgm }
 
 transType :: Ty.Type -> Type
 transType Ty.TyInt       = TyInt
@@ -202,51 +235,69 @@ typeCodom x = error ("type" <+> ppType x 0 <+> "is not a projection")
 
 transDecl
   :: D.Decl
-  -> (Term -> Term, Either DataTyCons RecordTyCons)
+  -> (Either DataTyCons RecordTyCons,[FunDecl])
 transDecl (Right d) =
-  (id, Left (DataTyCons (Ty.posTyName d)
-                           (Ty.posTyFVars d)
-                           (fmap mkDataCon . Ty.injections $ d)))
+  (Left (DataTyCons (Ty.posTyName $ d)
+          (Ty.posTyFVars d)
+          (fmap mkDataCon . Ty.injections $ d)), [])
   where mkDataCon :: Ty.Injection -> DataCon
         mkDataCon inj = DataCon (Ty.injName inj)
-                                   (transType . Ty.injType $ inj)
+                                (transType . Ty.injType $ inj)
 
 transDecl (Left d)  =
-  ( addSetters (Ty.projections d) 0
-  , Right (RecordTyCons name
-                           (Ty.negTyFVars d)
-                           (fmap mkRecordField (Ty.projections d))))
-  where name = Variable "mk" <> Ty.negTyName d
+  (Right (RecordTyCons name
+           (Ty.negTyFVars d)
+           (fmap mkRecordField (Ty.projections d)))
+  , addSetAndObs (Ty.projections d))
+  where name = Ty.negTyName $ d
         pname p = Variable "get" <> Ty.projName p
 
-        numProjs = length . Ty.projections $ d
+        addSetAndObs :: [Ty.Projection] -> [FunDecl]
+        addSetAndObs [] = []
+        addSetAndObs (p:ps) =  [ mkSetter p, mkObserver p ]
+                               <> addSetAndObs ps
 
-        -- an association between projections and their index
-        pIndexAssoc :: [(Int,Ty.Projection)]
-        pIndexAssoc = foldrWithIndex (\i p a -> (i,p):a) [] (Ty.projections d)
-
-        addSetters :: [Ty.Projection] -> Int -> (Term -> Term)
-        addSetters [] _ = id
-        addSetters (p:ps) i =
-          (Let
-            setterName
-            (Lam (Variable "d")
-              (Lam (Variable "x")
-                (foldlWithIndex (\j c p ->
-                                  let t = case i == j of
-                                            True  -> Var (Variable "x")
-                                            False -> App (Var (pname p))
-                                                            (Var (Variable "d"))
-                                  in App c t
-                                )
-                                (Cons name)
-                                (Ty.projections d))))) --App(App (Cons name) (Var "x"))))))
-          . (addSetters ps (i+1))
-          where setterName = Variable "set" <> Ty.projName p
+        mkSetter,mkObserver :: Ty.Projection -> FunDecl
+        mkSetter p = FunDecl
+          { funName = Variable "set" <> Ty.projName p
+          , funArgs = [Variable "cd", Variable "br"]
+          , funRhs  =
+              Try
+                (Let (Variable "cdn")
+                    ( Record
+                    . fmap (\p' ->
+                            ( Variable "get" <> Ty.projName p'
+                            , case p == p' of
+                                True -> App (Cons (Variable "Some"))
+                                            (Var (Variable "br"))
+                                False -> Proj (Variable "get" <> Ty.projName p')
+                                              (Force (Var (Variable "cd")))))
+                    . Ty.projections
+                    $ d )
+                    (Lazy (Var (Variable "cdn"))))
+                (Variable "Unmatched",(Lazy ( Record
+                                            . fmap (\p' ->
+                                                      ( Variable "get" <> Ty.projName p'
+                                                      , case p == p' of
+                                                          True -> App (Cons (Variable "Some"))
+                                                                      (Var (Variable "br"))
+                                                          False -> Cons (Variable "None")))
+                                            . Ty.projections
+                                            $ d )))
+          }
+        mkObserver p = FunDecl
+          { funName = Variable "obs" <> Ty.projName p
+          , funArgs = [Variable "cd"]
+          , funRhs  =
+              Case (Proj (Variable "get" <> Ty.projName p)
+                     (Force (Var (Variable "cd"))))
+                   [(PCons (Variable "None") [], Force (Var (Variable "unmatched")))
+                   ,(PCons (Variable "Some") [Variable "br"],Force (Var (Variable "br")))] }
 
         mkRecordField :: Ty.Projection -> Field
         mkRecordField p = Field (pname p)
-                                   (typeCodom . transType . Ty.projType $ p)
+                                ( TyOpt . TyLazy . typeCodom . transType
+                                . Ty.projType $ p)
 
 transTerm :: FlatTerm -> Term
 transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
@@ -259,7 +310,7 @@ transTerm (FCons k) = Cons k
 transTerm (FCase t (p,u) d) = Case (transTerm t)
                                          [(transPat p, transTerm u)
                                          ,(PWild,transTerm d)]
-transTerm (FDest h) = Var (Variable "get" <> h)
+transTerm (FDest h) = Var (Variable "obs" <> h)
 transTerm (FCoCase (q,u) d) = transCoalt (q,u) (transTerm d)
 transTerm (FFail) = Fail
 
@@ -269,5 +320,5 @@ transPat (FlatPatCons k vs) = PCons k vs
 
 transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
 transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set" <> h)) t)
-                                           (transTerm u)
+                                           (Lazy . transTerm $ u)
 transCoalt (FlatCopPat _,u) _ = transTerm u

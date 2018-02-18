@@ -1,6 +1,7 @@
 module Pretty where
 
 import Data.Monoid
+import Data.Char (toLower)
 
 --------------------------------------------------------------------------------
 --                                  Pretty                                    --
@@ -51,3 +52,12 @@ parens s = "(" <> s <> ")"
 
 brackets :: String -> String
 brackets s = "[" <> s <> "]"
+
+braces :: String -> String
+braces s = "{" <> s <> "}"
+
+pad :: String -> String
+pad s = " " <> s <> " "
+
+allLower :: String -> String
+allLower = fmap toLower
