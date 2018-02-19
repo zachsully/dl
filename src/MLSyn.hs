@@ -9,6 +9,7 @@ import Flatten
 import Translation
 import VariableSyn
 import Pretty
+import Utils
 
 data Program
   = Pgm
@@ -32,6 +33,7 @@ data Type where
   TyApp  :: Type -> Type -> Type
   TyLazy :: Type -> Type
   TyOpt  :: Type -> Type
+  TyPair :: Type -> Type -> Type
   deriving (Eq,Show)
 
 data DataTyCons
@@ -59,7 +61,6 @@ data Field
   { fieldName :: Variable
   , fieldType :: Type }
   deriving (Eq,Show)
-
 
 data FunDecl
   = FunDecl
@@ -90,6 +91,7 @@ data Term where
   Raise  :: Variable -> Term
   Proj   :: Variable -> Term -> Term
   Record :: [(Variable,Term)] -> Term
+  Pair   :: Term -> Term -> Term
   Fail   :: Term
   deriving (Eq,Show)
 
@@ -131,16 +133,18 @@ ppTyDecl = either ppDataDecl ppRecordDecl
 ppDataDecl :: DataTyCons -> String
 ppDataDecl tc =
   (smconcat [ "type"
-            , parens . stringmconcat " , " . fmap unVariable . dataFVars $ tc
+            , parens . stringmconcat " , " . fmap (("'"<>) . unVariable)
+              . dataFVars $ tc
             , allLower . unVariable . dataName $ tc
             ]
   )
-  <-> (vmconcat . fmap ppDataCon . dataCons $ tc)
+  <+> "="
+  <+> (stringmconcat " | " . fmap ppDataCon . dataCons $ tc)
   <> "\n"
 
 ppDataCon :: DataCon -> String
 ppDataCon dc =
-  indent 1 ((unVariable . conName $ dc) <+> ":" <+> flip ppType 9 . conType $ dc)
+  indent 1 ((unVariable . conName $ dc) <+> "of" <+> pp . conType $ dc)
 
 ppRecordDecl :: RecordTyCons -> String
 ppRecordDecl r
@@ -154,16 +158,17 @@ ppRecordDecl r
 ppRecordField :: Field -> String
 ppRecordField f = pp (fieldName f)
   <+> ":"
-  <+> (flip ppType 9 . fieldType $ f)
+  <+> (pp . fieldType $ f)
 
-ppType :: Type -> Int -> String
-ppType TyInt       _ = "int"
-ppType (TyArr a b) p = ppPrec 1 p (ppType a p <+> "->" <+> ppType b p)
-ppType (TyVar s)   _ = "'" <> allLower (unVariable s)
-ppType (TyCons s)  _ = allLower (unVariable s)
-ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
-ppType (TyLazy a)  p = parens (ppType a p) <+> "lazy_t"
-ppType (TyOpt a)   p = parens (ppType a p) <+> "option"
+instance Pretty Type where
+  pp TyInt        = "int"
+  pp (TyArr a b)  = pp a <+> "->" <+> pp b
+  pp (TyVar s)    = "'" <> allLower (unVariable s)
+  pp (TyCons s)   = allLower (unVariable s)
+  pp (TyApp a b)  = pp b <+> pp a
+  pp (TyLazy a)   = pp a <+> "lazy_t"
+  pp (TyOpt a)    = pp a <+> "option"
+  pp (TyPair a b) = parens (pp a <+> "*" <+> pp b)
 
 {- The Int passed in is the indentation level and precedence -}
 ppTerm :: Term -> Int -> Int -> String
@@ -196,10 +201,15 @@ ppTerm (Case t alts) i p =
         ppPattern :: Pattern -> String
         ppPattern PWild = "_"
         ppPattern (PVar s) = allLower (unVariable s)
-        ppPattern (PCons s vs) = unVariable s <+> (smconcat . map unVariable $ vs)
+        ppPattern (PCons s vs) =
+          case fmap unVariable vs of
+            [] -> unVariable s
+            (v':vs') -> unVariable s
+              <+> (foldl (\acc v'' -> "(" <> acc <+> "," <+> v'' <> ")") v' vs')
 ppTerm (Proj v a)    i p = parens (ppTerm a i p) <> "." <> unVariable v
 ppTerm (Record fs)   i p = braces . pad . smconcat . fmap ppField $ fs
   where ppField (v,a) = unVariable v <+> "=" <+> ppTerm a (i+1) p <> ";"
+ppTerm (Pair a b)    i p = parens (ppTerm a i p <+> "," <+> ppTerm b i p)
 
 --------------------------------------------------------------------------------
 --                              Translation                                   --
@@ -229,9 +239,9 @@ transType (Ty.TyApp a b) = TyApp (transType a) (transType b)
 transType (Ty.TyVar v)   = TyVar v
 transType (Ty.TyCons k)  = TyCons k
 
-typeCodom :: Type -> Type
-typeCodom (TyArr _ b) = b
-typeCodom x = error ("type" <+> ppType x 0 <+> "is not a projection")
+typeDom :: Type -> Type
+typeDom (TyArr _ b) = b
+typeDom x = error ("type" <+> pp x <+> "is not a projection")
 
 transDecl
   :: D.Decl
@@ -239,10 +249,38 @@ transDecl
 transDecl (Right d) =
   (Left (DataTyCons (Ty.posTyName $ d)
           (Ty.posTyFVars d)
-          (fmap mkDataCon . Ty.injections $ d)), [])
+          (fmap mkDataCon . Ty.injections $ d)), fmap wrapFun . Ty.injections $ d)
   where mkDataCon :: Ty.Injection -> DataCon
         mkDataCon inj = DataCon (Ty.injName inj)
-                                (transType . Ty.injType $ inj)
+                                (  curryArgs
+                                 . transType
+                                 . Ty.injType
+                                 $ inj )
+
+        curryArgs :: Type -> Type
+        curryArgs (TyArr a b) =
+          case b of
+            TyArr b' c' ->
+              case curryArgs (TyArr b' c') of
+                TyPair b'' c'' -> TyPair (TyPair a b'') c''
+                _ -> TyPair a b'
+            _ -> a
+        curryArgs x = x
+
+        wrapFun :: Ty.Injection -> FunDecl
+        wrapFun i = FunDecl
+          { funName = Variable "wrap" <> Ty.injName i
+          , funArgs = foldrWithIndex (\j s acc -> acc <> [Variable (s <> show j)])
+                                     []
+                                     (replicate (arity . Ty.injType $ i) "x")
+          , funRhs  =
+              case replicate (arity . Ty.injType $ i) "x" of
+                [] -> (Var (Ty.injName i))
+                (x:xs) -> App (Var (Ty.injName i)) $
+                  foldrWithIndex (\j s acc -> Pair acc (Var (Variable (s <> show (j+1)))))
+                                 (Var (Variable (x <> "0")))
+                                 xs
+          }
 
 transDecl (Left d)  =
   (Right (RecordTyCons name
@@ -296,7 +334,7 @@ transDecl (Left d)  =
 
         mkRecordField :: Ty.Projection -> Field
         mkRecordField p = Field (pname p)
-                                ( TyOpt . TyLazy . typeCodom . transType
+                                ( TyOpt . TyLazy . typeDom . transType
                                 . Ty.projType $ p)
 
 transTerm :: FlatTerm -> Term
@@ -306,10 +344,10 @@ transTerm (FAdd a b) = Add (transTerm a) (transTerm b)
 transTerm (FVar v) = Var v
 transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
 transTerm (FApp a b) = App (transTerm a) (transTerm b)
-transTerm (FCons k) = Cons k
+transTerm (FCons k) = Cons (Variable "wrap" <> k)
 transTerm (FCase t (p,u) d) = Case (transTerm t)
                                          [(transPat p, transTerm u)
-                                         ,(PWild,transTerm d)]
+                                         ,(PWild,Force (transTerm d))]
 transTerm (FDest h) = Var (Variable "obs" <> h)
 transTerm (FCoCase (q,u) d) = transCoalt (q,u) (transTerm d)
 transTerm (FFail) = Fail
@@ -319,7 +357,7 @@ transPat (FlatPatVar v)     = PVar v
 transPat (FlatPatCons k vs) = PCons k vs
 
 transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
-transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set" <> h)) t)
+transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set" <> h)) (Lazy t))
                                            (Lazy . transTerm $ u)
 transCoalt (FlatCopPat p,u) t =
   Lam (Variable "z") (Force (Case (Var (Variable "z"))

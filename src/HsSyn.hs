@@ -143,10 +143,7 @@ ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
 
 {- The Int passed in is the indentation level and precedence -}
 ppTerm :: Term -> Int -> Int -> String
-ppTerm (Let s a b)   i p = (smconcat ["let",pp s,"="])
-                           <+> (ppTerm a (i+1) p)
-                           <-> (indent i "in")
-                           <+> (ppTerm b (i+1) p)
+ppTerm (Let s a b)   i p = (smconcat ["let",pp s,"=",ppTerm a (i+1) p,"in"]) <+> (ppTerm b (i+1) p)
 ppTerm (Lit n)       _ _ = show n
 ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
 ppTerm (Var s)       _ _ = pp s
