@@ -114,8 +114,8 @@ data Pattern where
 instance Pretty Program where
   pp pgm = "open Lazy\n"
          <-> (vmconcat (map ppTyDecl . pgmTyDecls $ pgm))
-         <-> "exception Unmatched"
-         <-> "let unmatched = lazy (raise Unmatched);;"
+         <-> "exception UnmatchedCopattern"
+         <-> "let unmatched = None;;"
          <-> (vmconcat . fmap pp . pgmFunDecls $ pgm)
          <-> ("\nlet prog =" <-> indent 1 ((\t -> ppTerm t 2 9) . pgmTerm $ pgm) <> ";;")
          <-> "\nprint_int prog;;\nprint_newline ();;\n"
@@ -172,7 +172,7 @@ instance Pretty Type where
 
 {- The Int passed in is the indentation level and precedence -}
 ppTerm :: Term -> Int -> Int -> String
-ppTerm (Let s a b)   i p = smconcat ["let",unVariable s,"="
+ppTerm (Let s a b)   i p = smconcat ["let rec",unVariable s,"="
                                     ,ppTerm a i p,"in"]
                            <-> indent i (ppTerm b i p)
 ppTerm (Lazy t)      i p = ppPrec 10 p ("lazy" <+> parens (ppTerm t i p))
@@ -183,7 +183,7 @@ ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
 ppTerm (Var s)       _ _ = unVariable s
 ppTerm (Lam s t)     i p = parens ( "fun" <+> allLower (unVariable s) <+> "->"
                                   <-> indent (i+1) (ppTerm t (i+1) p))
-ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> ppTerm b i p)
+ppTerm (App a b)     i p = parens (ppTerm a i 9 <+> parens (ppTerm b i p))
 ppTerm (Cons s)      _ _ = unVariable s
 {- only exceptions can be upper case -}
 ppTerm (Try a (v,b)) i p =
@@ -289,6 +289,8 @@ transDecl (Left d)  =
   , addSetAndObs (Ty.projections d))
   where name = Ty.negTyName $ d
         pname p = Variable "get" <> Ty.projName p
+        _some x = App (Cons (Variable "Some")) x
+        _none = (Cons (Variable "None"))
 
         addSetAndObs :: [Ty.Projection] -> [FunDecl]
         addSetAndObs [] = []
@@ -298,39 +300,50 @@ transDecl (Left d)  =
         mkSetter,mkObserver :: Ty.Projection -> FunDecl
         mkSetter p = FunDecl
           { funName = Variable "set" <> Ty.projName p
-          , funArgs = [Variable "cd", Variable "br"]
+          , funArgs = [Variable "ocd", Variable "br"]
           , funRhs  =
-              Try
-                (Let (Variable "cdn")
-                    ( Record
-                    . fmap (\p' ->
-                            ( Variable "get" <> Ty.projName p'
-                            , case p == p' of
-                                True -> App (Cons (Variable "Some"))
-                                            (Var (Variable "br"))
-                                False -> Proj (Variable "get" <> Ty.projName p')
-                                              (Force (Var (Variable "cd")))))
-                    . Ty.projections
-                    $ d )
-                    (Lazy (Var (Variable "cdn"))))
-                (Variable "Unmatched",(Lazy ( Record
-                                            . fmap (\p' ->
-                                                      ( Variable "get" <> Ty.projName p'
-                                                      , case p == p' of
-                                                          True -> App (Cons (Variable "Some"))
-                                                                      (Var (Variable "br"))
-                                                          False -> Cons (Variable "None")))
-                                            . Ty.projections
-                                            $ d )))
+              Case (Var (Variable "ocd"))
+                   [ ( PCons (Variable "None") []
+                     , _some $
+                       ( Record
+                       . fmap (\p' ->
+                                  ( Variable "get" <> Ty.projName p'
+                                  , case p == p' of
+                                      True -> _some (Var (Variable "br"))
+                                      False -> _none))
+                       . Ty.projections
+                       $ d )
+                     )
+                   , ( PCons (Variable "Some") [Variable "cd"]
+                     , _some $
+                       ( Record
+                       . fmap (\p' ->
+                                  ( Variable "get" <> Ty.projName p'
+                                  , case p == p' of
+                                      True -> _some (Var (Variable "br"))
+                                      False -> Proj (Variable "get" <> Ty.projName p')
+                                                    (Var (Variable "cd"))))
+                       . Ty.projections
+                       $ d )
+                    )
+                   ]
           }
         mkObserver p = FunDecl
           { funName = Variable "obs" <> Ty.projName p
-          , funArgs = [Variable "cd"]
+          , funArgs = [Variable "ocd"]
           , funRhs  =
-              Case (Proj (Variable "get" <> Ty.projName p)
-                     (Force (Var (Variable "cd"))))
-                   [(PCons (Variable "None") [], Force (Var (Variable "unmatched")))
-                   ,(PCons (Variable "Some") [Variable "br"],Force (Var (Variable "br")))] }
+              Case (Var (Variable "ocd"))
+                   [ ( PCons (Variable "None") [], Raise (Variable "UnmatchedCopattern"))
+                   , ( PCons (Variable "Some") [Variable "cd"]
+                     , Case  (Proj (Variable "get" <> Ty.projName p)
+                                   (Var (Variable "cd")))
+                            [ ( PCons (Variable "None") [], Raise (Variable "UnmatchedCopattern"))
+                            , ( PCons (Variable "Some") [Variable "br"]
+                              , Force (Var (Variable "br")))
+                            ]
+                     )
+                   ]
+          }
 
         mkRecordField :: Ty.Projection -> Field
         mkRecordField p = Field (pname p)
@@ -357,8 +370,8 @@ transPat (FlatPatVar v)     = PVar v
 transPat (FlatPatCons k vs) = PCons k vs
 
 transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
-transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set" <> h)) (Lazy t))
-                                           (Lazy . transTerm $ u)
+transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set" <> h)) t)
+                                     (Lazy . transTerm $ u)
 transCoalt (FlatCopPat p,u) t =
   Lam (Variable "z") (Force (Case (Var (Variable "z"))
                                   [(transPat p, Lazy . transTerm $ u)

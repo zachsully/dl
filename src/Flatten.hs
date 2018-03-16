@@ -172,3 +172,29 @@ flatten' (CoCase ((q,u):coalts)) =              -- R-Rec
     x -> error $ "TODO flatten'{" <> show x <> "}"
 
 flatten' (CoCase []) = return FFail -- R-Empty
+
+--------------------
+-- Unsubstituting --
+--------------------
+
+fromFlatCop :: FlatCopattern -> CoPattern
+fromFlatCop (FlatCopDest v) = QDest v QHead
+fromFlatCop (FlatCopPat p) = QPat QHead (fromFlatPat p)
+
+fromFlatPat :: FlatPattern -> Pattern
+fromFlatPat (FlatPatVar v) = PVar v
+fromFlatPat (FlatPatCons c vs) = PCons c (fmap PVar vs)
+
+substCop :: FlatCopattern -> CoPattern -> CoPattern
+substCop fq QHead = fromFlatCop fq
+substCop fq (QDest h q) = QDest h (substCop fq q)
+substCop fq (QPat q p) = QPat (substCop fq q) p
+
+unsubstCop :: CoPattern -> Maybe (CoPattern,CoPattern)
+unsubstCop QHead       = Nothing
+unsubstCop (QDest h q) = case unsubstCop q of
+                           Nothing -> Just (QDest h QHead, QHead)
+                           Just (s,q') -> Just (s, QDest h q')
+unsubstCop (QPat q p)  = case unsubstCop q of
+                            Nothing -> Just (QPat QHead p, QHead)
+                            Just (s,q') -> Just (s, QPat q' p)
