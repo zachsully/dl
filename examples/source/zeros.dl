@@ -4,4 +4,4 @@ codata Stream a
 
 Head (Tail (Tail (fix x in
     	           (cocase { Head # -> 0
-    	                   , Tail # -> Head x }))))
+    	                   , Tail # -> x }))))

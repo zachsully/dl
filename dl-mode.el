@@ -11,13 +11,14 @@
   ;;   variables
   ;; use type-face for negative syntax and constant-face for negative variables
   (setq font-lock-defaults
-  	'((("codata\s" . font-lock-warning-face)
-	   ("cocase\s" . font-lock-variable-name-face)
-	   ("data\s"   . font-lock-constant-face)
-	   ("case\s"   . font-lock-type-face)
+  	'((("codata\s"              . font-lock-warning-face)
+	   ("cocase\s"              . font-lock-variable-name-face)
+	   ("data\s"                . font-lock-constant-face)
+	   ("case\s"                . font-lock-type-face)
+           ("\(fix\|in\|let\)\s"    . font-lock-string-face)
 	   )))
-  (set-syntax-table dual-lang-mode-syntax-table)
-  (setq set-input-method "TeX")
+  ;; (set-syntax-table dual-lang-mode-syntax-table)
+  (setq set-input-method "delimiters")
   (setq mode-name "dl-mode"))
 
 ;; Loading

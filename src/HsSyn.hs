@@ -9,12 +9,12 @@ import Flatten
 import Translation
 import VariableSyn
 import Pretty
-import Utils
 
 data Program
   = Pgm
-  { pgmDecls :: [Either DataTyCons RecordTyCons]
-  , pgmTerm  :: Term }
+  { pgmTyDecls  :: [Either DataTyCons RecordTyCons]
+  , pgmFunDecls :: [FunDecl]
+  , pgmTerm     :: Term }
   deriving (Show,Eq)
 
 --------------------------------------------------------------------------------
@@ -59,6 +59,13 @@ data Field
   , fieldType :: Type }
   deriving (Eq,Show)
 
+data FunDecl
+  = FunDecl
+  { funName :: Variable
+  , funArgs :: [Variable]
+  , funRhs  :: Term }
+  deriving (Eq,Show)
+
 --------------------------------------------------------------------------------
 --                                 Terms                                      --
 --------------------------------------------------------------------------------
@@ -97,13 +104,19 @@ data Pattern where
 --------------------------------------------------------------------------------
 
 instance Pretty Program where
-  pp pgm = "{-# LANGUAGE GADTs #-}\n"
-         <-> (vmconcat (map ppDecl . pgmDecls $ pgm))
-         <-> ("\nmain = print $")
-         <-> indent 1 ((\t -> ppTerm t 1 9) . pgmTerm $ pgm)
+  pp pgm =   "{-# LANGUAGE GADTs #-}"
+         <-> "module Main where"
+         <-> ""
+         <-> (vmconcat . fmap ppTyDecl . pgmTyDecls $ pgm)
+         <-> ""
+         <-> (vmconcat . fmap pp . pgmFunDecls $ pgm)
+         <-> ""
+         <-> "prog =" <-> indent 1 ((\t -> ppTerm t 1 9) . pgmTerm $ pgm)
+         <-> ""
+         <-> "main :: IO ()\nmain = print prog"
 
-ppDecl :: Either DataTyCons RecordTyCons -> String
-ppDecl = either ppDataDecl ppRecordDecl
+ppTyDecl :: Either DataTyCons RecordTyCons -> String
+ppTyDecl = either ppDataDecl ppRecordDecl
 
 ppDataDecl :: DataTyCons -> String
 ppDataDecl d = "data"
@@ -134,6 +147,13 @@ ppRecordField f = pp (fieldName f)
   <+> "::"
   <+> (flip ppType 9 . fieldType $ f) <> "\n"
 
+
+instance Pretty FunDecl where
+  pp fd =   (unVariable . funName $ fd)
+        <+> (smconcat . fmap (allLower . unVariable) . funArgs $ fd)
+        <+> "="
+        <-> indent 1 (ppTerm (funRhs fd) 1 9)
+
 ppType :: Type -> Int -> String
 ppType TyInt       _ = "Int"
 ppType (TyArr a b) p = ppPrec 1 p (ppType a p <+> "->" <+> ppType b p)
@@ -143,12 +163,12 @@ ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
 
 {- The Int passed in is the indentation level and precedence -}
 ppTerm :: Term -> Int -> Int -> String
-ppTerm (Let s a b)   i p = (smconcat ["let",pp s,"=",ppTerm a (i+1) p,"in"]) <+> (ppTerm b (i+1) p)
+ppTerm (Let s a b)   i p = (smconcat ["let",pp s,"=",ppTerm a (i+1) p])
+                           <-> indent i "in" <+> (ppTerm b (i+1) p)
 ppTerm (Lit n)       _ _ = show n
 ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
 ppTerm (Var s)       _ _ = pp s
-ppTerm (Lam s t)     i p = parens ( "\\" <> pp s <+> "->"
-                                  <-> indent (i+2) (ppTerm t (i+3) p))
+ppTerm (Lam s t)     i p = parens ( "\\" <> pp s <+> "->" <+> (ppTerm t (i+3) p))
 ppTerm (App a b)     i p = ppTerm a i 9 <+> (parens (ppTerm b i p))
 ppTerm (Cons s)      _ _ = pp s
 ppTerm (Case t alts) i p =
@@ -176,12 +196,12 @@ instance Translate Program where
 These functions must be in scope for the term. -}
 trans :: D.Program FlatTerm -> Program
 trans dpgm =
-  let (f,decls') = foldr (\d (f,ds) ->
-                           let (df,d') = transDecl d
-                           in  (df . f, d':ds) )
-                         (id,[])
-                         (D.pgmDecls dpgm)
-  in Pgm decls' ( f . transTerm . D.pgmTerm $ dpgm )
+  let (decls',fds) = foldr (\d (ds,fs) ->
+                              let (d',fs') = transDecl d
+                              in  (d':ds,fs'<>fs))
+                           ([],[])
+                           (D.pgmDecls dpgm)
+  in Pgm decls' fds (transTerm . D.pgmTerm $ dpgm)
 
 transType :: Ty.Type -> Type
 transType Ty.TyInt       = TyInt
@@ -196,47 +216,40 @@ typeCodom x = error ("type" <+> ppType x 0 <+> "is not a projection")
 
 transDecl
   :: D.Decl
-  -> (Term -> Term, Either DataTyCons RecordTyCons)
+  -> (Either DataTyCons RecordTyCons,[FunDecl])
 transDecl (Right d) =
-  (id, Left (DataTyCons (Ty.posTyName d)
-                           (Ty.posTyFVars d)
-                           (fmap mkDataCon . Ty.injections $ d)))
+  (Left (DataTyCons
+          (Ty.posTyName d)
+          (Ty.posTyFVars d)
+          (fmap mkDataCon . Ty.injections $ d))
+  , [] )
   where mkDataCon :: Ty.Injection -> DataCon
         mkDataCon inj = DataCon (Ty.injName inj)
                                    (transType . Ty.injType $ inj)
 
 transDecl (Left d)  =
-  ( addSetters (Ty.projections d) 0
-  , Right (RecordTyCons name
-                           (Ty.negTyFVars d)
-                           (fmap mkRecordField (Ty.projections d))))
-  where name = Variable "Mk" <> Ty.negTyName d
+  ( Right (RecordTyCons
+           name
+           (Ty.negTyFVars d)
+           (fmap mkRecordField (Ty.projections d)))
+  , fmap setter . Ty.projections $ d )
+  where name = Ty.negTyName d
         pname p = Variable "_" <> Ty.projName p
 
-        numProjs = length . Ty.projections $ d
-
-        -- an association between projections and their index
-        pIndexAssoc :: [(Int,Ty.Projection)]
-        pIndexAssoc = foldrWithIndex (\i p a -> (i,p):a) [] (Ty.projections d)
-
-        addSetters :: [Ty.Projection] -> Int -> (Term -> Term)
-        addSetters [] _ = id
-        addSetters (p:ps) i =
-          (Let
-            setterName
-            (Lam (Variable "d")
-              (Lam (Variable "x")
-                (foldlWithIndex (\j c p ->
-                                  let t = case i == j of
-                                            True  -> Var (Variable "x")
-                                            False -> App (Var (pname p))
-                                                            (Var (Variable "d"))
-                                  in App c t
-                                )
-                                (Cons name)
-                                (Ty.projections d))))) --App(App (Cons name) (Var "x"))))))
-          . (addSetters ps (i+1))
-          where setterName = Variable "set_" <> Ty.projName p
+        setter :: Ty.Projection -> FunDecl
+        setter p = FunDecl
+          { funName = Variable "set_" <> Ty.projName p
+          , funArgs = [Variable "cd", Variable "br"]
+          , funRhs  =
+              foldl (\c p' ->
+                        let t = case p == p' of
+                                  True  -> Var (Variable "br")
+                                  False -> App (Var (pname p')) (Var (Variable "cd"))
+                        in App c t
+                    )
+                    (Cons name)
+                    (Ty.projections d)
+          }
 
         mkRecordField :: Ty.Projection -> Field
         mkRecordField p = Field (pname p)
