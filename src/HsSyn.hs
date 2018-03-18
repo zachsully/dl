@@ -107,6 +107,8 @@ instance Pretty Program where
   pp pgm =   "{-# LANGUAGE GADTs #-}"
          <-> "module Main where"
          <-> ""
+         <-> "import Prelude (Show, IO, error, print, (+))"
+         <-> ""
          <-> (vmconcat . fmap ppTyDecl . pgmTyDecls $ pgm)
          <-> ""
          <-> (vmconcat . fmap pp . pgmFunDecls $ pgm)
@@ -265,9 +267,9 @@ transTerm (FVar v) = Var v
 transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
 transTerm (FApp a b) = App (transTerm a) (transTerm b)
 transTerm (FCons k) = Cons k
-transTerm (FCase t (p,u) d) = Case (transTerm t)
+transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)
                                          [(transPat p, transTerm u)
-                                         ,(PWild,transTerm d)]
+                                         ,(PVar y,transTerm d)]
 transTerm (FDest h) = Var (Variable "_" <> h)
 transTerm (FCoCase (q,u) d) = transCoalt (q,u) (transTerm d)
 transTerm (FFail) = Fail
@@ -279,4 +281,6 @@ transPat (FlatPatCons k vs) = PCons k vs
 transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
 transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set_" <> h)) t)
                                            (transTerm u)
-transCoalt (FlatCopPat _,u) _ = transTerm u
+transCoalt (FlatCopPat p,u) _ =
+  case p of
+    FlatPatVar v -> Lam v (transTerm u)

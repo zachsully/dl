@@ -8,4 +8,4 @@ in let fib = (fix x in
                       (cocase { Head # -> 1
     	                      , Head [Tail #] -> 1
                               , Tail [Tail #] -> zipwith ({# x y -> x + y}) x (Tail x) }))
-   in Head (Tail (Tail fib))
+   in Head (Tail (Tail (Tail (Tail fib))))

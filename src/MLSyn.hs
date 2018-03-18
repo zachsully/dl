@@ -358,9 +358,9 @@ transTerm (FVar v) = Var v
 transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
 transTerm (FApp a b) = App (transTerm a) (transTerm b)
 transTerm (FCons k) = Cons (Variable "wrap" <> k)
-transTerm (FCase t (p,u) d) = Case (transTerm t)
+transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)
                                          [(transPat p, transTerm u)
-                                         ,(PWild,Force (transTerm d))]
+                                         ,(PVar y,transTerm d)]
 transTerm (FDest h) = Var (Variable "obs" <> h)
 transTerm (FCoCase (q,u) d) = transCoalt (q,u) (transTerm d)
 transTerm (FFail) = Fail
@@ -372,7 +372,7 @@ transPat (FlatPatCons k vs) = PCons k vs
 transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
 transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set" <> h)) t)
                                      (Lazy . transTerm $ u)
-transCoalt (FlatCopPat p,u) t =
-  Lam (Variable "z") (Force (Case (Var (Variable "z"))
-                                  [(transPat p, Lazy . transTerm $ u)
-                                  ,(PWild,t)]))
+transCoalt (FlatCopPat p,u) _ =
+  case p of
+    FlatPatVar v ->
+      Lam v (transTerm u)

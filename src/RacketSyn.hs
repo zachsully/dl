@@ -256,7 +256,7 @@ transTerm (FVar v) = Var v
 transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
 transTerm (FApp a b) = App (transTerm a) (transTerm b)
 transTerm (FCons k) = Cons k
-transTerm (FCase t (p,u) d) = Case (transTerm t)
+transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)
                                          [(transPat p, transTerm u)
                                          ,(PWild,transTerm d)]
 transTerm (FDest h) = Var (Variable "get" <> h)

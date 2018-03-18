@@ -2,6 +2,7 @@
 module Flatten where
 
 import Control.Monad.State
+import Data.Foldable (foldrM)
 import Data.Monoid ((<>))
 
 import DualSyn
@@ -30,7 +31,7 @@ data FlatTerm where
 
   FCase :: FlatTerm               -- ^ Interrogated term
         -> (FlatPattern,FlatTerm) -- ^ Alternative
-        -> FlatTerm               -- ^ Default case
+        -> (Variable,FlatTerm)    -- ^ Default case
         -> FlatTerm
 
   FDest :: Variable -> FlatTerm
@@ -53,10 +54,10 @@ instance Pretty FlatTerm where
                          <-> indent i ("in" <+> ppInd (i+1) b)
   ppInd i (FApp a b)       = (parens . ppInd i $ a) <+> (parens . ppInd i $ b)
   ppInd _ (FCons k)        = pp k
-  ppInd i (FCase t (p,u) d) = ("case" <+> ppInd i t)
+  ppInd i (FCase t (p,u) (y,d)) = ("case" <+> ppInd i t)
                           <-> (indent (i+1) "{" <+> pp p <+> "->"
                                <+> (ppInd (i+2) u))
-                          <-> (indent (i+1) "|" <+> "_ ->"
+                          <-> (indent (i+1) "|" <+> pp y <+> "->"
                                <+> (ppInd (i+2) d))
                           <-> (indent (i+1) "}")
   ppInd _ (FDest h)        = pp h
@@ -109,27 +110,32 @@ flatten' (Fix v t) = FFix v <$> flatten' t
 flatten' (App a b) = FApp <$> flatten' a <*> flatten' b
 flatten' (Cons k) = return (FCons k)
 flatten' (Dest h) = return (FDest h)
-flatten' (Case t alts) =
-  FCase <$> flatten' t <*> (flattenAlt . head $ alts) <*> return FFail
-  where flattenAlt :: (Pattern,Term) -> State Int (FlatPattern,FlatTerm)
-        flattenAlt (p,u) =
-          do { u' <- flatten' u
-             ; case p of
-                 PVar v -> return (FlatPatVar v, u')
-                 PCons k ps -> do { (vs,fs) <- unzip <$> mapM flattenPattern ps
-                                  ; return (FlatPatCons k vs, foldr ($) u' fs) }
-             }
 
-        flattenPattern :: Pattern
-                       -> State Int (Variable, FlatTerm -> FlatTerm)
-        flattenPattern (PVar v) = return (v,id)
-        flattenPattern (PCons k ps) =
-          do { v <- fresh (Variable "p")
-             ; (vs,fs) <- unzip <$> mapM flattenPattern ps
-             ; return ( v
-                      , \e -> FCase (FVar v)
-                                    (FlatPatCons k vs,foldr ($) e fs)
-                                    FFail)
+flatten' (Case t alts) =
+  do { t' <- flatten' t
+     ; y <- fresh (Variable "y")
+     ; out <- cata y alts
+     ; case out of
+         Nothing -> return FFail
+         Just (alt',def) -> return (FCase t' alt' def)
+     }
+  where cata :: Variable
+             -> [(Pattern, Term)]
+             -> State Int (Maybe ((FlatPattern,FlatTerm),(Variable, FlatTerm)))
+        cata y [] = return Nothing
+        cata y ((PVar v,u):_) =
+          do { u' <- flatten' u
+             ; return . Just $ ((FlatPatVar v,u'),(y,FFail))
+             }
+        cata y ((PCons c ps,u):rest) =
+          do { y' <- fresh (Variable "y")
+             ; u' <- flatten' u
+             ; out' <- cata y' rest
+             ; case out' of
+                 Nothing -> return . Just $ ((FlatPatCons c [],u'),(y, FFail))
+                 Just (alt'',def') ->
+                   return . Just $ ((FlatPatCons c [],u')
+                                   ,(y,FCase (FVar y) alt'' def'))
              }
 
 flatten' (CoCase ((QHead,u):_)) = flatten' u    -- R-QHead
