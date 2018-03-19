@@ -67,7 +67,7 @@ instance Pretty FlatTerm where
                           <-> (indent (i+1) "," <+> "# ->"
                                <+> (ppInd (i+2) d))
                           <-> (indent (i+1) "}")
-  ppInd _ FFail = "cocase {}"
+  ppInd _ FFail = "(cocase {})"
 
 data FlatPattern where
   FlatPatVar  :: Variable -> FlatPattern
@@ -157,6 +157,24 @@ flatten' (CoCase ((QDest h QHead,u):coalts)) =  -- R-QDest
      ; coalts' <- flatten' (CoCase coalts)
      ; return (FCoCase (FlatCopDest h,u') coalts')
      }
+
+{- Here we add in a case for what to do when there is only one copattern
+ left. Because of our call-by-value translation 'cocase {}' cannot be
+ applied. We need to know when this is produced and handle it in an adhoc way.
+-}
+flatten' (CoCase ((q,u):[])) =
+  flatten' u >>= \u' ->
+  case unplugCopattern q of
+    (Just rest, QPat QHead p) ->
+      do { let u' = CoCase [(rest,  u)]
+         ; u'' <- flatten' u'
+         ; flatten' (CoCase [(QPat QHead p, u')])
+         }
+    (Just rest, QDest h QHead) ->
+      do { u' <- flatten' ( CoCase [(rest,  u) ] )
+         ; return (FCoCase (FlatCopDest h, u') FFail) }
+    x -> error $ "TODO flatten'{" <> show x <> "}"
+
 
 flatten' (CoCase ((q,u):coalts)) =              -- R-Rec
   flatten' (CoCase coalts) >>= \cocase' ->
