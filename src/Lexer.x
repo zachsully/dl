@@ -37,6 +37,7 @@ tokens :-
   \,         { const TokComma }
   \|         { const TokMid }
   \:         { const TokColon }
+  module     { const TokModule }
   $alpha+    { TokString }
 
 {
@@ -67,6 +68,7 @@ data Token
   | TokComma
   | TokMid
   | TokColon
+  | TokModule
   deriving (Eq,Show)
 
 alexScanTokens' :: String -> Either String [Token]

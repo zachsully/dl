@@ -11,6 +11,7 @@ import qualified DualSyn as D
 import Flatten
 import qualified HsSyn as H
 import qualified MLSyn as ML
+import qualified RacketSyn as Rkt
 import Lexer
 import Parser
 import Translation
@@ -31,10 +32,11 @@ data Strategy = CallByName | CallByValue
 
 data CompileMode
   = CompileMode
-  { cmDebug  :: Bool
-  , cmStrat  :: Strategy
-  , cmInput  :: FilePath
-  , cmOutput :: FilePath }
+  { cmDebug   :: Bool
+  , cmStrat   :: Strategy
+  , cmUntyped :: Bool
+  , cmInput   :: FilePath
+  , cmOutput  :: FilePath }
 
 data EvalMode
   = EvalMode
@@ -73,6 +75,8 @@ parseCompile = CompileMode
                         )
                         (   metavar "STRATEGY"
                          <> help "specify 'call-by-value' or 'call-by-name' evaluation strategy")
+           <*> switch (  long "untyped"
+                      <> help "compile to an untyped language" )
            <*> inputFp
            <*> strArgument (metavar "OUTPUT" <> help "output source file")
 
@@ -140,9 +144,12 @@ runCompile cm pgm =
             ; putStrLn "\n->>R\n"
             ; pprint pgm'
             ; putStrLn "\n=>\n" }
-       ; let !prog' = (case cmStrat cm of
-                         CallByValue -> (pp :: ML.Program -> String) . translate
-                         CallByName  -> (pp :: H.Program -> String) . translate)
+       ; let !prog' = (case (cmStrat cm,cmUntyped cm) of
+                         (CallByName,False)  -> (pp :: H.Program -> String) . translate
+                         (CallByName,True)   -> error "not existing call-by-name untyped translation"
+                         (CallByValue,False) -> (pp :: ML.Program -> String) . translate
+                         (CallByValue,True)  -> (pp :: Rkt.Program -> String) . translate)
+
                     $ pgm'
        ; case cmOutput cm of
            "-" -> putStrLn prog'
