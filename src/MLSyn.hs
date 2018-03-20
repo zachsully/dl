@@ -100,6 +100,30 @@ data Term where
 distributeArgs :: (Variable,[Term]) -> Term
 distributeArgs (k,ts) = foldl App (Cons k) ts
 
+substTerm :: Term -> Term -> Term -> Term
+substTerm s x y =
+  case x == y of
+    True -> s
+    False ->
+      case y of
+        Let v a b -> Let v (substTerm s x a) (substTerm s x b)
+        Lazy a -> Lazy (substTerm s x a)
+        Force a -> Force (substTerm s x a)
+        Lit i -> Lit i
+        Add a b -> Add (substTerm s x a) (substTerm s x b)
+        Var v -> Var v
+        Lam v a -> Lam v (substTerm s x a)
+        App a b -> App (substTerm s x a) (substTerm s x b)
+        Cons c -> (Cons c)
+        Case a alts -> Case (substTerm s x a)
+                            (fmap (\(v,f) -> (v,substTerm s x f)) alts)
+        Try a (v, b) -> Try (substTerm s x a) (v,substTerm s x b)
+        Raise v -> Raise v
+        Proj v a -> Proj v (substTerm s x a)
+        Record fields -> Record . fmap (\(v,f) -> (v,substTerm s x f)) $ fields
+        Pair a b -> Pair (substTerm s x a) (substTerm s x b)
+        Fail -> Fail
+
 {- Only need flat patterns here -}
 data Pattern where
   PWild :: Pattern
@@ -223,8 +247,15 @@ instance Translate Program where
 These functions must be in scope for the term. -}
 trans :: D.Program FlatTerm -> Program
 trans dpgm =
-  let (decls',fds) = foldr (\d (ds,fds') ->
-                           let (d',fds'') = transDecl d
+  let negTys = foldr (\d acc ->
+                        case d of
+                          Right _ -> acc
+                          Left d' -> pure (Ty.negTyName d') <> acc
+                     )
+                     []
+                     (D.pgmDecls dpgm)
+      (decls',fds) = foldr (\d (ds,fds') ->
+                           let (d',fds'') = transDecl negTys d
                            in  (d':ds,fds'++fds'') )
                          ([],[])
                          (D.pgmDecls dpgm)
@@ -239,20 +270,33 @@ transType (Ty.TyApp a b) = TyApp (transType a) (transType b)
 transType (Ty.TyVar v)   = TyVar v
 transType (Ty.TyCons k)  = TyCons k
 
+{- Codata is always wrapped in an optional value -}
+wrapOptNegTy :: [Variable] -> Type -> Type
+wrapOptNegTy negTys ty =
+  case isNeg ty of
+    True  -> TyOpt ty
+    False -> ty
+  where isNeg (TyVar v) = elem v negTys
+        isNeg (TyCons v) = elem v negTys
+        isNeg (TyApp a _) = isNeg a
+        isNeg _ = False
+
 typeDom :: Type -> Type
 typeDom (TyArr _ b) = b
 typeDom x = error ("type" <+> pp x <+> "is not a projection")
 
 transDecl
-  :: D.Decl
+  :: [Variable]
+  -> D.Decl
   -> (Either DataTyCons RecordTyCons,[FunDecl])
-transDecl (Right d) =
+transDecl negTys (Right d) =
   (Left (DataTyCons (Ty.posTyName $ d)
           (Ty.posTyFVars d)
           (fmap mkDataCon . Ty.injections $ d)), fmap wrapFun . Ty.injections $ d)
   where mkDataCon :: Ty.Injection -> DataCon
         mkDataCon inj = DataCon (Ty.injName inj)
                                 (  curryArgs
+                                 . wrapOptNegTy negTys
                                  . transType
                                  . Ty.injType
                                  $ inj )
@@ -282,12 +326,12 @@ transDecl (Right d) =
                                  xs
           }
 
-transDecl (Left d)  =
+transDecl negTys (Left d)  =
   (Right (RecordTyCons name
            (Ty.negTyFVars d)
            (fmap mkRecordField (Ty.projections d)))
   , addSetAndObs (Ty.projections d))
-  where name = Ty.negTyName $ d
+  where name = Ty.negTyName d
         pname p = Variable "get" <> Ty.projName p
         _some x = App (Cons (Variable "Some")) x
         _none = (Cons (Variable "None"))
@@ -347,7 +391,11 @@ transDecl (Left d)  =
 
         mkRecordField :: Ty.Projection -> Field
         mkRecordField p = Field (pname p)
-                                ( TyOpt . TyLazy . typeDom . transType
+                                ( TyOpt
+                                . TyLazy
+                                . wrapOptNegTy negTys
+                                . typeDom
+                                . transType
                                 . Ty.projType $ p)
 
 transTerm :: FlatTerm -> Term
@@ -355,7 +403,15 @@ transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
 transTerm (FLit i) = Lit i
 transTerm (FAdd a b) = Add (transTerm a) (transTerm b)
 transTerm (FVar v) = Var v
-transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
+{-
+   We need to add lazy and force here to get around Ocamls 'let rec'
+   restrictions. Otherwise we get the error:
+
+   Error: This kind of expression is not allowed as right-hand side of `let rec'
+-}
+transTerm (FFix v a) =
+  let a' = Lazy . transTerm $ a in
+    Let v (substTerm (Force (Var v)) (Var v) a') (Force (Var v))
 transTerm (FApp a b) = App (transTerm a) (transTerm b)
 transTerm (FCons k) = Cons (Variable "wrap" <> k)
 transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)

@@ -50,6 +50,7 @@ import Pretty
   ','      { TokComma }
   '|'      { TokMid }
   ':'      { TokColon }
+  'module' { TokModule }
 
 %%
 
