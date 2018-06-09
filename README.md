@@ -1,11 +1,9 @@
 # A Prototype Compiler for λcop
----
 
 `dl` is a compiler for λcop capable of generating code for Haskell, Ocaml, and
 Racket.
 
 ## Example Program
----
 
 Here is a program that constructs the stream of Fibonacci numbers and then gets
 the fourth element.
@@ -25,7 +23,6 @@ in Head (Tail (Tail (Tail (Tail fib))))
 ```
 
 ## Compiling to different backends
----
 
 * Haskell
 ```
