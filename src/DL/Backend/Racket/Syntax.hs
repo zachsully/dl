@@ -1,15 +1,15 @@
 {-# LANGUAGE GADTs #-}
-module RacketSyn where
+module DL.Backend.Racket.Syntax where
 
 import Data.Monoid
 
-import qualified DualSyn as D
-import qualified TypeSyn as Ty
-import Flatten
-import Translation
-import VariableSyn
-import Pretty
-import Utils
+import qualified DL.Syntax.Term as D
+import qualified DL.Syntax.Type as Ty
+import DL.Flatten
+import DL.Translation
+import DL.Syntax.Variable
+import DL.Pretty
+import DL.Utils
 
 data Program
   = Pgm

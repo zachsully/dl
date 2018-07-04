@@ -1,16 +1,16 @@
 {-# LANGUAGE GADTs,
              DataKinds,
              RankNTypes #-}
-module DualSyn where
+module DL.Syntax.Term where
 
 import Control.Monad.State
 import Data.Monoid ((<>))
 import Data.Set ((\\),singleton,empty,union,unions,Set)
 
-import TypeSyn
-import VariableSyn
-import Pretty
-import Utils
+import DL.Syntax.Type
+import DL.Syntax.Variable
+import DL.Pretty
+import DL.Utils
 
 --------------------------------------------------------------------------------
 --                             Top Level                                      --

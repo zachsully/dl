@@ -1,12 +1,12 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Translation where
+module DL.Translation where
 
 import Control.Monad.State
 import Data.Monoid ((<>))
 
-import Flatten
-import DualSyn
-import VariableSyn
+import DL.Flatten
+import DL.Syntax.Term
+import DL.Syntax.Variable
 
 class Translate s  where
   translate :: Program FlatTerm -> s

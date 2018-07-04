@@ -3,13 +3,13 @@
              KindSignatures,
              RankNTypes,
              UnicodeSyntax #-}
-module TypeSyn where
+module DL.Syntax.Type where
 
 import Data.Set hiding (foldl)
 
-import VariableSyn
-import Pretty
-import Utils
+import DL.Syntax.Variable
+import DL.Pretty
+import DL.Utils
 
 --------------------------------------------------------------------------------
 --                                 Types                                      --

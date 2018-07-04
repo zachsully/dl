@@ -11,28 +11,28 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 executable dl
-  main-is:             Main.hs
+  main-is:             DL/Main.hs
   default-extensions:  UnicodeSyntax
   GHC-Options :       -Wall -j6
   hs-source-dirs:      src
-  other-modules:       AlphaEq,
-                       Lexer,
-                       Parser,
-                       Pretty,
-                       DualSyn,
-                       DualPrelude,
-                       TypeSyn,
-                       Interpreter,
-                       Judgement,
-                       KindSyn,
-                       Flatten,
-                       HsSyn,
-                       MLSyn,
-                       RacketSyn,
-                       Translation,
-                       Utils,
-                       VariableSyn,
-                       IO
+  other-modules:       DL.AlphaEq,
+                       DL.Backend.Haskell.Syntax,
+                       DL.Backend.ML.Syntax,
+                       DL.Backend.Racket.Syntax,
+                       DL.Prelude,
+                       DL.Flatten,
+                       DL.IO,
+                       DL.Interpreter,
+                       DL.Judgement,
+                       DL.Parser.Lexer,
+                       DL.Parser.Parser,
+                       DL.Pretty,
+                       DL.Translation,
+                       DL.Syntax.Term,
+                       DL.Syntax.Type,
+                       DL.Syntax.Kind,
+                       DL.Syntax.Variable,
+                       DL.Utils
   build-tools:         alex, happy
   build-depends:       base                 >= 4.8,
                        ghc                  >= 8.0,
@@ -48,22 +48,24 @@ test-suite tests
   main-is:             Tests.hs
   default-extensions:  UnicodeSyntax
   hs-source-dirs:      tests,src
-  other-modules:       AlphaEq,
-                       Lexer,
-                       Parser,
-                       Pretty,
-                       DualSyn,
-                       DualPrelude,
-                       HsSyn,
-                       TypeSyn,
-                       Interpreter,
-                       Judgement,
-                       KindSyn,
-                       MLSyn,
-                       Translation,
-                       Utils,
-                       VariableSyn,
-                       IO
+  other-modules:       DL.AlphaEq,
+                       DL.Backend.Haskell.Syntax,
+                       DL.Backend.ML.Syntax,
+                       DL.Backend.Racket.Syntax,
+                       DL.Prelude,
+                       DL.Flatten,
+                       DL.IO,
+                       DL.Interpreter,
+                       DL.Judgement,
+                       DL.Parser.Lexer,
+                       DL.Parser.Parser,
+                       DL.Pretty,
+                       DL.Translation,
+                       DL.Syntax.Term,
+                       DL.Syntax.Type,
+                       DL.Syntax.Kind,
+                       DL.Syntax.Variable,
+                       DL.Utils
   build-depends:       base                 >= 4.8,
                        ghc                  >= 8.0,
                        array                >= 0.5,

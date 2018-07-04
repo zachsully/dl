@@ -1,13 +1,13 @@
 {-# LANGUAGE GADTs #-}
-module Flatten where
+module DL.Flatten where
 
 import Control.Monad.State
 import Data.Foldable (foldrM)
 import Data.Monoid ((<>))
 
-import DualSyn
-import VariableSyn
-import Pretty
+import DL.Syntax.Term
+import DL.Syntax.Variable
+import DL.Pretty
 
 --------------------------------------------------------------------------------
 --                              Flat Terms                                    --

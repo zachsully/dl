@@ -2,11 +2,11 @@
    This module contains a number of the standard data declarations including
    pairs and optional values.
 -}
-module DualPrelude where
+module DL.Prelude where
 
-import DualSyn
-import VariableSyn
-import TypeSyn
+import DL.Syntax.Term
+import DL.Syntax.Variable
+import DL.Syntax.Type
 
 prelude :: [Decl]
 prelude = [unitDecl,pairDecl,eitherDecl,boolDecl,listDecl

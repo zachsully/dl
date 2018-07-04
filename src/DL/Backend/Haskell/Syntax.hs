@@ -1,14 +1,14 @@
 {-# LANGUAGE GADTs #-}
-module HsSyn where
+module DL.Backend.Haskell.Syntax where
 
 import Data.Monoid
 
-import qualified DualSyn as D
-import qualified TypeSyn as Ty
-import Flatten
-import Translation
-import VariableSyn
-import Pretty
+import qualified DL.Syntax.Term as D
+import qualified DL.Syntax.Type as Ty
+import DL.Flatten
+import DL.Translation
+import DL.Syntax.Variable
+import DL.Pretty
 
 data Program
   = Pgm

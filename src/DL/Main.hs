@@ -7,19 +7,19 @@ import Control.Monad (when)
 import System.IO
 
 -- local
-import qualified DualSyn as D
-import Flatten
-import qualified HsSyn as H
-import qualified MLSyn as ML
-import qualified RacketSyn as Rkt
-import Lexer
-import Parser
-import Translation
-import Interpreter
-import Judgement
-import Utils
-import Pretty
-import IO
+import qualified DL.Syntax.Term as D
+import DL.Flatten
+import qualified DL.Backend.Haskell.Syntax as H
+import qualified DL.Backend.ML.Syntax as ML
+import qualified DL.Backend.Racket.Syntax as Rkt
+import DL.Parser.Lexer
+import DL.Parser.Parser
+import DL.Translation
+import DL.Interpreter
+import DL.Judgement
+import DL.Utils
+import DL.Pretty
+import DL.IO
 
 --------------------------------------------------------------------------------
 --                              Cmdline Options                               --

@@ -1,9 +1,9 @@
-module VariableSyn where
+module DL.Syntax.Variable where
 
 import Data.Monoid
 import Data.Set
 
-import Pretty
+import DL.Pretty
 
 {- Vars are introduced and consumed by pattern matching within terms. -}
 newtype Variable = Variable String

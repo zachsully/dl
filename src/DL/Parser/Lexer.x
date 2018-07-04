@@ -1,5 +1,6 @@
 {
-module Lexer (lexFile, lexString, lexContents, Token(..)) where
+module DL.Parser.Lexer
+  (lexFile, lexString, lexContents, Token(..)) where
 }
 
 %wrapper "basic"
@@ -20,6 +21,7 @@ tokens :-
   case       { const TokCase }
   fix        { const TokFix }
   let        { const TokLet }
+  letrec     { const TokLet }
   =          { const TokEq }
   in         { const TokIn }
   \#         { const TokHash }
@@ -52,6 +54,7 @@ data Token
   | TokCocase
   | TokFix
   | TokLet
+  | TokLetrec
   | TokEq
   | TokIn
   | TokHash

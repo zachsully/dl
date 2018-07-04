@@ -1,12 +1,12 @@
 {-# LANGUAGE GADTs, KindSignatures, UnicodeSyntax #-}
-module Interpreter where
+module DL.Interpreter where
 
 import Data.Monoid
 
-import Utils
-import VariableSyn
-import DualSyn
-import Pretty
+import DL.Utils
+import DL.Syntax.Variable
+import DL.Syntax.Term
+import DL.Pretty
 
 data Value :: * where
   VLit     :: Int -> Value

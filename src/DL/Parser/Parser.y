@@ -1,17 +1,17 @@
 {
 {-# LANGAUGE DataKinds #-}
-module Parser where
+module DL.Parser.Parser where
 
 import Control.Monad
 import Data.Monoid
 
-import Lexer
-import DualSyn
-import VariableSyn
-import KindSyn
-import TypeSyn
-import Utils
-import Pretty
+import DL.Parser.Lexer
+import DL.Syntax.Term
+import DL.Syntax.Variable
+import DL.Syntax.Kind
+import DL.Syntax.Type
+import DL.Utils
+import DL.Pretty
 }
 -- All shift/reduce conflicts
 %expect 32

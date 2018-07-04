@@ -1,9 +1,9 @@
 {-# LANGUAGE UnicodeSyntax #-}
-module AlphaEq where
+module DL.AlphaEq where
 
-import Judgement
-import VariableSyn
-import TypeSyn
+import DL.Judgement
+import DL.Syntax.Variable
+import DL.Syntax.Type
 
 αEqVar :: [(Variable,Variable)] → Variable → Variable → Bool
 αEqVar [] v w = v == w

@@ -1,4 +1,4 @@
-module Pretty where
+module DL.Pretty where
 
 import Data.Monoid
 import Data.Char (toLower)

@@ -1,9 +1,9 @@
 {-# LANGUAGE BangPatterns #-}
-module IO where
+module DL.IO where
 
-import DualSyn
-import Parser
-import Lexer
+import DL.Syntax.Term
+import DL.Parser.Parser
+import DL.Parser.Lexer
 
 --------------------------------------------------------------------------------
 --                                 IO                                         --

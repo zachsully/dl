@@ -1,16 +1,16 @@
 {-# LANGUAGE GADTs,KindSignatures,UnicodeSyntax #-}
-module Judgement where
+module DL.Judgement where
 
 import Data.Monoid
 import Data.Set hiding (foldr,map)
 import Control.Arrow hiding ((<+>))
 import Control.Monad
 
-import Utils
-import Pretty
-import TypeSyn
-import DualSyn
-import VariableSyn
+import DL.Utils
+import DL.Pretty
+import DL.Syntax.Type
+import DL.Syntax.Term
+import DL.Syntax.Variable
 
 type Ctx = [(Variable,Type)]
 
