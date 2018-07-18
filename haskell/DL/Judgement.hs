@@ -224,6 +224,7 @@ inferTS e (Case t alts) ρ =
 
 inferTS e (Dest h) ρ = unify ρ =<< tsElim =<< lookupStd h (unEnv e)
 
+inferTS e (Cocase c t) ρ = unimplementedErr "inferTS{cocase}"
 {- Cocase inference:
 We must be able to unify the types of all the branches of a cocase, e.g.
 { Head [□ x] → x ; Tail [□ x] → nats } both branches must unify to ~Stream Int~.
@@ -232,7 +233,7 @@ The judgement of the types is actually done by coalternative inference.
 inferTS e (Coalts coalts) ρ =
   do { vs ← replicateM (length coalts) (TyVar <$> freshVariable)
      ; scoalts ← mapM (\(v,(q,u)) → inferTSCoalt e q u v) (zip vs coalts)
-     ; unimplementedErr "inferTS{cocase}"
+     ; unimplementedErr "inferTS{coalts}"
      -- ; foldM (unify ρ) idSubst scoalts
      }
 

@@ -56,10 +56,11 @@ instance Pretty Term where
                             $ alts)
                         <-> indent (i+1) "}"
   ppInd _ (Dest h)        = pp h
-  ppInd i (Coalts [])     = "cocase {}"
-  ppInd i (Coalts coalts) = "cocase"
-                        <-> indent (i+1) "{ "
-                        <>  ( stringmconcat ("\n" <> (indent (i+1) ", "))
+  ppInd i (Cocase c t)    = "cocase" <+> ppInd (i+1) c
+                                     <-> indent (i+1) (ppInd (i+2) t)
+  ppInd i (Coalts [])     = "{}"
+  ppInd i (Coalts coalts) = "{"
+                        <+> ( stringmconcat ("\n" <> (indent (i+1) ", "))
                             . fmap (\(q,u) -> pp q <+> "→" <+> ppInd (i+2) u)
                             $ coalts)
                         <-> indent (i+1) "}"
@@ -98,9 +99,15 @@ distributeArgs (k,ts) = foldl App (Cons k) ts
 -------------------------
 
 data ObsCtx :: * where
+  ObsHead :: ObsCtx
   ObsFun  :: ObsCtx -> Term -> ObsCtx
   ObsDest :: Variable -> ObsCtx -> ObsCtx
   deriving (Show, Eq)
+
+instance Pretty ObsCtx where
+  pp ObsHead       = "□"
+  pp (ObsDest h c) = pp h <+> (brackets . pp $ c)
+  pp (ObsFun c t)  = (brackets . pp $ c) <+> (parens . pp $ t)
 
 ------------------
 -- (Co)patterns --

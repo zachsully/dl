@@ -9,8 +9,8 @@ data Nat
 Head (Tail (Tail
 (
 fix nats in
-cocase { Head [□ x] → x
-       , Tail [□ x] → nats (Succ x) }
+{ Head [□ x] → x
+, Tail [□ x] → nats (Succ x) }
 )
 Zero
 ))

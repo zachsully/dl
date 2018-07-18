@@ -2,10 +2,10 @@ codata Stream a
   { Head : Stream a -> a
   , Tail : Stream a -> Stream a }
 
-let zipwith = (fix f in cocase { Head [# o a b] -> o (Head a) (Head b)
-                               , Tail [# o a b] -> f o (Tail a) (Tail b) })
+let zipwith = (fix f in { Head [# o a b] -> o (Head a) (Head b)
+                        , Tail [# o a b] -> f o (Tail a) (Tail b) })
 in let fib = (fix x in
-                      (cocase { Head # -> 1
-    	                      , Head [Tail #] -> 1
-                              , Tail [Tail #] -> zipwith ({# p q -> p + q}) x (Tail x) }))
+                { Head # -> 1
+    	        , Head [Tail #] -> 1
+                , Tail [Tail #] -> zipwith ({# p q -> p + q}) x (Tail x) })
    in Head (Tail (Tail (Tail (Tail fib))))

@@ -2,5 +2,5 @@ codata NegPair a b
   { Fst : NegPair a b → a
   , Snd : NegPair a b → b }
 
-Snd ((cocase { Fst [□ x] → x
-             , Snd [□ x] → x+20 }) 22)
+Snd ({ Fst [□ x] → x
+     , Snd [□ x] → x+20 } 22)

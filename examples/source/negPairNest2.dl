@@ -2,7 +2,7 @@ codata NegPair a b
   { Fst : NegPair a b → a
   , Snd : NegPair a b → b }
 
-cocase { Fst [Fst □] → 0
-       , Snd [Fst □] → 1
-       , Fst [Snd □] → 2
-       , Snd [Snd □] → 3 }
+{ Fst [Fst □] → 0
+, Snd [Fst □] → 1
+, Fst [Snd □] → 2
+, Snd [Snd □] → 3 }

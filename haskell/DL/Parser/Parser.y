@@ -159,7 +159,7 @@ term3 :  '▪' term                { Prompt $2 }
 
 term4 :: { Term }
 term4 :  term termA               { App $1 $2 }
-      |  'cocase' obsctx termA    { Cocase $2 $3 }
+      |  'cocase' obsctxA termA   { Cocase $2 $3 }
       |  termA                    { $1 }
 
 {- We lookup to see if the string is defined as a symbol and a singleton
@@ -175,10 +175,6 @@ termA :  num                      { Lit $1 }
                                   }
       | '(' term ')'              { $2 }
       | '{' coalts '}'            { Coalts (reverse $2) }
-
-
-obsctx :: { ObsCtx }
-oobsctx : var { undefined }
 
 
 --------------
@@ -238,6 +234,29 @@ copatternA :: { CoPattern }
 copatternA : '#'                    { QHead }
            | '□'                   { QHead }
            | '[' copattern ']'      { $2 }
+
+
+obsctx :: { ObsCtx }
+obsctx : obsctx termA    { ObsFun $1 $2 }
+       | obsctx0         { $1 }
+
+obsctx0 :: { ObsCtx }
+obsctx0 : var obsctxA    {% do { mp <- getPolarity $1
+                               ; case mp of
+                                   Nothing -> return (ObsDest $1 $2)
+                                   Just Negative -> return (ObsDest $1 $2)
+                                   Just Positive ->
+                                     error ("constructor" <+> pp $1 <+>
+                                           " in copattern.")
+                               }
+                         }
+        | obsctxA { $1 }
+
+obsctxA :: { ObsCtx }
+obsctxA : '#'            { ObsHead }
+        | '□'           { ObsHead }
+        | '[' obsctx ']' { $2 }
+
 
 {
 --------------------------------------------------------------------------------

@@ -85,6 +85,7 @@ interp ctx env term =
     Cons k -> return (VConsApp k [])
     Case _ _ -> unimplementedErr "case"
     Dest h -> return (VObs h)
+    Cocase _ _ -> unimplementedErr "cocase"
     Coalts coalts -> comatch ctx env coalts
 
 {- The outer comatch helper just goes through coalternatives by induction on the

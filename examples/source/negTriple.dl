@@ -3,6 +3,6 @@ codata NegTriple a b c
   , Snd : NegTriple a b c -> b
   , Trd : NegTriple a b c -> c }
 
-cocase { Fst # -> 0
-       , Snd # -> 1
-       , Trd # -> 2 }
+{ Fst # -> 0
+, Snd # -> 1
+, Trd # -> 2 }

@@ -3,7 +3,7 @@ codata NegTriple a b c
   , Snd : NegTriple a b c -> b
   , Trd : NegTriple a b c -> c }
 
-let d = cocase { Fst # -> 0
-               , Snd # -> 1
-               , Trd # -> 2 }
+let d = { Fst # -> 0
+        , Snd # -> 1
+        , Trd # -> 2 }
 in (Fst d) + (Snd d) + (Trd d)

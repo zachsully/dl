@@ -2,9 +2,6 @@ codata NegPair a b
   { Fst : NegPair a b -> a
   , Snd : NegPair a b -> b }
 
-Fst (Snd
-      (cocase { Fst # -> 1
-      	      , Snd # -> (cocase { Fst # -> 2, Snd # -> 3})
-	      }
-      )
-    )
+cocase [Fst [Snd #]]
+  { Fst # -> 1
+  , Snd # -> { Fst # -> 2, Snd # -> 3}}
