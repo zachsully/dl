@@ -4,7 +4,8 @@ module DL.Translation where
 import Control.Monad.State
 import Data.Monoid ((<>))
 
-import DL.Flatten
+import DL.Syntax.Top
+import DL.Syntax.Flat
 import DL.Syntax.Term
 import DL.Syntax.Variable
 

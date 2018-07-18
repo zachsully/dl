@@ -14,13 +14,12 @@ executable dl
   main-is:             DL/Main.hs
   default-extensions:  UnicodeSyntax
   GHC-Options :       -Wall -j6
-  hs-source-dirs:      src
+  hs-source-dirs:      haskell
   other-modules:       DL.AlphaEq,
                        DL.Backend.Haskell.Syntax,
                        DL.Backend.ML.Syntax,
                        DL.Backend.Racket.Syntax,
                        DL.Prelude,
-                       DL.Flatten,
                        DL.IO,
                        DL.Interpreter,
                        DL.Judgement,
@@ -28,7 +27,9 @@ executable dl
                        DL.Parser.Parser,
                        DL.Pretty,
                        DL.Translation,
+                       DL.Syntax.Top,
                        DL.Syntax.Term,
+                       DL.Syntax.Flat,
                        DL.Syntax.Type,
                        DL.Syntax.Kind,
                        DL.Syntax.Variable,
@@ -47,13 +48,12 @@ test-suite tests
   type:                exitcode-stdio-1.0
   main-is:             Tests.hs
   default-extensions:  UnicodeSyntax
-  hs-source-dirs:      tests,src
+  hs-source-dirs:      tests,haskell
   other-modules:       DL.AlphaEq,
                        DL.Backend.Haskell.Syntax,
                        DL.Backend.ML.Syntax,
                        DL.Backend.Racket.Syntax,
                        DL.Prelude,
-                       DL.Flatten,
                        DL.IO,
                        DL.Interpreter,
                        DL.Judgement,
@@ -61,7 +61,9 @@ test-suite tests
                        DL.Parser.Parser,
                        DL.Pretty,
                        DL.Translation,
+                       DL.Syntax.Top,
                        DL.Syntax.Term,
+                       DL.Syntax.Flat,
                        DL.Syntax.Type,
                        DL.Syntax.Kind,
                        DL.Syntax.Variable,

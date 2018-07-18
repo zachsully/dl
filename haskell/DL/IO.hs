@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 module DL.IO where
 
+import DL.Syntax.Top
 import DL.Syntax.Term
 import DL.Parser.Parser
 import DL.Parser.Lexer

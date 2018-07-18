@@ -6,6 +6,7 @@ import Control.Monad
 import Data.Monoid
 
 import DL.Parser.Lexer
+import DL.Syntax.Top
 import DL.Syntax.Term
 import DL.Syntax.Variable
 import DL.Syntax.Kind
@@ -75,16 +76,16 @@ program : decls term                           { Pgm $1 $2 }
 decl :: { Decl }
 decl : 'codata' var vars '{' projs '}'         {% addTyCons $2 >>
                                                   (return . replaceWithCons $2 $
-                                                    Left (NegTyCons $2
-                                                           (reverse $3)
-                                                           (reverse $5)))
+                                                    mkCodataDecl (NegTyCons $2
+                                                                  (reverse $3)
+                                                                  (reverse $5)))
                                                }
 
      | 'data'   var vars '{' injs  '}'         {% (addTyCons $2) >>
                                                   (return . replaceWithCons $2 $
-                                                    Right (PosTyCons $2
-                                                            (reverse $3)
-                                                            (reverse $5)))
+                                                    mkDataDecl (PosTyCons $2
+                                                                (reverse $3)
+                                                                (reverse $5)))
                                                }
 
 decls :: { [Decl] }
@@ -147,8 +148,7 @@ term1 :  term '+' term                 { Add $1 $3 }
       |  term2                         { $1 }
 
 term2 :: { Term }
-term2 :  'cocase' '{' coalts '}'       { CoCase (reverse $3) }
-      |  'fix' var 'in' term           { Fix $2 $4 }
+term2 :  'fix' var 'in' term           { Fix $2 $4 }
       |  'let' var '=' term 'in' term  { Let $2 $4 $6 }
       |  'case' termA '{' alts '}'     { Case $2 (reverse $4) }
       |  term3                         { $1 }
@@ -159,6 +159,7 @@ term3 :  '▪' term                { Prompt $2 }
 
 term4 :: { Term }
 term4 :  term termA               { App $1 $2 }
+      |  'cocase' obsctx termA    { Cocase $2 $3 }
       |  termA                    { $1 }
 
 {- We lookup to see if the string is defined as a symbol and a singleton
@@ -173,7 +174,11 @@ termA :  num                      { Lit $1 }
                                         }
                                   }
       | '(' term ')'              { $2 }
-      | '{' coalts '}'            { CoCase (reverse $2) }
+      | '{' coalts '}'            { Coalts (reverse $2) }
+
+
+obsctx :: { ObsCtx }
+oobsctx : var { undefined }
 
 
 --------------
@@ -297,8 +302,10 @@ parseString s =
 replaceWithCons :: Variable -> Decl -> Decl
 replaceWithCons v d =
   case d of
-    Left n  -> Left  (n { projections = replaceProj <$> projections n })
-    Right n -> Right (n { injections = replaceInj <$> injections n })
+    (Decl (Left n))  -> mkCodataDecl
+      (n { projections = replaceProj <$> projections n })
+    (Decl (Right n)) -> mkDataDecl
+      (n { injections = replaceInj <$> injections n })
   where replaceProj p = p { projType = replaceType (projType p) }
         replaceInj i = i { injType = replaceType (injType i) }
         replaceType TyInt = TyInt

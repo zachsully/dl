@@ -7,6 +7,7 @@ module DL.Prelude where
 import DL.Syntax.Term
 import DL.Syntax.Variable
 import DL.Syntax.Type
+import DL.Syntax.Top
 
 prelude :: [Decl]
 prelude = [unitDecl,pairDecl,eitherDecl,boolDecl,listDecl
@@ -29,12 +30,12 @@ replace the variable occurrences with Dest and Cons.
 --------------
 
 unitDecl :: Decl
-unitDecl = Right
+unitDecl = mkDataDecl
   (PosTyCons (Variable "1") []
     [Inj (Variable "unit") (TyCons (Variable "1"))])
 
 pairDecl :: Decl
-pairDecl = Right
+pairDecl = mkDataDecl
   (PosTyCons (Variable "Pair") [Variable "A",Variable "B"]
     [Inj (Variable "MkPair")
       (TyArr
@@ -44,7 +45,7 @@ pairDecl = Right
                      (TyVar (Variable "B")))))])
 
 listDecl :: Decl
-listDecl = Right
+listDecl = mkDataDecl
   (PosTyCons (Variable "List") [Variable "A"]
    [Inj (Variable "Nil")
      (TyApp (TyCons (Variable "List")) (TyVar (Variable "A")))
@@ -55,7 +56,7 @@ listDecl = Right
   )
 
 eitherDecl :: Decl
-eitherDecl = Right
+eitherDecl = mkDataDecl
   (PosTyCons (Variable "Either") [Variable "A",Variable "B"]
    [Inj (Variable "Left")
      (TyArr (TyVar (Variable "A"))
@@ -68,7 +69,7 @@ eitherDecl = Right
   )
 
 boolDecl :: Decl
-boolDecl = Right
+boolDecl = mkDataDecl
   (PosTyCons (Variable "Bool") []
     [Inj (Variable "True") (TyCons (Variable "Bool"))
     ,Inj (Variable "True") (TyCons (Variable "Bool"))]
@@ -79,7 +80,7 @@ boolDecl = Right
 --------------
 
 copairDecl :: Decl
-copairDecl = Left $
+copairDecl = mkCodataDecl $
   NegTyCons (Variable "Copair") [Variable "A",Variable "B"]
     [Proj (Variable "Fst")
      (TyArr (TyApp (TyApp (TyCons (Variable "Copair")) (TyVar (Variable "A")))
@@ -91,7 +92,7 @@ copairDecl = Left $
        (TyVar (Variable "B")))]
 
 streamDecl :: Decl
-streamDecl = Left $
+streamDecl = mkCodataDecl $
   (NegTyCons (Variable "Stream") [Variable "A"]
    [Proj (Variable "Head")
      (TyArr (TyApp (TyCons (Variable "Stream")) (TyVar (Variable "A")))
@@ -126,34 +127,34 @@ casePair1 = Case pair1 [( PCons (Variable "mkPair")
                         , Var (Variable "x"))]
 
 lam :: Term
-lam = CoCase [( QPat QHead (PVar (Variable "x"))
+lam = Coalts [( QPat QHead (PVar (Variable "x"))
               , distributeArgs ((Variable "mkPair"),
                                 [Var (Variable "x"),Var (Variable "x")]))]
 
 app :: Term
-app = App (CoCase [(QPat QHead (PVar (Variable "x"))
+app = App (Coalts [(QPat QHead (PVar (Variable "x"))
                    ,(Add (Var (Variable "x")) (Lit 20)))])
           (Lit 22)
 
 foo1 :: Term
-foo1 = CoCase [(QDest (Variable "Fst") QHead, Lit 1)
+foo1 = Coalts [(QDest (Variable "Fst") QHead, Lit 1)
               ,(QDest (Variable "Fst") (QDest (Variable "Snd") QHead), Lit 2)
               ,(QDest (Variable "Snd") (QDest (Variable "Snd") QHead), Lit 3)]
 
 foo2 :: Term
-foo2 = CoCase [(QDest (Variable "Fst") QHead, Lit 1)
+foo2 = Coalts [(QDest (Variable "Fst") QHead, Lit 1)
               ,(QDest (Variable "Snd") QHead,
-                  CoCase [(QDest (Variable "Fst") QHead, Lit 2)
+                  Coalts [(QDest (Variable "Fst") QHead, Lit 2)
                          ,(QDest (Variable "Snd") QHead, Lit 3)])
               ]
 zeros :: Term
 zeros = Fix (Variable "s")
-            (CoCase [ ( QDest (Variable "head") QHead , Lit 0 )
+            (Coalts [ ( QDest (Variable "head") QHead , Lit 0 )
                     , ( QDest (Variable "Tail") QHead , (Var (Variable "s")))])
 
 nats :: Term
 nats = Fix (Variable "s")
-           (CoCase [ (QDest (Variable "Head") QHead
+           (Coalts [ (QDest (Variable "Head") QHead
                      , Lit 0 )
                    , (QDest (Variable "Tail") QHead
                      , Add (Lit 1)

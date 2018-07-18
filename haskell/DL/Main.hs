@@ -7,11 +7,12 @@ import Control.Monad (when)
 import System.IO
 
 -- local
-import qualified DL.Syntax.Term as D
-import DL.Flatten
+import qualified DL.Syntax.Term            as T
+import qualified DL.Syntax.Top             as Top
 import qualified DL.Backend.Haskell.Syntax as H
-import qualified DL.Backend.ML.Syntax as ML
-import qualified DL.Backend.Racket.Syntax as Rkt
+import qualified DL.Backend.ML.Syntax      as ML
+import qualified DL.Backend.Racket.Syntax  as Rkt
+import DL.Syntax.Flat
 import DL.Parser.Lexer
 import DL.Parser.Parser
 import DL.Translation
@@ -130,13 +131,13 @@ main = do { mode <- parseMode
               Repl        -> runRepl
           }
 
-runFlatten :: FlattenMode -> D.Program D.Term -> IO ()
+runFlatten :: FlattenMode -> Top.Program T.Term -> IO ()
 runFlatten _ pgm =
   do { pprint pgm
      ; putStrLn "\n->>R\n"
-     ; pprint . flatten . D.pgmTerm $ pgm }
+     ; pprint . flatten . Top.pgmTerm $ pgm }
 
-runCompile :: CompileMode -> D.Program D.Term -> IO ()
+runCompile :: CompileMode -> Top.Program T.Term -> IO ()
 runCompile cm pgm =
   let pgm' = flattenPgm pgm in
     do { when (cmDebug cm) $
@@ -156,9 +157,9 @@ runCompile cm pgm =
            fp  -> writeFile fp prog'
        }
 
-runEvaluate :: EvalMode -> D.Program D.Term -> IO ()
+runEvaluate :: EvalMode -> Top.Program T.Term -> IO ()
 runEvaluate em pgm =
-  let term = D.pgmTerm pgm in
+  let term = Top.pgmTerm pgm in
     do { when (emDebug em) $ pprint term
        ; putStr "> "
        ; case runStd (interpEmpty term) of
@@ -166,7 +167,7 @@ runEvaluate em pgm =
            Right a -> pprint a
        }
 
-runTypeOf :: TypeMode -> D.Program D.Term -> IO ()
+runTypeOf :: TypeMode -> Top.Program T.Term -> IO ()
 runTypeOf tm pgm =
   do { when (tmDebug tm) $ print pgm
      ; case tmBidir tm of
@@ -193,7 +194,7 @@ runRepl =
                   case runParserM (parseTerm ts) emptyState of
                     Left e -> hPutStrLn stdout e
                     Right (t,_) ->
-                      case runStd (interpEmpty (D.Prompt t)) of
+                      case runStd (interpEmpty (T.Prompt t)) of
                         Left s -> hPutStrLn stdout $ s
                         Right a ->
                           case runStd (infer [] (reifyValue a)) of

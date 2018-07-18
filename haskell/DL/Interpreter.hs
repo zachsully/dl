@@ -2,11 +2,11 @@
 module DL.Interpreter where
 
 import Data.Monoid
-
 import DL.Utils
-import DL.Syntax.Variable
-import DL.Syntax.Term
 import DL.Pretty
+import DL.Syntax.Term
+import DL.Syntax.Top
+import DL.Syntax.Variable
 
 data Value :: * where
   VLit     :: Int -> Value
@@ -20,23 +20,23 @@ instance Pretty Value where
   pp (VLit i)        = show i
   pp (VConsApp k ts) = pp k <+> concatMap pp ts
   pp (VObs h)        = pp h
-  pp (VCocase cas)   = pp (CoCase cas)
+  pp (VCocase cas)   = pp (Coalts cas)
   pp VFail           = "⊥"
 
 reifyValue :: Value -> Term
 reifyValue (VLit i) = Lit i
 reifyValue (VConsApp k ts) = distributeArgs (k,ts)
 reifyValue (VObs h) = Dest h
-reifyValue (VCocase cas) = CoCase cas
-reifyValue VFail = CoCase []
+reifyValue (VCocase cas) = Coalts cas
+reifyValue VFail = Coalts []
 
 data EvalCtx :: * where
-  EEmpty  :: EvalCtx
-  EPrompt :: EvalCtx -> EvalCtx
-  EAddL   :: EvalCtx -> Term    -> EvalCtx
-  EAddR   :: Value   -> EvalCtx -> EvalCtx
-  EAppL   :: EvalCtx -> Term    -> EvalCtx
-  EAppR   :: Value   -> EvalCtx -> EvalCtx
+  EEmpty   :: EvalCtx
+  EPrompt  :: EvalCtx -> EvalCtx
+  EAddL    :: EvalCtx -> Term    -> EvalCtx
+  EAddR    :: Value   -> EvalCtx -> EvalCtx
+  EAppFun  :: EvalCtx -> Term    -> EvalCtx
+  EAppDest :: Value   -> EvalCtx -> EvalCtx
 
 reifyEvalCtx :: EvalCtx -> Term
 reifyEvalCtx EEmpty      = undefined
@@ -44,8 +44,8 @@ reifyEvalCtx (EPrompt e) = Prompt (reifyEvalCtx e)
 reifyEvalCtx (EAddL e t) = lam (Variable "t0") (Add (Var (Variable "t0")) t)
 reifyEvalCtx (EAddR v e) = lam (Variable "t0")
                                (Add (reifyValue v) (Var (Variable "t0")))
-reifyEvalCtx (EAppL e t) = lam (Variable "t0") (App (Var (Variable "t0")) t)
-reifyEvalCtx (EAppR v e) = lam (Variable "t0") (App (reifyValue v) undefined)
+reifyEvalCtx (EAppFun e t) = lam (Variable "t0") (App (Var (Variable "t0")) t)
+reifyEvalCtx (EAppDest v e) = lam (Variable "t0") (App (reifyValue v) undefined)
 
 data Env = Env [(Variable,(Term,Env))]
 
@@ -56,7 +56,7 @@ instance Monoid Env where
   mempty = Env []
   mappend (Env a) (Env b) = Env (a <> b)
 
-interpPgm :: Program Term → Std Value
+interpPgm :: Program Term -> Std Value
 interpPgm = interpEmpty . pgmTerm
 
 interpEmpty :: Term -> Std Value
@@ -79,13 +79,13 @@ interp ctx env term =
       do { (term',env') <- lookupEnv v env
          ; interp ctx env' term' }
     Fix x term' -> interp ctx (Env [(x,(term',env))] <> env) term'
-    App a b ->
-      do { a' <- interp (ctx `EAppL` b) env a
-         ; interp (a' `EAppR` ctx) env b }
+    App a b -> unimplementedErr "app"
+      -- do { a' <- interp (ctx `EAppL` b) env a
+      --    ; interp (a' `EAppR` ctx) env b }
     Cons k -> return (VConsApp k [])
     Case _ _ -> unimplementedErr "case"
     Dest h -> return (VObs h)
-    CoCase coalts -> comatch ctx env coalts
+    Coalts coalts -> comatch ctx env coalts
 
 {- The outer comatch helper just goes through coalternatives by induction on the
 list. -}
@@ -101,21 +101,21 @@ comatch _ _ [] = return VFail
    inner eval ctx.
 -}
 comatch' :: EvalCtx -> Env -> CoPattern -> Std (Maybe (EvalCtx,Env))
-comatch' ctx env QHead = return (Just (ctx,env))
+-- comatch' ctx env QHead = return (Just (ctx,env))
 
-{- Covariables -}
-comatch' ctx env (QVar a QHead) =
-  return (Just (EEmpty, Env [(a,(reifyEvalCtx ctx,env))] <> env))
-comatch' ctx env (QVar a q) = comatch' ctx env q
+-- {- Covariables -}
+-- comatch' ctx env (QVar a QHead) =
+--   return (Just (EEmpty, Env [(a,(reifyEvalCtx ctx,env))] <> env))
+-- comatch' ctx env (QVar a q) = comatch' ctx env q
 
-{- Application forms -}
-comatch' (EAppR (VObs h) ctx) env (QDest h' q) =
-  case h == h' of
-     True -> comatch' ctx env q
-     False ->
-       do { m <- comatch' ctx env (QDest h' q)
-          ; case m of
-              Nothing -> return Nothing
-              Just (ctx', env') -> return $ Just (EAppR (VObs h) ctx',env') }
+-- {- Application forms -}
+-- comatch' (EAppFun (VObs h) ctx) env (QDest h' q) =
+--   case h == h' of
+--      True -> comatch' ctx env q
+--      False ->
+--        do { m <- comatch' ctx env (QDest h' q)
+--           ; case m of
+--               Nothing -> return Nothing
+--               Just (ctx', env') -> return $ Just (EAppDest (VObs h) ctx',env') }
 
 comatch' _ _ _ = unimplementedErr "comatch'"

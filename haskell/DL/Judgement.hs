@@ -10,6 +10,7 @@ import DL.Utils
 import DL.Pretty
 import DL.Syntax.Type
 import DL.Syntax.Term
+import DL.Syntax.Top
 import DL.Syntax.Variable
 
 type Ctx = [(Variable,Type)]
@@ -228,7 +229,7 @@ We must be able to unify the types of all the branches of a cocase, e.g.
 { Head [□ x] → x ; Tail [□ x] → nats } both branches must unify to ~Stream Int~.
 The judgement of the types is actually done by coalternative inference.
 -}
-inferTS e (CoCase coalts) ρ =
+inferTS e (Coalts coalts) ρ =
   do { vs ← replicateM (length coalts) (TyVar <$> freshVariable)
      ; scoalts ← mapM (\(v,(q,u)) → inferTSCoalt e q u v) (zip vs coalts)
      ; unimplementedErr "inferTS{cocase}"
@@ -379,7 +380,7 @@ infer c (Case e alts) =
              False -> typeErr "all branches must return the same type."
      }
 
-infer _ (CoCase _) = unimplementedErr "infer{CoCase}"
+infer _ (Coalts _) = unimplementedErr "infer{Coalts}"
 {- Consider the term
 ```
   fst { fst □ -> 42 }
@@ -453,7 +454,7 @@ check c (Case e alts) ty =
          True  -> return ()
          False -> typeErr ("alternatives do not have expected type" <+> pp ty)
      }
-check _ (CoCase _) _ = error "check{CoCase}"
+check _ (Coalts _) _ = error "check{Coalts}"
 check c (Prompt t) ty =
   do { ty' <- infer c t
      ; case ty' == ty of
@@ -494,9 +495,9 @@ mkContext :: [Decl] -> [(Variable,Type)]
 mkContext [] = []
 mkContext (d:ds) =
   (case d of
-     Left neg -> map (arr projName &&& arr projType)
+     (Decl (Left neg)) -> map (arr projName &&& arr projType)
                     (projections neg)
-     Right pos -> map (arr injName &&& arr injType) (injections pos)
+     (Decl (Right pos)) -> map (arr injName &&& arr injType) (injections pos)
   ) <> (mkContext ds)
 
 mkContextTS :: [Decl] -> Env
@@ -504,22 +505,24 @@ mkContextTS = Env . fmap (second (typeClosure emptyEnv)) . mkContext
 
 lookupDecl :: Variable -> [Decl] -> Maybe Decl
 lookupDecl _ [] = Nothing
-lookupDecl v ((Left d):ds) = case v == negTyName d of
-                               True -> Just (Left d)
-                               False -> lookupDecl v ds
-lookupDecl v ((Right d):ds) = case v == posTyName d of
-                               True -> Just (Right d)
-                               False -> lookupDecl v ds
+lookupDecl v (Decl (Left d):ds) =
+  case v == negTyName d of
+    True -> Just . mkCodataDecl $ d
+    False -> lookupDecl v ds
+lookupDecl v (Decl (Right d):ds) =
+  case v == posTyName d of
+    True -> Just . mkDataDecl $ d
+    False -> lookupDecl v ds
 
 lookupDatum :: Variable -> [Decl] -> Maybe Decl
 lookupDatum _ [] = Nothing
-lookupDatum h (Left  d:ds) =
+lookupDatum h (Decl (Left  d):ds) =
   case lookupProjection h (projections d) of
-    Just _ -> Just (Left d)
+    Just _ -> Just . mkCodataDecl $ d
     Nothing -> lookupDatum h ds
-lookupDatum k (Right d:ds) =
+lookupDatum k (Decl (Right d):ds) =
   case lookupInjection k (injections d) of
-    Just _ -> Just (Right d)
+    Just _ -> Just . mkDataDecl $ d
     Nothing -> lookupDatum k ds
 
 lookupProjection :: Variable -> [Projection] -> Maybe Projection

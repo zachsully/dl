@@ -1,10 +1,10 @@
-{-# LANGUAGE GADTs #-}
-module DL.Flatten where
+{-# LANGUAGE GADTs, KindSignatures #-}
+module DL.Syntax.Flat where
 
 import Control.Monad.State
 import Data.Foldable (foldrM)
 import Data.Monoid ((<>))
-
+import DL.Syntax.Top
 import DL.Syntax.Term
 import DL.Syntax.Variable
 import DL.Pretty
@@ -16,7 +16,7 @@ import DL.Pretty
 they also have (co)case statements that contain defaults.
 
 FlatTerms are a subset of Terms. -}
-data FlatTerm where
+data FlatTerm :: * where
   FLet :: Variable -> FlatTerm -> FlatTerm -> FlatTerm
 
   -- ^ Number primitives
@@ -36,7 +36,7 @@ data FlatTerm where
 
   FDest :: Variable -> FlatTerm
 
-  FCoCase :: (FlatCopattern,FlatTerm) -- ^ Coalternative
+  FCocase :: (FlatCopattern,FlatTerm) -- ^ Coalternative
           -> FlatTerm                 -- ^ Default case
           -> FlatTerm
 
@@ -61,7 +61,7 @@ instance Pretty FlatTerm where
                                <+> (ppInd (i+2) d))
                           <-> (indent (i+1) "}")
   ppInd _ (FDest h)        = pp h
-  ppInd i (FCoCase (q,u) d) = "cocase"
+  ppInd i (FCocase (q,u) d) = "cocase"
                           <-> (indent (i+1) "{" <+> pp q <+> "->"
                                <+> (ppInd (i+2) u))
                           <-> (indent (i+1) "," <+> "# ->"
@@ -138,64 +138,64 @@ flatten' (Case t alts) =
                                    ,(y,FCase (FVar y) alt'' def'))
              }
 
-flatten' (CoCase ((QHead,u):_)) = flatten' u    -- R-QHead
+flatten' (Coalts ((QHead,u):_)) = flatten' u    -- R-QHead
 
-flatten' (CoCase ((QPat QHead (PVar v),u):_)) = -- R-QPVar
+flatten' (Coalts ((QPat QHead (PVar v),u):_)) = -- R-QPVar
   do { u' <- flatten' u
-     ; return (FCoCase (FlatCopPat (FlatPatVar v), u') FFail) }
+     ; return (FCocase (FlatCopPat (FlatPatVar v), u') FFail) }
 
-flatten' (CoCase ((QPat QHead p,u):coalts)) =   -- R-QPat
+flatten' (Coalts ((QPat QHead p,u):coalts)) =   -- R-QPat
   do { v <- fresh (Variable "p")
      ; y <- fresh (Variable "y")
-     ; let t = Case (Var v) [(p,u),(PVar y,CoCase coalts)]
+     ; let t = Case (Var v) [(p,u),(PVar y,Coalts coalts)]
      ; t' <- flatten' t
-     ; return (FCoCase (FlatCopPat (FlatPatVar v), t') FFail)
+     ; return (FCocase (FlatCopPat (FlatPatVar v), t') FFail)
      }
 
-flatten' (CoCase ((QDest h QHead,u):coalts)) =  -- R-QDest
+flatten' (Coalts ((QDest h QHead,u):coalts)) =  -- R-QDest
   do { u' <- flatten' u
-     ; coalts' <- flatten' (CoCase coalts)
-     ; return (FCoCase (FlatCopDest h,u') coalts')
+     ; coalts' <- flatten' (Coalts coalts)
+     ; return (FCocase (FlatCopDest h,u') coalts')
      }
 
 {- Here we add in a case for what to do when there is only one copattern
  left. Because of our call-by-value translation 'cocase {}' cannot be
  applied. We need to know when this is produced and handle it in an adhoc way.
 -}
-flatten' (CoCase ((q,u):[])) =
+flatten' (Coalts ((q,u):[])) =
   flatten' u >>= \u' ->
   case unplugCopattern q of
     (Just rest, QPat QHead p) ->
-      do { let u' = CoCase [(rest,  u)]
+      do { let u' = Coalts [(rest,  u)]
          ; u'' <- flatten' u'
-         ; flatten' (CoCase [(QPat QHead p, u')])
+         ; flatten' (Coalts [(QPat QHead p, u')])
          }
     (Just rest, QDest h QHead) ->
-      do { u' <- flatten' ( CoCase [(rest,  u) ] )
-         ; return (FCoCase (FlatCopDest h, u') FFail) }
+      do { u' <- flatten' ( Coalts [(rest,  u) ] )
+         ; return (FCocase (FlatCopDest h, u') FFail) }
     x -> error $ "TODO flatten'{" <> show x <> "}"
 
 
-flatten' (CoCase ((q,u):coalts)) =              -- R-Rec
-  flatten' (CoCase coalts) >>= \cocase' ->
+flatten' (Coalts ((q,u):coalts)) =              -- R-Rec
+  flatten' (Coalts coalts) >>= \cocase' ->
   flatten' u >>= \u' ->
   case unplugCopattern q of
     (Just rest, QPat QHead p) ->
       do { v  <- fresh (Variable "coalt")
-         ; let u' = CoCase [(rest,  u),(QHead, App (Var v) (invertPattern p))]
+         ; let u' = Coalts [(rest,  u),(QHead, App (Var v) (invertPattern p))]
          ; u'' <- flatten' u'
-         ; flatten' (Let v (CoCase coalts) (CoCase [(QPat QHead p, u'),(QHead,Var v)]))
+         ; flatten' (Let v (Coalts coalts) (Coalts [(QPat QHead p, u'),(QHead,Var v)]))
          }
     (Just rest, QDest h QHead) ->
       do { v  <- fresh (Variable "coalt")
-         ; u' <- flatten' ( CoCase [(rest,  u)
+         ; u' <- flatten' ( Coalts [(rest,  u)
                                    ,(QHead, App (Dest h) (Var v))
                                    ]
                            )
-         ; return (FLet v cocase' (FCoCase (FlatCopDest h, u') (FVar v))) }
+         ; return (FLet v cocase' (FCocase (FlatCopDest h, u') (FVar v))) }
     x -> error $ "TODO flatten'{" <> show x <> "}"
 
-flatten' (CoCase []) = return FFail -- R-Empty
+flatten' (Coalts []) = return FFail -- R-Empty
 
 --------------------
 -- Unsubstituting --

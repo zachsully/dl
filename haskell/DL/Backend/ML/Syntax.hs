@@ -3,9 +3,9 @@ module DL.Backend.ML.Syntax where
 
 import Data.Monoid
 
-import qualified DL.Syntax.Term as D
 import qualified DL.Syntax.Type as Ty
-import DL.Flatten
+import qualified DL.Syntax.Top  as Top
+import DL.Syntax.Flat
 import DL.Translation
 import DL.Syntax.Variable
 import DL.Pretty
@@ -245,23 +245,23 @@ instance Translate Program where
 
 {- Local translation defines new functions when a declaration is transformed.
 These functions must be in scope for the term. -}
-trans :: D.Program FlatTerm -> Program
+trans :: Top.Program FlatTerm -> Program
 trans dpgm =
-  let negTys = foldr (\d acc ->
+  let negTys = foldr (\(Top.Decl d) acc ->
                         case d of
                           Right _ -> acc
-                          Left d' -> pure (Ty.negTyName d') <> acc
+                          Left d' -> pure (Top.negTyName d') <> acc
                      )
                      []
-                     (D.pgmDecls dpgm)
+                     (Top.pgmDecls dpgm)
       (decls',fds) = foldr (\d (ds,fds') ->
                            let (d',fds'') = transDecl negTys d
                            in  (d':ds,fds'++fds'') )
                          ([],[])
-                         (D.pgmDecls dpgm)
+                         (Top.pgmDecls dpgm)
   in Pgm { pgmTyDecls = decls'
          , pgmFunDecls = fds
-         , pgmTerm = transTerm . D.pgmTerm $ dpgm }
+         , pgmTerm = transTerm . Top.pgmTerm $ dpgm }
 
 transType :: Ty.Type -> Type
 transType Ty.TyInt       = TyInt
@@ -287,18 +287,18 @@ typeDom x = error ("type" <+> pp x <+> "is not a projection")
 
 transDecl
   :: [Variable]
-  -> D.Decl
+  -> Top.Decl
   -> (Either DataTyCons RecordTyCons,[FunDecl])
-transDecl negTys (Right d) =
-  (Left (DataTyCons (Ty.posTyName $ d)
-          (Ty.posTyFVars d)
-          (fmap mkDataCon . Ty.injections $ d)), fmap wrapFun . Ty.injections $ d)
-  where mkDataCon :: Ty.Injection -> DataCon
-        mkDataCon inj = DataCon (Ty.injName inj)
+transDecl negTys (Top.Decl (Right d)) =
+  (Left (DataTyCons (Top.posTyName $ d)
+          (Top.posTyFVars d)
+          (fmap mkDataCon . Top.injections $ d)), fmap wrapFun . Top.injections $ d)
+  where mkDataCon :: Top.Injection -> DataCon
+        mkDataCon inj = DataCon (Top.injName inj)
                                 (  curryArgs
                                  . wrapOptNegTy negTys
                                  . transType
-                                 . Ty.injType
+                                 . Top.injType
                                  $ inj )
 
         curryArgs :: Type -> Type
@@ -311,39 +311,39 @@ transDecl negTys (Right d) =
             _ -> a
         curryArgs x = x
 
-        wrapFun :: Ty.Injection -> FunDecl
+        wrapFun :: Top.Injection -> FunDecl
         wrapFun i = FunDecl
-          { funName = Variable "wrap" <> Ty.injName i
+          { funName = Variable "wrap" <> Top.injName i
           , funArgs = foldrWithIndex (\j s acc -> acc <> [Variable (s <> show j)])
                                      []
-                                     (replicate (arity . Ty.injType $ i) "x")
+                                     (replicate (arity . Top.injType $ i) "x")
           , funRhs  =
-              case replicate (arity . Ty.injType $ i) "x" of
-                [] -> (Var (Ty.injName i))
-                (x:xs) -> App (Var (Ty.injName i)) $
+              case replicate (arity . Top.injType $ i) "x" of
+                [] -> (Var (Top.injName i))
+                (x:xs) -> App (Var (Top.injName i)) $
                   foldrWithIndex (\j s acc -> Pair acc (Var (Variable (s <> show (j+1)))))
                                  (Var (Variable (x <> "0")))
                                  xs
           }
 
-transDecl negTys (Left d)  =
+transDecl negTys (Top.Decl (Left d))  =
   (Right (RecordTyCons name
-           (Ty.negTyFVars d)
-           (fmap mkRecordField (Ty.projections d)))
-  , addSetAndObs (Ty.projections d))
-  where name = Ty.negTyName d
-        pname p = Variable "get" <> Ty.projName p
+           (Top.negTyFVars d)
+           (fmap mkRecordField (Top.projections d)))
+  , addSetAndObs (Top.projections d))
+  where name = Top.negTyName d
+        pname p = Variable "get" <> Top.projName p
         _some x = App (Cons (Variable "Some")) x
         _none = (Cons (Variable "None"))
 
-        addSetAndObs :: [Ty.Projection] -> [FunDecl]
+        addSetAndObs :: [Top.Projection] -> [FunDecl]
         addSetAndObs [] = []
         addSetAndObs (p:ps) =  [ mkSetter p, mkObserver p ]
                                <> addSetAndObs ps
 
-        mkSetter,mkObserver :: Ty.Projection -> FunDecl
+        mkSetter,mkObserver :: Top.Projection -> FunDecl
         mkSetter p = FunDecl
-          { funName = Variable "set" <> Ty.projName p
+          { funName = Variable "set" <> Top.projName p
           , funArgs = [Variable "ocd", Variable "br"]
           , funRhs  =
               Case (Var (Variable "ocd"))
@@ -351,35 +351,35 @@ transDecl negTys (Left d)  =
                      , _some $
                        ( Record
                        . fmap (\p' ->
-                                  ( Variable "get" <> Ty.projName p'
+                                  ( Variable "get" <> Top.projName p'
                                   , case p == p' of
                                       True -> _some (Var (Variable "br"))
                                       False -> _none))
-                       . Ty.projections
+                       . Top.projections
                        $ d )
                      )
                    , ( PCons (Variable "Some") [Variable "cd"]
                      , _some $
                        ( Record
                        . fmap (\p' ->
-                                  ( Variable "get" <> Ty.projName p'
+                                  ( Variable "get" <> Top.projName p'
                                   , case p == p' of
                                       True -> _some (Var (Variable "br"))
-                                      False -> Proj (Variable "get" <> Ty.projName p')
+                                      False -> Proj (Variable "get" <> Top.projName p')
                                                     (Var (Variable "cd"))))
-                       . Ty.projections
+                       . Top.projections
                        $ d )
                     )
                    ]
           }
         mkObserver p = FunDecl
-          { funName = Variable "obs" <> Ty.projName p
+          { funName = Variable "obs" <> Top.projName p
           , funArgs = [Variable "ocd"]
           , funRhs  =
               Case (Var (Variable "ocd"))
                    [ ( PCons (Variable "None") [], Raise (Variable "UnmatchedCopattern"))
                    , ( PCons (Variable "Some") [Variable "cd"]
-                     , Case  (Proj (Variable "get" <> Ty.projName p)
+                     , Case  (Proj (Variable "get" <> Top.projName p)
                                    (Var (Variable "cd")))
                             [ ( PCons (Variable "None") [], Raise (Variable "UnmatchedCopattern"))
                             , ( PCons (Variable "Some") [Variable "br"]
@@ -389,14 +389,14 @@ transDecl negTys (Left d)  =
                    ]
           }
 
-        mkRecordField :: Ty.Projection -> Field
+        mkRecordField :: Top.Projection -> Field
         mkRecordField p = Field (pname p)
                                 ( TyOpt
                                 . TyLazy
                                 . wrapOptNegTy negTys
                                 . typeDom
                                 . transType
-                                . Ty.projType $ p)
+                                . Top.projType $ p)
 
 transTerm :: FlatTerm -> Term
 transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
@@ -418,7 +418,7 @@ transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)
                                          [(transPat p, transTerm u)
                                          ,(PVar y,transTerm d)]
 transTerm (FDest h) = Var (Variable "obs" <> h)
-transTerm (FCoCase (q,u) d) = transCoalt (q,u) (transTerm d)
+transTerm (FCocase (q,u) d) = transCoalt (q,u) (transTerm d)
 transTerm (FFail) = Fail
 
 transPat :: FlatPattern -> Pattern

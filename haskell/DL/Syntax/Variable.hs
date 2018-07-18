@@ -1,11 +1,8 @@
 module DL.Syntax.Variable where
 
 import Data.Monoid
-import Data.Set
-
 import DL.Pretty
 
-{- Vars are introduced and consumed by pattern matching within terms. -}
 newtype Variable = Variable String
   deriving Ord
 

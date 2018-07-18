@@ -1,6 +1,4 @@
-{-# LANGUAGE GADTs,
-             DataKinds,
-             RankNTypes #-}
+{-# LANGUAGE GADTs, DataKinds, RankNTypes, KindSignatures #-}
 module DL.Syntax.Term where
 
 import Control.Monad.State
@@ -11,36 +9,6 @@ import DL.Syntax.Type
 import DL.Syntax.Variable
 import DL.Pretty
 import DL.Utils
-
---------------------------------------------------------------------------------
---                             Top Level                                      --
---------------------------------------------------------------------------------
-
-data Program t
-  = Pgm
-  { pgmDecls :: [Decl]
-  , pgmTerm  :: t }
-  deriving Show
-
-instance Pretty t => Pretty (Program t) where
-  pp pgm = (stringmconcat "\n\n" . fmap pp . pgmDecls $ pgm)
-        <> "\n\n"
-        <> (pp . pgmTerm $ pgm)
-
-type Decl = Either NegativeTyCons PositiveTyCons
-
-instance (Pretty a,Pretty b) => Pretty (Either a b) where
-  pp _ = ""
-
-declArity :: Decl -> Int
-declArity (Left d)  = length . negTyFVars $ d
-declArity (Right d) = length . posTyFVars $ d
-
-{- There is a special polarity type because positive and negative types are
-   declared with the same structure, but we still need to keep them separate. -}
-data Polarity = Positive | Negative
-  deriving (Eq,Show)
-
 
 --------------------------------------------------------------------------------
 --                                 Terms                                      --
@@ -59,11 +27,13 @@ data Term where
   Fix   :: Variable -> Term -> Term
   App   :: Term -> Term -> Term
 
-  Cons :: Variable -> Term
-  Case :: Term -> [(Pattern,Term)] -> Term
+  Cons   :: Variable -> Term
+  Case   :: Term -> [(Pattern,Term)] -> Term
 
-  Dest :: Variable -> Term
-  CoCase :: [(CoPattern,Term)] -> Term
+  Dest   :: Variable -> Term
+  Coalts :: [(CoPattern,Term)] -> Term
+  Cocase :: ObsCtx -> Term -> Term
+
   Prompt :: Term -> Term -- sets a point to delimit continuations
   deriving (Eq,Show)
 
@@ -86,8 +56,8 @@ instance Pretty Term where
                             $ alts)
                         <-> indent (i+1) "}"
   ppInd _ (Dest h)        = pp h
-  ppInd i (CoCase [])     = "cocase {}"
-  ppInd i (CoCase coalts) = "cocase"
+  ppInd i (Coalts [])     = "cocase {}"
+  ppInd i (Coalts coalts) = "cocase"
                         <-> indent (i+1) "{ "
                         <>  ( stringmconcat ("\n" <> (indent (i+1) ", "))
                             . fmap (\(q,u) -> pp q <+> "→" <+> ppInd (i+2) u)
@@ -106,7 +76,7 @@ instance FV Term where
   fvs (Case a alts) =
     fvs a `union` (unions (fmap (\(p,u) -> fvs u \\ patBinds p) alts))
   fvs (Dest _) = empty
-  fvs (CoCase coalts) = unions . fmap (\(q,u) -> fvs u \\ copBinds q) $ coalts
+  fvs (Coalts coalts) = unions . fmap (\(q,u) -> fvs u \\ copBinds q) $ coalts
   fvs (Prompt a) = fvs a
 
 {-
@@ -123,6 +93,14 @@ collectArgs _         = Nothing
 distributeArgs :: (Variable,[Term]) -> Term
 distributeArgs (k,ts) = foldl App (Cons k) ts
 
+-------------------------
+-- Observable Contexts --
+-------------------------
+
+data ObsCtx :: * where
+  ObsFun  :: ObsCtx -> Term -> ObsCtx
+  ObsDest :: Variable -> ObsCtx -> ObsCtx
+  deriving (Show, Eq)
 
 ------------------
 -- (Co)patterns --
@@ -171,7 +149,7 @@ copBinds (QVar v q) = singleton v `union` copBinds q
 -----------------------------
 
 lam :: Variable -> Term -> Term
-lam v t = CoCase [(QPat QHead (PVar v), t)]
+lam v t = Coalts [(QPat QHead (PVar v), t)]
 
 --------------------------------------------------------------------------------
 --                        Term Manipulations --

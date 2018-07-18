@@ -7,12 +7,12 @@ import System.FilePath
 import System.Directory
 import System.Exit
 
-import DualSyn
-import Interpreter
-import Judgement
-import Utils
-import IO
-import Pretty
+import DL.Syntax.Top
+import DL.Interpreter
+import DL.Judgement
+import DL.Utils
+import DL.IO
+import DL.Pretty
 
 main :: IO ()
 main =
@@ -22,7 +22,7 @@ main =
      ; forM filesI $ \(i,fp) →
          do { putStrLn ("------------ (" <> show i <> "/" <> show num <> ")"
                         <+> fp <+> "------------")
-            ; pgm ← getProgram ("examples" </> fp)
+            ; pgm ← getProgram ("examples/source" </> fp)
             ; putStrLn "Parses as:"
             ; pprint (pgmTerm pgm)
             ; putStrLn ""
@@ -42,4 +42,5 @@ main =
      ; exitFailure }
 
 getPgmFiles :: IO [FilePath]
-getPgmFiles = filter ((==".dl"). takeExtension) <$> listDirectory "examples"
+getPgmFiles = filter ((==".dl"). takeExtension)
+          <$> listDirectory "examples/source"

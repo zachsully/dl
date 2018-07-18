@@ -3,9 +3,9 @@ module DL.Backend.Haskell.Syntax where
 
 import Data.Monoid
 
-import qualified DL.Syntax.Term as D
 import qualified DL.Syntax.Type as Ty
-import DL.Flatten
+import qualified DL.Syntax.Top  as Top
+import DL.Syntax.Flat
 import DL.Translation
 import DL.Syntax.Variable
 import DL.Pretty
@@ -198,14 +198,14 @@ instance Translate Program where
 
 {- Local translation defines new functions when a declaration is transformed.
 These functions must be in scope for the term. -}
-trans :: D.Program FlatTerm -> Program
+trans :: Top.Program FlatTerm -> Program
 trans dpgm =
   let (decls',fds) = foldr (\d (ds,fs) ->
                               let (d',fs') = transDecl d
                               in  (d':ds,fs'<>fs))
                            ([],[])
-                           (D.pgmDecls dpgm)
-  in Pgm decls' fds (transTerm . D.pgmTerm $ dpgm)
+                           (Top.pgmDecls dpgm)
+  in Pgm decls' fds (transTerm . Top.pgmTerm $ dpgm)
 
 transType :: Ty.Type -> Type
 transType Ty.TyInt       = TyInt
@@ -219,30 +219,30 @@ typeCodom (TyArr _ b) = b
 typeCodom x = error ("type" <+> ppType x 0 <+> "is not a projection")
 
 transDecl
-  :: D.Decl
+  :: Top.Decl
   -> (Either DataTyCons RecordTyCons,[FunDecl])
-transDecl (Right d) =
+transDecl (Top.Decl (Right d)) =
   (Left (DataTyCons
-          (Ty.posTyName d)
-          (Ty.posTyFVars d)
-          (fmap mkDataCon . Ty.injections $ d))
+          (Top.posTyName d)
+          (Top.posTyFVars d)
+          (fmap mkDataCon . Top.injections $ d))
   , [] )
-  where mkDataCon :: Ty.Injection -> DataCon
-        mkDataCon inj = DataCon (Ty.injName inj)
-                                   (transType . Ty.injType $ inj)
+  where mkDataCon :: Top.Injection -> DataCon
+        mkDataCon inj = DataCon (Top.injName inj)
+                                   (transType . Top.injType $ inj)
 
-transDecl (Left d)  =
+transDecl (Top.Decl (Left d))  =
   ( Right (RecordTyCons
            name
-           (Ty.negTyFVars d)
-           (fmap mkRecordField (Ty.projections d)))
-  , fmap setter . Ty.projections $ d )
-  where name = Ty.negTyName d
-        pname p = Variable "_" <> Ty.projName p
+           (Top.negTyFVars d)
+           (fmap mkRecordField (Top.projections d)))
+  , fmap setter . Top.projections $ d )
+  where name = Top.negTyName d
+        pname p = Variable "_" <> Top.projName p
 
-        setter :: Ty.Projection -> FunDecl
+        setter :: Top.Projection -> FunDecl
         setter p = FunDecl
-          { funName = Variable "set_" <> Ty.projName p
+          { funName = Variable "set_" <> Top.projName p
           , funArgs = [Variable "cd", Variable "br"]
           , funRhs  =
               foldl (\c p' ->
@@ -252,12 +252,12 @@ transDecl (Left d)  =
                         in App c t
                     )
                     (Cons name)
-                    (Ty.projections d)
+                    (Top.projections d)
           }
 
-        mkRecordField :: Ty.Projection -> Field
+        mkRecordField :: Top.Projection -> Field
         mkRecordField p = Field (pname p)
-                                   (typeCodom . transType . Ty.projType $ p)
+                                   (typeCodom . transType . Top.projType $ p)
 
 transTerm :: FlatTerm -> Term
 transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
@@ -271,7 +271,7 @@ transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)
                                          [(transPat p, transTerm u)
                                          ,(PVar y,transTerm d)]
 transTerm (FDest h) = Var (Variable "_" <> h)
-transTerm (FCoCase (q,u) d) = transCoalt (q,u) (transTerm d)
+transTerm (FCocase (q,u) d) = transCoalt (q,u) (transTerm d)
 transTerm (FFail) = Fail
 
 transPat :: FlatPattern -> Pattern
