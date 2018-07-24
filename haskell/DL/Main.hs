@@ -16,7 +16,8 @@ import DL.Syntax.Flat
 import DL.Parser.Lexer
 import DL.Parser.Parser
 import DL.Translation
-import DL.Interpreter
+import DL.Evaluation.Strategy
+import DL.Evaluation.Interpreter
 import DL.Judgement
 import DL.Utils
 import DL.Pretty
@@ -28,8 +29,6 @@ import DL.IO
 
 data FlattenMode
   = FlattenMode { fmInput :: FilePath }
-
-data Strategy = CallByName | CallByValue
 
 data CompileMode
   = CompileMode
@@ -135,7 +134,7 @@ runFlatten :: FlattenMode -> Top.Program T.Term -> IO ()
 runFlatten _ pgm =
   do { pprint pgm
      ; putStrLn "\n->>R\n"
-     ; pprint . flatten . Top.pgmTerm $ pgm }
+     ; pprint . flattenPgm $ pgm }
 
 runCompile :: CompileMode -> Top.Program T.Term -> IO ()
 runCompile cm pgm =
@@ -162,7 +161,7 @@ runEvaluate em pgm =
   let term = Top.pgmTerm pgm in
     do { when (emDebug em) $ pprint term
        ; putStr "> "
-       ; case runStd (interpEmpty term) of
+       ; case runStd (interpPgm pgm) of
            Left s -> print s
            Right a -> pprint a
        }
@@ -193,13 +192,14 @@ runRepl =
                 Right ts ->
                   case runParserM (parseTerm ts) emptyState of
                     Left e -> hPutStrLn stdout e
-                    Right (t,_) ->
-                      case runStd (interpEmpty (T.Prompt t)) of
-                        Left s -> hPutStrLn stdout $ s
-                        Right a ->
-                          case runStd (infer [] (reifyValue a)) of
-                            Left _ -> hPutStrLn stdout . pp $ a
-                            Right ty -> hPutStrLn stdout $
-                              pp a <+> ":" <+> pp ty
+                    Right (t,_) -> undefined
+                      -- case runStd (interpEmpty (T.Prompt t)) of
+                      --   Left s -> hPutStrLn stdout $ s
+                      --   Right a ->
+                      --     case runStd (infer [] (reifyValue a)) of
+                      --       Left _ -> hPutStrLn stdout . pp $ a
+                      --       Right ty -> hPutStrLn stdout $
+                      --         pp a <+> ":" <+> pp ty
             }
+
      }

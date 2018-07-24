@@ -70,8 +70,8 @@ instance Show TypeScheme where
 instance FV TypeScheme where
   fvs (TyForall vs τs) = fvs τs \\  vs
 
-instance Arity TypeScheme where
-  arity (TyForall _ τ) = arity τ
+schemeArity :: TypeScheme -> Int
+schemeArity (TyForall _ τ) = arity τ
 
 applyScheme :: Subst → TypeScheme → TypeScheme
 applyScheme σ (TyForall vs τ) = TyForall vs (applyType σ τ)
@@ -224,15 +224,15 @@ inferTS e (Case t alts) ρ =
 
 inferTS e (Dest h) ρ = unify ρ =<< tsElim =<< lookupStd h (unEnv e)
 
-inferTS e (Cocase c t) ρ = unimplementedErr "inferTS{cocase}"
+inferTS _ (Cocase _ _) _ = unimplementedErr "inferTS{cocase}"
 {- Cocase inference:
 We must be able to unify the types of all the branches of a cocase, e.g.
 { Head [□ x] → x ; Tail [□ x] → nats } both branches must unify to ~Stream Int~.
 The judgement of the types is actually done by coalternative inference.
 -}
-inferTS e (Coalts coalts) ρ =
+inferTS e (Coalts coalts) _ =
   do { vs ← replicateM (length coalts) (TyVar <$> freshVariable)
-     ; scoalts ← mapM (\(v,(q,u)) → inferTSCoalt e q u v) (zip vs coalts)
+     ; _ ← mapM (\(v,(q,u)) → inferTSCoalt e q u v) (zip vs coalts)
      ; unimplementedErr "inferTS{coalts}"
      -- ; foldM (unify ρ) idSubst scoalts
      }
@@ -252,14 +252,14 @@ inferTSAlt e p u τ σ =
 inferTSPattern :: Env → Pattern → Type → Std (Env,Subst)
 inferTSPattern e PWild _ = return (e,idSubst)
 inferTSPattern e (PVar v) ρ = return (extendEnv v (typeClosure e ρ) e, idSubst)
-inferTSPattern e (PCons k ps) ρ =
+inferTSPattern e (PCons k ps) _ =
   do { κ ← tsElim =<< lookupStd k (unEnv e)
      ; case length ps == arity κ of
          False → typeErr ("constructor" <+> pp k <+> "requires"
                           <+> show (arity κ) <+> "arguments")
          True →
            case collectTyArgs κ of
-             Just (k,args) →
+             Just (_,args) →
                do { _ ← mapM (\(τ,p) → inferTSPattern e p τ) (zip args ps)
                   ; unimplementedErr "inferTSPattern{PCons}" }
              Nothing → typeErr "pattern not constructor"
@@ -277,8 +277,8 @@ inferTSCoalt e q u ρ =
 inferTSCopattern :: Env → CoPattern → Type → Std (Env,Subst)
 inferTSCopattern e QHead _ = return (e,idSubst)
 inferTSCopattern e (QDest h q) ρ =
-  do { η ← tsElim =<< lookupStd h (unEnv e)
-     ; (e',s) ← inferTSCopattern e q ρ
+  do { _ ← tsElim =<< lookupStd h (unEnv e)
+     ; (_,_) ← inferTSCopattern e q ρ
      ; unimplementedErr "inferTSCopattern{qdest}" }
 
 inferTSCopattern e (QPat q p) ρ =
@@ -381,6 +381,7 @@ infer c (Case e alts) =
              False -> typeErr "all branches must return the same type."
      }
 
+infer _ (Cocase _ _) = unimplementedErr "infer{Cocase}"
 infer _ (Coalts _) = unimplementedErr "infer{Coalts}"
 {- Consider the term
 ```
@@ -456,6 +457,7 @@ check c (Case e alts) ty =
          False -> typeErr ("alternatives do not have expected type" <+> pp ty)
      }
 check _ (Coalts _) _ = error "check{Coalts}"
+check _ (Cocase _ _) _ = error "check{Cocase}"
 check c (Prompt t) ty =
   do { ty' <- infer c t
      ; case ty' == ty of

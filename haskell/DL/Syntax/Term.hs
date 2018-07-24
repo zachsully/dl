@@ -1,7 +1,6 @@
 {-# LANGUAGE GADTs, DataKinds, RankNTypes, KindSignatures #-}
 module DL.Syntax.Term where
 
-import Control.Monad.State
 import Data.Monoid ((<>))
 import Data.Set ((\\),singleton,empty,union,unions,Set)
 
@@ -39,6 +38,7 @@ data Term where
 
 instance Pretty Term where
   ppInd _ (Lit i)         = show i
+  ppInd i (Ann t ty)      = parens (ppInd i t <+> ":" <+> ppInd (i+1) ty)
   ppInd i (Add a b)       = (parens . ppInd i $ a)
                         <+> "+"
                         <+> (parens . ppInd i $ b)
@@ -58,12 +58,13 @@ instance Pretty Term where
   ppInd _ (Dest h)        = pp h
   ppInd i (Cocase c t)    = "cocase" <+> ppInd (i+1) c
                                      <-> indent (i+1) (ppInd (i+2) t)
-  ppInd i (Coalts [])     = "{}"
+  ppInd _ (Coalts [])     = "{}"
   ppInd i (Coalts coalts) = "{"
                         <+> ( stringmconcat ("\n" <> (indent (i+1) ", "))
                             . fmap (\(q,u) -> pp q <+> "→" <+> ppInd (i+2) u)
                             $ coalts)
                         <-> indent (i+1) "}"
+  ppInd i (Prompt t)      = "#" <+> ppInd (i+1) t
 
 instance FV Term where
   fvs (Let v a b) = fvs a `union` (fvs b \\ singleton v)
@@ -77,6 +78,7 @@ instance FV Term where
   fvs (Case a alts) =
     fvs a `union` (unions (fmap (\(p,u) -> fvs u \\ patBinds p) alts))
   fvs (Dest _) = empty
+  fvs (Cocase obsctx t) = fvs obsctx `union` fvs t
   fvs (Coalts coalts) = unions . fmap (\(q,u) -> fvs u \\ copBinds q) $ coalts
   fvs (Prompt a) = fvs a
 
@@ -109,6 +111,31 @@ instance Pretty ObsCtx where
   pp (ObsDest h c) = pp h <+> (brackets . pp $ c)
   pp (ObsFun c t)  = (brackets . pp $ c) <+> (parens . pp $ t)
 
+instance FV ObsCtx where
+  fvs ObsHead = empty
+  fvs (ObsFun c t) = fvs c `union` fvs t
+  fvs (ObsDest _ c) = fvs c
+
+plugObsCtx :: ObsCtx -> ObsCtx -> ObsCtx
+plugObsCtx ObsHead       c' = c'
+plugObsCtx (ObsDest h c) c' = ObsDest h (plugObsCtx c c')
+plugObsCtx (ObsFun c t)  c' = ObsFun (plugObsCtx c c') t
+
+unplugObsCtx :: ObsCtx -> (Maybe ObsCtx,ObsCtx)
+unplugObsCtx ObsHead             = (Nothing, ObsHead)
+unplugObsCtx (ObsFun ObsHead t)  = (Nothing, ObsFun ObsHead t)
+unplugObsCtx (ObsDest h ObsHead) = (Nothing, ObsDest h ObsHead)
+unplugObsCtx (ObsFun c t)        =
+  let (m,i) = unplugObsCtx c in
+    case m of
+      Nothing -> (Just (ObsFun ObsHead t), i)
+      Just c' -> (Just (ObsFun c' t), i)
+unplugObsCtx (ObsDest h c)       =
+  let (m,i) = unplugObsCtx c in
+    case m of
+      Nothing -> (Just (ObsDest h ObsHead), i)
+      Just c' -> (Just (ObsDest h c'), i)
+
 ------------------
 -- (Co)patterns --
 ------------------
@@ -129,6 +156,11 @@ patBinds :: Pattern -> Set Variable
 patBinds PWild = empty
 patBinds (PVar v) = singleton v
 patBinds (PCons _ ps) = unions (fmap patBinds ps)
+
+invertPattern :: Pattern -> Term
+invertPattern PWild = error "cannot invert wildcard"
+invertPattern (PVar v) = Var v
+invertPattern (PCons k ps) = distributeArgs (k,fmap invertPattern ps)
 
 {- Copatterns -}
 {- NOTE: we often use 'q' for a copattern variables -}
@@ -151,25 +183,24 @@ copBinds (QDest _ q) = copBinds q
 copBinds (QPat q p) = patBinds p `union` copBinds q
 copBinds (QVar v q) = singleton v `union` copBinds q
 
------------------------------
--- Some smart constructors --
------------------------------
+-- replace head with copattern in copattern
+plugCopattern :: CoPattern -> CoPattern -> CoPattern
+plugCopattern QHead       q' = q'
+plugCopattern (QDest h q) q' = QDest h (plugCopattern q q')
+plugCopattern (QPat q p)  q' = QPat (plugCopattern q q') p
+plugCopattern (QVar v q)  q' = QVar v (plugCopattern q q')
 
-lam :: Variable -> Term -> Term
-lam v t = Coalts [(QPat QHead (PVar v), t)]
-
---------------------------------------------------------------------------------
---                        Term Manipulations --
---------------------------------------------------------------------------------
-
-{- Used in the context filling rules R-RecPat and R-RedDest, Takes a copattern and
+{-
+Used in the context filling rules R-RecPat and R-RedDest, Takes a copattern and
 returns (an optional new copattern with the inner most matchable pattern pulled
-out and replace by head) and the inner most copattern -}
+out and replace by head) and the inner most copattern
+-}
 
 unplugCopattern :: CoPattern -> (Maybe CoPattern,CoPattern)
 unplugCopattern QHead           = (Nothing, QHead)
-unplugCopattern (QPat QHead p)  = (Nothing, (QPat QHead p))
-unplugCopattern (QDest h QHead) = (Nothing, (QDest h QHead))
+unplugCopattern (QPat QHead p)  = (Nothing, QPat QHead p)
+unplugCopattern (QDest h QHead) = (Nothing, QDest h QHead)
+unplugCopattern (QVar _ QHead)  = (Nothing, error "unplugCopatter{QVar}")
 unplugCopattern (QDest h q)     = let (m,i) = unplugCopattern q in
                                   case m of
                                     Nothing -> (Just (QDest h QHead), i)
@@ -178,56 +209,14 @@ unplugCopattern (QPat q p)      = let (m,i) = unplugCopattern q in
                                   case m of
                                     Nothing -> (Just (QPat QHead p), i)
                                     Just q' -> (Just (QPat q' p), i)
+unplugCopattern (QVar v q)      = let (m,i) = unplugCopattern q in
+                                  case m of
+                                    Nothing -> (Just (QVar v QHead), i)
+                                    Just q' -> (Just (QVar v q'), i)
 
--- replace head with copattern in copattern
-plugCopattern :: CoPattern -> CoPattern -> CoPattern
-plugCopattern QHead       q' = q'
-plugCopattern (QDest h q) q' = QDest h (plugCopattern q q')
-plugCopattern (QPat q p)  q' = QPat (plugCopattern q q') p
+-----------------------------
+-- Some smart constructors --
+-----------------------------
 
-
-{- `flattenPattern` will traverse a term, turning (co)case expressions with
-   nested (co-)patterns in ones nesting (co)case expressions instead. This
-   simplifies translation.
-
-   An example of flattening a case:
-   ```
-   case (Pair (Pair 0 1) (Pair 1 2))
-     { Pair (Pair w x) (Pair y z) -> w + x + y + z }
-   ```
-   ===>
-   ```
-   case (Pair 0 (Pair 1 2))
-     { Pair p0 p1 ->
-         case p0
-           { Pair w x ->
-               case p1
-                { Pair y z -> w + x + y + z
-                }
-           }
-     }
-   ```
-
-   An example of flattening a cocase:
-   ```
-   cocase { Fst # -> 0
-          , Fst (Snd #) -> 1
-          , Snd (Snd #) -> 2 }
-   ```
-   ===>
-   ```
-   cocase { Fst # -> 0
-          , Snd # -> cocase { Fst # -> 1
-                            , Snd # -> 2 } }
-   ```
--}
-
-fresh :: Variable -> State Int Variable
-fresh v = do { n <- get
-             ; put (succ n)
-             ; return . Variable $ (unVariable v <> show n) }
-
-invertPattern :: Pattern -> Term
-invertPattern PWild = error "cannot invert wildcard"
-invertPattern (PVar v) = Var v
-invertPattern (PCons k ps) = distributeArgs (k,fmap invertPattern ps)
+lam :: Variable -> Term -> Term
+lam v t = Coalts [(QPat QHead (PVar v), t)]

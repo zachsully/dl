@@ -265,22 +265,22 @@ transTerm (FLit i) = Lit i
 transTerm (FAdd a b) = Add (transTerm a) (transTerm b)
 transTerm (FVar v) = Var v
 transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
-transTerm (FApp a b) = App (transTerm a) (transTerm b)
-transTerm (FCons k) = Cons k
+-- transTerm (FApp a b) = App (transTerm a) (transTerm b)
+-- transTerm (FCons k) = Cons k
 transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)
                                          [(transPat p, transTerm u)
                                          ,(PVar y,transTerm d)]
-transTerm (FDest h) = Var (Variable "_" <> h)
-transTerm (FCocase (q,u) d) = transCoalt (q,u) (transTerm d)
-transTerm (FFail) = Fail
+-- transTerm (FDest h) = Var (Variable "_" <> h)
+transTerm (FCoalt (q,u) d) = transCoalt (q,u) (transTerm d)
+transTerm (FEmpty) = Fail
 
 transPat :: FlatPattern -> Pattern
 transPat (FlatPatVar v)     = PVar v
 transPat (FlatPatCons k vs) = PCons k vs
 
-transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
-transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set_" <> h)) t)
+transCoalt :: (Variable, FlatTerm) -> Term -> Term
+transCoalt (h,u) t = App (App (Var (Variable "set_" <> h)) t)
                                            (transTerm u)
-transCoalt (FlatCopPat p,u) _ =
-  case p of
-    FlatPatVar v -> Lam v (transTerm u)
+-- transCoalt (FlatCopPat p,u) _ =
+--   case p of
+--     FlatPatVar v -> Lam v (transTerm u)

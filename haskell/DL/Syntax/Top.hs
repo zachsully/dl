@@ -1,6 +1,21 @@
 {-# LANGUAGE GADTs, DataKinds, KindSignatures #-}
-module DL.Syntax.Top where
+module DL.Syntax.Top
+  ( Program (..)
+  , pgmConsDestArity
+  , pgmDecls, pgmTerm
 
+  , Decl (..), Polarity (..)
+  , mkDataDecl, mkCodataDecl
+  , declArity
+
+  , NegativeTyCons (..)
+  , Projection (..), projections
+
+  , PositiveTyCons (..)
+  , Injection (..), injections
+  ) where
+
+import Control.Arrow ((&&&),(<<<))
 import Data.Monoid
 import DL.Pretty
 import DL.Syntax.Type
@@ -13,6 +28,16 @@ import DL.Syntax.Variable
 data Program :: * -> * where
   Pgm :: [Decl] -> t -> Program t
   deriving Show
+
+pgmConsDestArity :: Program t -> [(Variable,Int)]
+pgmConsDestArity pgm =
+  concatMap (\(Decl d) ->
+               case d of
+                 Left n  -> fmap (projName &&& const 1) (projections n)
+                 Right n -> fmap (injName &&& (arity <<< injType))
+                                 (injections n)
+            )
+            (pgmDecls pgm)
 
 pgmDecls :: Program t -> [Decl]
 pgmDecls (Pgm x _) = x

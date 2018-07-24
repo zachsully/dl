@@ -8,7 +8,7 @@ import System.Directory
 import System.Exit
 
 import DL.Syntax.Top
-import DL.Interpreter
+import DL.Evaluation.Interpreter
 import DL.Judgement
 import DL.Utils
 import DL.IO
@@ -33,11 +33,11 @@ main =
                 Right typ → pprint typ
             ; putStrLn ""
 
-            ; putStrLn "Evaluates to:"
-            ; case runStd (interpPgm pgm) of
-                Left e → putStrLn e
-                Right v → pprint v
-            ; putStrLn ""
+            -- ; putStrLn "Evaluates to:"
+            -- ; case runStd (interpPgm pgm) of
+            --     Left e → putStrLn e
+            --     Right v → pprint v
+            -- ; putStrLn ""
             }
      ; exitFailure }
 

@@ -4,6 +4,7 @@ module DL.Backend.Racket.Syntax where
 import Data.Monoid
 
 import qualified DL.Syntax.Top  as Top
+import qualified DL.Syntax.Type as Ty
 import DL.Syntax.Flat
 import DL.Translation
 import DL.Syntax.Variable
@@ -215,7 +216,7 @@ transDecl (Top.Decl (Right d)) =
           { funName = Variable "wrap" <> Top.injName i
           , funArgs = []
           , funRhs  =
-              let arity' = arity . Top.injType $ i
+              let arity' = Ty.arity . Top.injType $ i
                   args = foldrWithIndex (\j x acc ->
                                            (Variable (x <> show j)):acc)
                                         []
@@ -315,23 +316,23 @@ transTerm (FLit i) = Lit i
 transTerm (FAdd a b) = Add (transTerm a) (transTerm b)
 transTerm (FVar v) = Var v
 transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
-transTerm (FApp a b) = App (transTerm a) (transTerm b)
-transTerm (FCons k) = Cons (Variable "wrap" <> k)
+-- transTerm (FApp a b) = App (transTerm a) (transTerm b)
+-- transTerm (FCons k) = Cons (Variable "wrap" <> k)
 transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)
                                          [(transPat p, transTerm u)
                                          ,(PVar y,transTerm d)]
-transTerm (FDest h) = Var (Variable "obs" <> h)
-transTerm (FCocase (q,u) d) = transCoalt (q,u) (transTerm d)
-transTerm (FFail) = Fail
+-- transTerm (FDest h) = Var (Variable "obs" <> h)
+transTerm (FCoalt (q,u) d) = transCoalt (q,u) (transTerm d)
+transTerm (FEmpty) = Fail
 
 transPat :: FlatPattern -> Pattern
 transPat (FlatPatVar v)     = PVar v
 transPat (FlatPatCons k vs) = PCons k vs
 
-transCoalt :: (FlatCopattern, FlatTerm) -> Term -> Term
-transCoalt (FlatCopDest h,u) t = App (App (Var (Variable "set" <> h)) t)
+transCoalt :: (Variable, FlatTerm) -> Term -> Term
+transCoalt (h,u) t = App (App (Var (Variable "set" <> h)) t)
                                      (Lazy . transTerm $ u)
-transCoalt (FlatCopPat p,u) _ =
-  case p of
-    FlatPatVar v ->
-      Lam v (transTerm u)
+-- transCoalt (FlatCopPat p,u) _ =
+--   case p of
+--     FlatPatVar v ->
+--       Lam v (transTerm u)

@@ -37,9 +37,9 @@ instance FV Type where
   fvs (TyCons _) = empty
   fvs (TyApp a b) = fvs a `union` fvs b
 
-instance Arity Type where
-  arity (TyArr _ b) = 1 + arity b
-  arity _ = 0
+arity :: Type -> Int
+arity (TyArr _ b) = 1 + arity b
+arity _ = 0
 
 domain :: Type → Maybe Type
 domain (TyArr a _) = Just a
