@@ -13,16 +13,26 @@ codata Stream a
   { Head : Stream a -> a
   , Tail : Stream a -> Stream a }
 
-let zipwith = (fix f in cocase { Head [# o a b] -> o (Head a) (Head b)
-                               , Tail [# o a b] -> f o (Tail a) (Tail b) })
+let zipwith = (fix f in { Head [# o a b] -> o (Head a) (Head b)
+                        , Tail [# o a b] -> f o (Tail a) (Tail b) })
 in let fib = (fix x in
-                      (cocase { Head # -> 1
-    	                      , Head [Tail #] -> 1
-                              , Tail [Tail #] -> zipwith ({# p q -> p + q}) x (Tail x) }))
-in Head (Tail (Tail (Tail (Tail fib))))
+                { Head # -> 1
+    	        , Head [Tail #] -> 1
+                , Tail [Tail #] -> zipwith ({# p q -> p + q}) x (Tail x) })
+   in Head (Tail (Tail (Tail (Tail fib))))
 ```
 
-## Compiling to different backends
+## Running and Compiling
+
+* Repl
+```
+dl repl
+```
+
+* Interpreter
+```
+dl eval <file-in>
+```
 
 * Haskell
 ```
