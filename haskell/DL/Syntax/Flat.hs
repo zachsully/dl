@@ -203,30 +203,6 @@ flatten' w (Case t alts) =
                    ; def <- flatten' w (Case (Var y) as')
                    ; return (FCase e (FlatPatCons k vs,u'') (y,def)) }
 
-  --    ; case out of
-  --        Nothing -> return FEmpty
-  --        Just (alt',def) -> return (FCase t' alt' def)
-  --    }
-  -- where cata :: Variable
-  --            -> [(Pattern, Term)]
-  --            -> State Int (Maybe ((FlatPattern,FlatTerm),(Variable, FlatTerm)))
-  --       cata _ [] = return Nothing
-  --       cata y ((PVar v,u):_) =
-  --         do { u' <- flatten' w u
-  --            ; return . Just $ ((FlatPatVar v,u'),(y,FEmpty))
-  --            }
-  --       cata y ((PWild,u):_) = undefined u
-  --       cata y ((PCons c ps,u):rest) =
-  --         do { y' <- fresh (Variable "y")
-  --            ; u' <- flatten' w u
-  --            ; out' <- cata y' rest
-  --            ; case out' of
-  --                Nothing -> return . Just $ ((FlatPatCons c [],u'),(y, FEmpty))
-  --                Just (alt'',def') ->
-  --                  return . Just $ ((FlatPatCons c [],u')
-  --                                  ,(y,FCase (FVar y) alt'' def'))
-  --            }
-
 {- Eta expand all destructors.
 
    H ==> { # x -> cocase (H #) x }

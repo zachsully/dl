@@ -9,10 +9,12 @@ module DL.Syntax.Top
   , declArity
 
   , NegativeTyCons (..)
-  , Projection (..), projections
+  , Projection (..)
+  , negTyArity
 
   , PositiveTyCons (..)
-  , Injection (..), injections
+  , Injection (..)
+  , posTyArity
   ) where
 
 import Control.Arrow ((&&&),(<<<))

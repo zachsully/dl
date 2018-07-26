@@ -11,9 +11,10 @@ import DL.Syntax.Top
 
 prelude :: [Decl]
 prelude = [unitDecl,pairDecl,eitherDecl,boolDecl,listDecl
+          ,copairDecl,streamDecl]
 
-          ,copairDecl,streamDecl
-          ]
+preludePgm :: Term -> Program Term
+preludePgm t = Pgm prelude t
 
 {-
 PROBLEMA: Because the prelude is not in scope when parsing, constructors and

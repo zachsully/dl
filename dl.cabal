@@ -13,7 +13,7 @@ cabal-version:       >=1.10
 executable dl
   main-is:             DL/Main.hs
   default-extensions:  UnicodeSyntax
-  GHC-Options :       -Wall -j6
+  GHC-Options :       -Wall -j6 -Werror
   hs-source-dirs:      haskell
   other-modules:       DL.AlphaEq,
                        DL.Backend.Haskell.Syntax,

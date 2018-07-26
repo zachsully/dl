@@ -312,27 +312,27 @@ transDecl (Top.Decl (Left d))  =
 
 transTerm :: FlatTerm -> Term
 transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
+transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
+transTerm (FVar v) = Var v
+
 transTerm (FLit i) = Lit i
 transTerm (FAdd a b) = Add (transTerm a) (transTerm b)
-transTerm (FVar v) = Var v
-transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
--- transTerm (FApp a b) = App (transTerm a) (transTerm b)
--- transTerm (FCons k) = Cons (Variable "wrap" <> k)
+
+transTerm (FConsApp v fts) = foldr App (Var (Variable "wrap" <> v))
+                           . fmap transTerm $ fts
 transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)
                                          [(transPat p, transTerm u)
                                          ,(PVar y,transTerm d)]
--- transTerm (FDest h) = Var (Variable "obs" <> h)
-transTerm (FCoalt (q,u) d) = transCoalt (q,u) (transTerm d)
+transTerm (FCaseEmpty t) = Case (transTerm t) []
+
+transTerm (FCoalt (h,u) t) = App (App (Var (Variable "set" <> h)) (transTerm t))
+                                 (Lazy . transTerm $ u)
 transTerm (FEmpty) = Fail
+transTerm (FFun v t) = Lam v (transTerm t)
+transTerm (FCocase (FlatObsFun e) t) = App (transTerm t) (transTerm e)
+transTerm (FCocase (FlatObsDest h) t) = App (Var (Variable "obs" <> h))
+                                            (transTerm t)
 
 transPat :: FlatPattern -> Pattern
 transPat (FlatPatVar v)     = PVar v
 transPat (FlatPatCons k vs) = PCons k vs
-
-transCoalt :: (Variable, FlatTerm) -> Term -> Term
-transCoalt (h,u) t = App (App (Var (Variable "set" <> h)) t)
-                                     (Lazy . transTerm $ u)
--- transCoalt (FlatCopPat p,u) _ =
---   case p of
---     FlatPatVar v ->
---       Lam v (transTerm u)

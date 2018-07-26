@@ -13,6 +13,7 @@ import qualified DL.Backend.Haskell.Syntax as H
 import qualified DL.Backend.ML.Syntax      as ML
 import qualified DL.Backend.Racket.Syntax  as Rkt
 import DL.Syntax.Flat
+import DL.Prelude
 import DL.Parser.Lexer
 import DL.Parser.Parser
 import DL.Translation
@@ -192,14 +193,14 @@ runRepl =
                 Right ts ->
                   case runParserM (parseTerm ts) emptyState of
                     Left e -> hPutStrLn stdout e
-                    Right (t,_) -> undefined
-                      -- case runStd (interpEmpty (T.Prompt t)) of
-                      --   Left s -> hPutStrLn stdout $ s
-                      --   Right a ->
-                      --     case runStd (infer [] (reifyValue a)) of
-                      --       Left _ -> hPutStrLn stdout . pp $ a
-                      --       Right ty -> hPutStrLn stdout $
-                      --         pp a <+> ":" <+> pp ty
+                    Right (t,_) ->
+                      case runStd (interpPgm (preludePgm t)) of
+                        Left s -> hPutStrLn stdout $ s
+                        Right a -> hPutStrLn stdout $ pp a
+                          -- case runStd (infer [] (reifyValue a)) of
+                          --   Left _ -> hPutStrLn stdout . pp $ a
+                          --   Right ty -> hPutStrLn stdout $
+                          --     pp a <+> ":" <+> pp ty
             }
 
      }
