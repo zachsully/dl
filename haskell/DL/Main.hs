@@ -186,12 +186,12 @@ runRepl =
   do { hSetBuffering stdout NoBuffering
      ; hSetBuffering stdin  LineBuffering
      ; forever $
-         do { hPutStr stdout "▪ "
+         do { hPutStr stdout "# "
             ; m <- lexString <$> hGetLine stdin
             ; case m of
                 Left e -> hPutStrLn stdout e
                 Right ts ->
-                  case runParserM (parseTerm ts) emptyState of
+                  case runParserM (parseTerm ts) (pStateFromDecls prelude) of
                     Left e -> hPutStrLn stdout e
                     Right (t,_) ->
                       case runStd (interpPgm (preludePgm t)) of

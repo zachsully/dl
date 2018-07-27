@@ -1,6 +1,14 @@
 {
 {-# LANGAUGE DataKinds #-}
-module DL.Parser.Parser where
+module DL.Parser.Parser
+  ( parseProgram
+  , parseType
+  , parseTerm
+  , parseString
+  , emptyPState
+  , pStateFromDecls
+  , runParserM
+  ) where
 
 import Control.Monad
 import Data.Monoid
@@ -263,10 +271,16 @@ obsctxA : '#'            { ObsHead }
 --                                Helpers                                     --
 --------------------------------------------------------------------------------
 
+data PState
+  = PState
+  { tyCons :: [Variable]
+  , consDecls :: [(Variable,Polarity)]
+  }
+
 data ParserM a
   = ParserM
-  { runParserM :: ([Variable],[(Variable,Polarity)])
-               -> Either String (a,([Variable],[(Variable,Polarity)]))
+  { runParserM :: PState
+               -> Either String (a,PState)
   }
 
 instance Functor ParserM where
@@ -286,25 +300,37 @@ instance Monad ParserM where
       Left e -> Left e
       Right (x,s') -> runParserM (f x) s'
 
-get :: ParserM ([Variable],[(Variable,Polarity)])
+get :: ParserM PState
 get = ParserM $ \s -> Right (s,s)
 
-put :: ([Variable],[(Variable,Polarity)]) -> ParserM ()
+put :: PState -> ParserM ()
 put s = ParserM $ \_ -> Right ((),s)
 
-emptyState = ([],[])
+emptyPState :: PState
+emptyPState = PState [] []
+
+pStateFromDecls :: [Decl] -> PState
+pStateFromDecls d = PState (fmap getTyCons d) (concatMap getConsDecls d)
+  where getTyCons (Decl d) =
+          case d of
+            Left d  -> negTyName d
+            Right d -> posTyName d
+        getConsDecls (Decl d) =
+          case d of
+            Left d  -> fmap (flip (,) Negative . projName) . projections $ d
+            Right d -> fmap (flip (,) Positive . injName)  . injections  $ d
 
 addTyCons :: Variable -> ParserM ()
-addTyCons s = get >>= \(ts,ss) -> put (s:ts,ss)
+addTyCons s = get >>= \(PState ts ss) -> put (PState (s:ts) ss)
 
 isTyCons :: Variable -> ParserM Bool
-isTyCons s = elem s . fst <$> get
+isTyCons s = elem s . tyCons <$> get
 
 addVar :: Variable -> Polarity -> ParserM ()
-addVar s p = get >>= \(ts,ss) -> put (ts,(s,p):ss)
+addVar s p = get >>= \(PState ts ss) -> put (PState ts ((s,p):ss))
 
 getPolarity :: Variable -> ParserM (Maybe Polarity)
-getPolarity s = get >>= \(_,ss) -> return (lookup s ss)
+getPolarity s = get >>= \(PState _ ss) -> return (lookup s ss)
 
 pfail :: [Token] -> ParserM a
 pfail ts = ParserM $ \_ -> Left ("<parse error>: " ++ show ts)
@@ -314,7 +340,7 @@ parseString s =
   case lexString s of
     Left e -> error e
     Right ts ->
-      case runParserM (parseTerm ts) ([],[]) of
+      case runParserM (parseTerm ts) emptyPState of
         Left e -> error e
         Right (t,_) -> t
 

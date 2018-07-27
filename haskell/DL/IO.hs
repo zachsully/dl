@@ -18,7 +18,7 @@ getProgram fp =
      ; case tokens of
          Left e -> error e
          Right ts ->
-           case runParserM (parseProgram ts) emptyState of
+           case runParserM (parseProgram ts) emptyPState of
              Left e -> error e
              Right (p,_) -> return p
      }
