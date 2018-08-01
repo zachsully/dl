@@ -1,6 +1,7 @@
 module DL.Syntax.Variable where
 
-import Data.Monoid
+import qualified Data.Semigroup as S
+import qualified Data.Monoid as M
 import DL.Pretty
 
 newtype Variable = Variable String
@@ -17,7 +18,10 @@ instance Pretty Variable where
 
 instance Show Variable where
   show = unVariable
+  
+instance Semigroup Variable where
+    (<>) (Variable a) (Variable b) = Variable (a M.<> b)
 
 instance Monoid Variable where
   mempty = Variable mempty
-  mappend (Variable a) (Variable b) = Variable (a <> b)
+  mappend = (S.<>)
