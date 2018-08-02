@@ -13,7 +13,7 @@ cabal-version:       >=1.10
 executable dl
   main-is:             DL/Main.hs
   default-extensions:  UnicodeSyntax
-  GHC-Options :       -Wall -j6 -Werror
+  GHC-Options :       -Wall -j6
   hs-source-dirs:      haskell
   other-modules:       DL.AlphaEq,
                        DL.Backend.Haskell.Syntax,
@@ -70,7 +70,7 @@ test-suite tests
                        DL.Syntax.Kind,
                        DL.Syntax.Variable,
                        DL.Utils
-  build-depends:       base                 >= 4.8,
+  build-depends:       base                 >= 4.11,
                        ghc                  >= 8.0,
                        array                >= 0.5,
                        mtl                  >= 2.2,
