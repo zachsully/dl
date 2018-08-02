@@ -1,5 +1,8 @@
 {-# LANGUAGE GADTs,KindSignatures,UnicodeSyntax #-}
-module DL.Judgement where
+module DL.Judgement
+  ( inferW, TypeScheme (..)
+  , inferBd
+  ) where
 
 import Data.Monoid
 import Data.Set hiding (foldr,map)
@@ -86,11 +89,8 @@ types.
 
 Environments are finite maps from variables to type schemes.
 -}
-newtype Env = Env [(Variable,TypeScheme)]
+newtype Env = Env { unEnv :: [(Variable,TypeScheme)] }
   deriving Show
-
-unEnv :: Env → [(Variable,TypeScheme)]
-unEnv (Env e) = e
 
 emptyEnv :: Env
 emptyEnv = Env []
@@ -114,7 +114,7 @@ instance Monoid Env where
 Substitutions map types to types. This actually maps type variables within types
 to types.
 -}
-data Subst = Subst { unSubst :: Type → Type }
+newtype Subst = Subst { unSubst :: Type → Type }
 
 applyType :: Subst → Type → Type
 applyType = unSubst
@@ -166,8 +166,8 @@ used for construction, observation, and the creation of (co)patterns.
 It then obtains a substituion by running ~inferTS~ and applies that to a top
 level variable to return the final type scheme of the program.
 -}
-inferTSProgram :: Program Term → Std TypeScheme
-inferTSProgram pgm =
+inferW :: Program Term → Std TypeScheme
+inferW pgm =
   do { τ ← newTyVar
      ; s ← inferTS ( mkContextTS . pgmDecls $ pgm )
                     ( pgmTerm pgm )
@@ -189,21 +189,18 @@ inferTS e (Let v a b) ρ =
                      b
                      (applyType sa ρ)
      ; return (sb ∘ sa) }
-
+inferTS e (Var v) ρ = unify ρ =<< tsElim =<< lookupStd v (unEnv e)
+inferTS e (Fix v t) ρ = inferTS (extendEnv v (typeClosure e ρ) e) t ρ
 inferTS e (Ann a τ) ρ =
   do { sa ← inferTS e a τ
      ; unify τ (applyType sa ρ) }
 
 inferTS _ (Lit _) ρ = unify ρ TyInt
-
 inferTS e (Add a b) ρ =
   do { sa ← inferTS e a TyInt
      ; sb ← inferTS (applyEnv sa e) b TyInt
      ; unify (applyType (sb ∘ sa) ρ) TyInt  }
 
-inferTS e (Var v) ρ = unify ρ =<< tsElim =<< lookupStd v (unEnv e)
-
-inferTS e (Fix v t) ρ = inferTS (extendEnv v (typeClosure e ρ) e) t ρ
 
 inferTS e (App a b) ρ =
   do { β ← newTyVar
@@ -224,7 +221,11 @@ inferTS e (Case t alts) ρ =
 
 inferTS e (Dest h) ρ = unify ρ =<< tsElim =<< lookupStd h (unEnv e)
 
-inferTS _ (Cocase _ _) _ = unimplementedErr "inferTS{cocase}"
+inferTS _ (Cocase _ _) _ = unimplementedErr "Cocase"
+  -- do { _ ← newTyVar
+  --    ; _ ← inferTSObsCtx e o
+  --    ; undefined }
+
 {- Cocase inference:
 We must be able to unify the types of all the branches of a cocase, e.g.
 { Head [□ x] → x ; Tail [□ x] → nats } both branches must unify to ~Stream Int~.
@@ -335,8 +336,8 @@ occurs v τ = elem v (fvs τ)
 information before running.
 -}
 
-typeOfProgram :: Program Term -> Std Type
-typeOfProgram (Pgm decls term) = infer (mkContext decls) term
+inferBd :: Program Term -> Std Type
+inferBd (Pgm decls term) = infer (mkContext decls) term
 
 -----------
 -- infer --
