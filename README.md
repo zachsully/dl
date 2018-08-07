@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/zachsully/dl.svg?branch=master)](https://travis-ci.org/zachsully/dl)
+
 # A Prototype Compiler for λcop
 
 `dl` is a compiler for λcop capable of generating code for Haskell, Ocaml, and
