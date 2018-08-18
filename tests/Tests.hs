@@ -8,11 +8,35 @@ import System.Directory
 import System.Exit
 
 import DL.Syntax.Top
+import DL.Syntax.Term
+import DL.Syntax.Flat
 import DL.Evaluation.Interpreter
 import DL.Judgement
 import DL.Utils
 import DL.IO
 import DL.Pretty
+
+-- | Holds information for a particular test
+data TestCase
+  = TestCase
+  { tfile   :: FilePath
+    -- | Expected output, if available. For now tests must output ints
+  , toutput :: Mabye Int
+    -- | Parser output
+  , tpgm    :: Maybe (Program Term)
+    -- | Flattening output
+  , tfpgm   :: Maybe (Program FlatTerm)
+    -- | Evalutation output
+  , teval   :: Maybe Int
+    -- | Haskell backend output
+  , ths     :: Maybe Int
+    -- | Ocaml backend output
+  , tml     :: Maybe Int
+    -- | Racket backend output
+  , trkt    :: Maybe Int
+    -- | Javascript backend output
+  , tjs     :: Maybe Int
+  }
 
 main :: IO ()
 main =

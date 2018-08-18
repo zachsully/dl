@@ -18,8 +18,8 @@ instance Pretty Variable where
 
 instance Show Variable where
   show = unVariable
-  
-instance Semigroup Variable where
+
+instance S.Semigroup Variable where
     (<>) (Variable a) (Variable b) = Variable (a M.<> b)
 
 instance Monoid Variable where

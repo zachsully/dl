@@ -27,7 +27,7 @@ infixr 1 <->
 a <-> b = a <> "\n" <> b
 
 indent :: Int -> String -> String
-indent lvl s = replicate (lvl*2) ' ' <> s
+indent lvl s = replicate lvl ' ' <> s
 
 stringmconcat :: String -> [String] -> String
 stringmconcat _ []     = []
@@ -50,8 +50,20 @@ ppPrec p p' s = case p > p' of
 parens :: String -> String
 parens s = "(" <> s <> ")"
 
+parensIf :: (a -> Bool) -> a -> String -> String
+parensIf f a s =
+  case f a of
+    True  -> parens s
+    False -> s
+
 brackets :: String -> String
 brackets s = "[" <> s <> "]"
+
+bracketsIf :: (a -> Bool) -> a -> String -> String
+bracketsIf f a s =
+  case f a of
+    True  -> brackets s
+    False -> s
 
 braces :: String -> String
 braces s = "{" <> s <> "}"

@@ -19,7 +19,7 @@ import DL.Parser.Parser
 import DL.Translation
 import DL.Evaluation.Strategy
 import DL.Evaluation.Interpreter
-import DL.Judgement
+import DL.Judgement ()
 import DL.Utils
 import DL.Pretty
 import DL.IO
@@ -134,6 +134,7 @@ main = do { mode <- parseMode
 runFlatten :: FlattenMode -> Top.Program T.Term -> IO ()
 runFlatten _ pgm =
   do { pprint pgm
+     ; print pgm
      ; putStrLn "\n->>R\n"
      ; pprint . flattenPgm $ pgm }
 
@@ -163,23 +164,23 @@ runEvaluate em pgm =
     do { when (emDebug em) $ pprint term
        ; putStr "> "
        ; case runStd (interpPgm pgm) of
-           Left s -> print s
+           Left s -> putStrLn s
            Right a -> pprint a
        }
 
 runTypeOf :: TypeMode -> Top.Program T.Term -> IO ()
-runTypeOf tm pgm =
-  do { when (tmDebug tm) $ print pgm
-     ; case tmBidir tm of
-         True ->
-           case runStd . typeOfProgram $ pgm of
-             Left e -> putStrLn e
-             Right ty -> putStrLn . pp $ ty
-         False ->
-           case runStd . inferTSProgram $ pgm of
-             Left e -> putStrLn e
-             Right ty -> putStrLn . pp $ ty
-     }
+runTypeOf = error "typechecking is not yet implemented"
+  -- do { when (tmDebug tm) $ print pgm
+  --    ; case tmBidir tm of
+  --        True ->
+  --          case runStd . undefined $ pgm of
+  --            Left e -> putStrLn e
+  --            Right ty -> putStrLn . pp $ ty
+  --        False ->
+  --          case runStd . undefined $ pgm of
+  --            Left e -> putStrLn e
+  --            Right ty -> putStrLn . pp $ ty
+  --    }
 
 runRepl :: IO ()
 runRepl =

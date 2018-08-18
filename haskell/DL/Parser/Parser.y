@@ -79,18 +79,19 @@ vars : strs                                    { fmap Variable $1 }
 --------------------------------------------------------------------------------
 
 program :: { Program Term }
-program : decls term                           { Pgm $1 $2 }
+program : decls term                           {% get >>= \s ->
+                                                   return (Pgm $1 (replaceCD (consDecls s) $2)) }
 
 decl :: { Decl }
 decl : 'codata' var vars '{' projs '}'         {% addTyCons $2 >>
-                                                  (return . replaceWithCons $2 $
+                                                  (return . replaceWithTyCons $2 $
                                                     mkCodataDecl (NegTyCons $2
                                                                   (reverse $3)
                                                                   (reverse $5)))
                                                }
 
      | 'data'   var vars '{' injs  '}'         {% (addTyCons $2) >>
-                                                  (return . replaceWithCons $2 $
+                                                  (return . replaceWithTyCons $2 $
                                                     mkDataDecl (PosTyCons $2
                                                                 (reverse $3)
                                                                 (reverse $5)))
@@ -344,8 +345,9 @@ parseString s =
         Left e -> error e
         Right (t,_) -> t
 
-replaceWithCons :: Variable -> Decl -> Decl
-replaceWithCons v d =
+-- | Replaces type variables with known type constructors
+replaceWithTyCons :: Variable -> Decl -> Decl
+replaceWithTyCons v d =
   case d of
     (Decl (Left n))  -> mkCodataDecl
       (n { projections = replaceProj <$> projections n })
@@ -362,4 +364,68 @@ replaceWithCons v d =
         replaceType (TyCons k) = TyCons k
         replaceType (TyApp a b) = TyApp (replaceType a) (replaceType b)
 
+-- | Given a list of constructors and destructors, replace pattern and
+-- copattern variables with known constructors and destructors
+replaceCD :: [(Variable,Polarity)] -> Term -> Term
+replaceCD d (Let v a b)
+  = Let v (replaceCD d a) (replaceCD d b)
+replaceCD d (Ann a ty)
+  = Ann (replaceCD d a) ty
+replaceCD d (Lit i) = Lit i
+replaceCD d (Add a b)
+  = Add (replaceCD d a) (replaceCD d b)
+replaceCD d (Var v)
+  = case lookup v d of
+      Nothing -> Var v
+      Just Positive -> Cons v
+      Just Negative -> Dest v
+replaceCD d (Fix v a)
+  = Fix v (replaceCD d a)
+replaceCD d (App a b)
+  = App (replaceCD d a) (replaceCD d b)
+replaceCD d (Cons k) = Cons k
+replaceCD d (Case a alts)
+  = Case (replaceCD d a) (fmap (replaceCDAlt d) alts)
+replaceCD d (Dest h) = Dest h
+replaceCD d (Cocase obsctx t)
+  = Cocase (replaceCDObsCtx d obsctx) (replaceCD d t)
+replaceCD d (Coalts coalts)
+  = Coalts (fmap (replaceCDCoalt d) coalts)
+replaceCD d (Prompt a)
+  = Prompt (replaceCD d a)
+
+replaceCDAlt :: [(Variable,Polarity)] -> (Pattern,Term) -> (Pattern,Term)
+replaceCDAlt d (p,t) = (replaceCDPat d p,replaceCD d t)
+
+replaceCDPat :: [(Variable,Polarity)] -> Pattern -> Pattern
+replaceCDPat _ PWild = PWild
+replaceCDPat d (PVar v)
+  = case lookup v d of
+      Nothing -> PVar v
+      Just Positive -> PCons v []
+      Just Negative -> error (show v <+> "must be a constructor")
+replaceCDPat d (PCons k ps) = PCons k (fmap (replaceCDPat d) ps)
+
+replaceCDObsCtx :: [(Variable,Polarity)] -> ObsCtx -> ObsCtx
+replaceCDObsCtx _ ObsHead = ObsHead
+replaceCDObsCtx d (ObsFun o t)
+  = ObsFun (replaceCDObsCtx d o) (replaceCD d t)
+replaceCDObsCtx d (ObsDest h o)
+  = ObsDest h (replaceCDObsCtx d o)
+
+replaceCDCoalt :: [(Variable,Polarity)] -> (CoPattern,Term) -> (CoPattern,Term)
+replaceCDCoalt d (q,t) = (replaceCDCop d q,replaceCD d t)
+
+replaceCDCop :: [(Variable,Polarity)] -> CoPattern -> CoPattern
+replaceCDCop _ QHead = QHead
+replaceCDCop d (QDest h q)
+  = QDest h (replaceCDCop d q)
+replaceCDCop d (QPat q p)
+  = QPat (replaceCDCop d q) (replaceCDPat d p)
+replaceCDCop d (QVar v q)
+  = case lookup v d of
+      Nothing -> QVar v (replaceCDCop d q)
+      Just Positive -> error (show v <+> "must be a destructor")
+      Just Negative -> QDest v (replaceCDCop d q)
+replaceCDCop _ QWild = QWild
 }
