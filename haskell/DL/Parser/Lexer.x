@@ -1,6 +1,8 @@
 {
 module DL.Parser.Lexer
   (lexFile, lexString, lexContents, Token(..)) where
+
+import System.Directory
 }
 
 %wrapper "basic"
@@ -87,7 +89,12 @@ alexScanTokens' s = go ('\n',[],s)
                 Right ts -> Right (act (take len s') : ts)
 
 lexFile :: FilePath -> IO (Either String [Token])
-lexFile fp = alexScanTokens' <$> readFile fp
+lexFile fp =
+  do { exists <- doesFileExist fp
+     ; case exists of
+         False -> return (Left ("file " ++ "'" ++ fp ++ "' does not exist"))
+         True  -> alexScanTokens' <$> readFile fp
+     }
 
 lexString :: String -> Either String [Token]
 lexString = alexScanTokens'
