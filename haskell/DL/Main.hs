@@ -37,6 +37,7 @@ data CompileMode
   { cmDebug   :: Bool
   , cmStrat   :: Strategy
   , cmUntyped :: Bool
+  , cmOO      :: Bool
   , cmInput   :: FilePath
   , cmOutput  :: FilePath }
 
@@ -79,6 +80,8 @@ parseCompile = CompileMode
                          <> help "specify 'call-by-value' or 'call-by-name' evaluation strategy")
            <*> switch (  long "untyped"
                       <> help "compile to an untyped language" )
+           <*> switch (  long "oo"
+                      <> help "compile to an object-oriented language" )
            <*> inputFp
            <*> strArgument (metavar "OUTPUT" <> help "output source file")
 
@@ -147,11 +150,13 @@ runCompile cm pgm =
             ; putStrLn "\n->>R\n"
             ; pprint pgm'
             ; putStrLn "\n=>\n" }
-       ; let !prog' = (case (cmStrat cm,cmUntyped cm) of
-                         (CallByName,False)  -> (pp :: H.Program -> String) . translate
-                         (CallByName,True)   -> (pp :: JS.Program -> String) . translate --change this later
-                         (CallByValue,False) -> (pp :: ML.Program -> String) . translate
-                         (CallByValue,True)  -> (pp :: Rkt.Program -> String) . translate)
+       ; let !prog' = (case (cmStrat cm,cmUntyped cm,cmOO cm) of
+                         (CallByName,False,False)  -> (pp :: H.Program -> String) . translate
+                         (CallByName,True,False)   -> error "not existing call-by-name untyped translation"
+                         (CallByValue,False,False) -> (pp :: ML.Program -> String) . translate
+                         (CallByValue,True,False)  -> (pp :: Rkt.Program -> String) . translate
+                         (CallByValue,True,True)   -> (pp :: JS.Program -> String) . translate
+                         (_,_,True)                -> error "not existing object oriented translation")
 
                     $ pgm'
        ; case cmOutput cm of
