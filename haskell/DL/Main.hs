@@ -12,6 +12,7 @@ import qualified DL.Syntax.Top             as Top
 import qualified DL.Backend.Haskell.Syntax as H
 import qualified DL.Backend.ML.Syntax      as ML
 import qualified DL.Backend.Racket.Syntax  as Rkt
+import qualified DL.Backend.JavaScript.Syntax as JS
 import DL.Syntax.Flat
 import DL.Prelude
 import DL.Parser.Lexer
@@ -147,7 +148,7 @@ runCompile cm pgm =
             ; putStrLn "\n=>\n" }
        ; let !prog' = (case (cmStrat cm,cmUntyped cm) of
                          (CallByName,False)  -> (pp :: H.Program -> String) . translate
-                         (CallByName,True)   -> error "not existing call-by-name untyped translation"
+                         (CallByName,True)   -> (pp :: JS.Program -> String) . translate --change this later
                          (CallByValue,False) -> (pp :: ML.Program -> String) . translate
                          (CallByValue,True)  -> (pp :: Rkt.Program -> String) . translate)
 
@@ -172,13 +173,13 @@ runTypeOf tm pgm =
   do { when (tmDebug tm) $ print pgm
      ; case tmBidir tm of
          True ->
-           case runStd . typeOfProgram $ pgm of
+           case runStd . undefined $ pgm of
              Left e -> putStrLn e
-             Right ty -> putStrLn . pp $ ty
+             Right ty ->  putStrLn "c" -- putStrLn . pp $ ty
          False ->
-           case runStd . inferTSProgram $ pgm of
+           case runStd . undefined $ pgm of
              Left e -> putStrLn e
-             Right ty -> putStrLn . pp $ ty
+             Right ty -> putStrLn "c" -- putStrLn . pp $ ty
      }
 
 runRepl :: IO ()

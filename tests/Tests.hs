@@ -7,6 +7,8 @@ import System.FilePath
 import System.Directory
 import System.Exit
 
+import qualified DL.Syntax.Flat as F
+import qualified DL.Backend.JavaScript.Syntax as JS
 import DL.Syntax.Top
 import DL.Evaluation.Interpreter
 import DL.Judgement
@@ -27,13 +29,15 @@ main =
               ; putStrLn "Parses as:"
               ; pprint (pgmTerm pgm)
               ; putStrLn ""
-
+              ; putStrLn "Translates to:"
+              ; putStrLn $ (pp :: JS.Program -> String) $ JS.trans $ F.flattenPgm pgm
+              ; writeFile ("examples/target"</>fp<>".js") ((pp :: JS.Program -> String) $ JS.trans $ F.flattenPgm pgm)
               -- ; putStrLn "Has type:"
               -- ; case runStd (inferTSProgram pgm) of
               --     Left e → putStrLn e
               --     Right typ → pprint typ
               -- ; putStrLn ""
-
+              ; putStrLn ""
               ; putStrLn "Evaluates to:"
               ; case runStd (interpPgm pgm) of
                   Left e → putStrLn (e <> "\n") >> return (errs+1)
