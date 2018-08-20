@@ -1,3 +1,4 @@
+--o42
 data Bool
   { True  : Bool
   | False : Bool }

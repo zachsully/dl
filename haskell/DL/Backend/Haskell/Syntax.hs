@@ -271,7 +271,7 @@ transTerm (FConsApp v fts) = foldr App (Var v) . fmap transTerm $ fts
 transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)
                                          [(transPat p, transTerm u)
                                          ,(PVar y,transTerm d)]
-transTerm (FCaseEmpty t) = Case (transTerm t) []
+transTerm (FCaseEmpty t) = App (Var (Variable "(error \"unmatched\")")) (transTerm t)
 
 transTerm (FCoalt (h,u) t) = App (App (Var (Variable "set_" <> h))
                                       (transTerm t))

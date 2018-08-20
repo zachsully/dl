@@ -36,34 +36,43 @@ data Term where
   Prompt :: Term -> Term -- sets a point to delimit continuations
   deriving (Eq,Show)
 
+atomicT :: Term -> Bool
+atomicT (Lit _) = True
+atomicT (Cons _) = True
+atomicT (Dest _) = True
+atomicT (Coalts _) = True
+atomicT (Var _) = True
+atomicT _ = False
+
 instance Pretty Term where
   ppInd _ (Lit i)         = show i
-  ppInd i (Ann t ty)      = parens (ppInd i t <+> ":" <+> ppInd (i+1) ty)
-  ppInd i (Add a b)       = (parens . ppInd i $ a)
+  ppInd i (Ann t ty)      = ppInd i t <+> ":" <+> ppInd (i+1) ty
+  ppInd i (Add a b)       = (parensIf (not . atomicT) a . ppInd i $ a)
                         <+> "+"
-                        <+> (parens . ppInd i $ b)
+                        <+> (parensIf (not . atomicT) b . ppInd i $ b)
   ppInd _ (Var s)         = pp s
   ppInd i (Fix s t)       = "fix" <+> pp s <+> "in" <-> indent i (ppInd (i+1) t)
   ppInd i (Let s a b)     = "let" <+> pp s <+> "=" <+> ppInd (i+1) a
                         <-> indent i ("in" <+> ppInd (i+1) b)
-  ppInd i (App a b)       = (parens . ppInd i $ a) <+> (parens . ppInd i $ b)
+  ppInd i (App a b)       = (parensIf (not . atomicT) a . ppInd i $ a)
+                          <+> (parensIf (not . atomicT) b . ppInd i $ b)
   ppInd _ (Cons k)        = pp k
   ppInd i (Case t alts)   = "case"
                         <+> ppInd i t
-                        <-> indent (i+1) "{"
-                        <+> ( stringmconcat ("\n" <> (indent (i+1) "| "))
-                            . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+2) u)
+                        <-> indent (i+2) "{"
+                        <+> ( stringmconcat ("\n" <> (indent (i+2) "| "))
+                            . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+4) u)
                             $ alts)
-                        <-> indent (i+1) "}"
+                        <+> "}"
   ppInd _ (Dest h)        = pp h
-  ppInd i (Cocase c t)    = "cocase" <+> ppInd (i+1) c
-                                     <-> indent (i+1) (ppInd (i+2) t)
+  ppInd i (Cocase c t)    = "cocase" <+> ((bracketsIf (not . atomicO) c) (ppInd (i+2) c))
+                                     <-> indent (i+2) (ppInd (i+2) t)
   ppInd _ (Coalts [])     = "{}"
   ppInd i (Coalts coalts) = "{"
-                        <+> ( stringmconcat ("\n" <> (indent (i+1) ", "))
-                            . fmap (\(q,u) -> pp q <+> "->" <+> ppInd (i+2) u)
+                        <+> ( stringmconcat ("\n" <> (indent i ", "))
+                            . fmap (\(q,u) -> pp q <+> "->" <+> ppInd (i+3) u)
                             $ coalts)
-                        <-> indent (i+1) "}"
+                        <+> "}"
   ppInd i (Prompt t)      = "#" <+> ppInd (i+1) t
 
 instance FV Term where
@@ -106,10 +115,15 @@ data ObsCtx :: * where
   ObsDest :: Variable -> ObsCtx -> ObsCtx
   deriving (Show, Eq)
 
+atomicO :: ObsCtx -> Bool
+atomicO ObsHead = True
+atomicO _ = False
+
 instance Pretty ObsCtx where
   pp ObsHead       = "#"
-  pp (ObsDest h c) = pp h <+> (brackets . pp $ c)
-  pp (ObsFun c t)  = (brackets . pp $ c) <+> (parens . pp $ t)
+  pp (ObsDest h c) = pp h <+> (bracketsIf (not . atomicO) c . pp $ c)
+  pp (ObsFun c t)  =   (bracketsIf (not . atomicO) c . pp $ c)
+                   <+> (parensIf (not . atomicT) t . pp $ t)
 
 instance FV ObsCtx where
   fvs ObsHead = empty
@@ -147,10 +161,15 @@ data Pattern where
   PCons :: Variable -> [Pattern] -> Pattern
   deriving (Eq,Show)
 
+atomicP :: Pattern -> Bool
+atomicP (PCons _ (_:_)) = False
+atomicP _ = True
+
 instance Pretty Pattern where
   pp PWild        = "_"
   pp (PVar s)     = pp s
-  pp (PCons k ps) = pp k <+> (smconcat . fmap (parens . pp) $ ps)
+  pp (PCons k ps) = pp k
+    <+> (smconcat . fmap (\p -> (parensIf (not . atomicP) p (pp p))) $ ps)
 
 patBinds :: Pattern -> Set Variable
 patBinds PWild = empty
@@ -169,16 +188,25 @@ data CoPattern where
   QDest :: Variable -> CoPattern -> CoPattern -- ^ a specific destructor
   QPat  :: CoPattern -> Pattern -> CoPattern  -- ^ a copattern applied ot a pattern
   QVar  :: Variable -> CoPattern -> CoPattern -- ^ a covariable to bind continuations
+  QWild :: CoPattern                          -- ^ always succeeds
   deriving (Eq,Show)
+
+atomicQ :: CoPattern -> Bool
+atomicQ QHead = True
+atomicQ QWild = True
+atomicQ _ = False
 
 instance Pretty CoPattern where
   pp QHead       = "#"
-  pp (QDest h q) = pp h <+> (brackets . pp $ q)
-  pp (QPat q p)  = (brackets . pp $ q) <+> (parens . pp $ p)
-  pp (QVar v q)  = pp v <+> (brackets . pp $ q)
+  pp (QDest h q) = pp h <+> (bracketsIf (not . atomicQ) q . pp $ q)
+  pp (QPat q p)  =   (bracketsIf (not . atomicQ) q . pp $ q)
+                 <+> (parensIf (not . atomicP) p . pp $ p)
+  pp (QVar v q)  = pp v <+> (bracketsIf (not . atomicQ) q . pp $ q)
+  pp QWild       = "_"
 
 copBinds :: CoPattern -> Set Variable
 copBinds QHead = empty
+copBinds QWild = empty
 copBinds (QDest _ q) = copBinds q
 copBinds (QPat q p) = patBinds p `union` copBinds q
 copBinds (QVar v q) = singleton v `union` copBinds q
@@ -186,6 +214,7 @@ copBinds (QVar v q) = singleton v `union` copBinds q
 -- replace head with copattern in copattern
 plugCopattern :: CoPattern -> CoPattern -> CoPattern
 plugCopattern QHead       q' = q'
+plugCopattern QWild       _  = QWild
 plugCopattern (QDest h q) q' = QDest h (plugCopattern q q')
 plugCopattern (QPat q p)  q' = QPat (plugCopattern q q') p
 plugCopattern (QVar v q)  q' = QVar v (plugCopattern q q')
@@ -198,9 +227,9 @@ out and replace by head) and the inner most copattern
 
 unplugCopattern :: CoPattern -> (Maybe CoPattern,CoPattern)
 unplugCopattern QHead           = (Nothing, QHead)
+unplugCopattern QWild           = (Nothing, QWild)
 unplugCopattern (QPat QHead p)  = (Nothing, QPat QHead p)
 unplugCopattern (QDest h QHead) = (Nothing, QDest h QHead)
-unplugCopattern (QVar _ QHead)  = (Nothing, error "unplugCopatter{QVar}")
 unplugCopattern (QDest h q)     = let (m,i) = unplugCopattern q in
                                   case m of
                                     Nothing -> (Just (QDest h QHead), i)

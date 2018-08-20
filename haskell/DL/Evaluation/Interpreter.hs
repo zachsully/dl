@@ -7,7 +7,7 @@
 #-}
 module DL.Evaluation.Interpreter ( interpPgm ) where
 
-import Data.Monoid
+import Control.Monad.State
 import DL.Utils
 import DL.Pretty
 import DL.Syntax.Top
@@ -74,7 +74,7 @@ instance Pretty (EvalCtx s) where
   pp (EAddL e k t) = pp e <+> ":" <+> pp k <+> "+" <+> pp t
   pp (EAddR i e) = show i <+> "+" <+> pp e
   pp (ECase e (a,b) (c,d)) =
-    smconcat ["case",pp e,"of",pp a,"->",pp b,"|",pp c,"->",pp d]
+    smconcat ["case",pp e,"{",pp a,"->",pp b,"|",pp c,"->",pp d,"}"]
   pp (EAppFun e t) = pp e <+> pp t
   pp (EAppDest h e) = pp h <+> pp e
   -- pp (EAppArg v e) = undefined
@@ -100,20 +100,20 @@ emptyEnvCBN = EnvCBN []
 data MState s = MState EnvCBN (EvalCtx s) FlatTerm
 
 instance Pretty (MState s) where
-  pp (MState a b c) = stringmconcat " || " [pp b,pp c,pp a] <> "\n"
+  pp (MState a b c) = "⟨" <+> stringmconcat " !¡ " [pp b,pp c,pp a] <+> "⟩\n"
 
 interpPgm :: Program Term -> Std FlatTerm
 interpPgm t =
-  runMachine (MState emptyEnvCBN
-                     EEmpty
-                     (pgmTerm . flattenPgm $ t))
-    >>= \fs ->
-      case fs of
-      MState _ _ t' -> return t'
+  let mrun   = runMachine (MState emptyEnvCBN EEmpty (pgmTerm . flattenPgm $ t))
+      ss = runStateT mrun [] in
+    ss >>= (\(MState _ _ t',_) -> return t')
 
-runMachine :: s ~ 'CallByName => MState s -> Std (MState s)
+runMachine :: s ~ 'CallByName
+           => MState s
+           -> StateT [MState s] Std (MState s)
 runMachine s =
-  do { s' <- step s
+  do { put . (s:) =<< get
+     ; s' <- step s
      ; case finalState s' of
          True  -> return s'
          False -> runMachine s' }
@@ -123,13 +123,17 @@ finalState (MState _ EEmpty (FLit _)) = True
 finalState (MState _ EEmpty (FConsApp _ _)) = True
 finalState _ = False
 
-step :: (s ~ 'CallByName) => MState s -> Std (MState s)
+step :: (s ~ 'CallByName) => MState s -> StateT [MState s] Std (MState s)
 step (MState e k (FLet v t1 t2)) =
   return (MState (extendEnvCBN v (t1,e) e) k t2)
 step (MState e k (FVar v)) =
   case lookup v (envCBN e) of
     Just (t,e') -> return (MState e' k t)
-    Nothing    -> unboundErr (show v)
+    Nothing    ->
+      do { states <- get
+         ; let string = vmconcat . fmap pp $ states
+         ; lift (failure $ string <-> "<unbound>" <+> show v) }
+
 step (MState e k (FFix v t)) =
   return (MState (extendEnvCBN v (FFix v t,e) e) k t)
 
@@ -161,5 +165,10 @@ step (MState e (EAppDest h k) (FCoalt (h',u) d)) =
     True  -> return (MState e k u)
     False -> return (MState e k d)
 
-step (MState _ _ FEmpty) = failure "<unmatched (co)case>"
-step s = failure $ "<stuck>:" <-> pp s
+step (MState _ _ FEmpty) =
+  do { states <- get
+     ; let string = vmconcat . fmap pp $ states
+     ; lift (failure $ string <-> "<unmatched (co)case>") }
+step s = do { states <- get
+            ; let string = vmconcat . fmap pp $ states
+            ; lift (failure $ string <-> "\n<stuck>:" <-> pp s) }

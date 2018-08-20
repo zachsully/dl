@@ -4,6 +4,7 @@ module DL.Judgement
   , inferBd
   ) where
 
+import qualified Data.Semigroup as S
 import Data.Monoid
 import Data.Set hiding (foldr,map)
 import Control.Arrow hiding ((<+>))
@@ -105,7 +106,7 @@ instance FV Env where
 applyEnv :: Subst → Env → Env
 applyEnv σ = Env . fmap (\(v,s) → (v,applyScheme σ s)) . unEnv
 
-instance Semigroup Env
+instance S.Semigroup Env
 
 instance Monoid Env where
   mempty = Env []
