@@ -52,7 +52,7 @@ instance Pretty Term where
                         <+> ppInd i t
                         <-> indent (i+1) "{"
                         <+> ( stringmconcat ("\n" <> (indent (i+1) "| "))
-                            . fmap (\(p,u) -> pp p <+> "→" <+> ppInd (i+2) u)
+                            . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+2) u)
                             $ alts)
                         <-> indent (i+1) "}"
   ppInd _ (Dest h)        = pp h
@@ -61,7 +61,7 @@ instance Pretty Term where
   ppInd _ (Coalts [])     = "{}"
   ppInd i (Coalts coalts) = "{"
                         <+> ( stringmconcat ("\n" <> (indent (i+1) ", "))
-                            . fmap (\(q,u) -> pp q <+> "→" <+> ppInd (i+2) u)
+                            . fmap (\(q,u) -> pp q <+> "->" <+> ppInd (i+2) u)
                             $ coalts)
                         <-> indent (i+1) "}"
   ppInd i (Prompt t)      = "#" <+> ppInd (i+1) t
@@ -107,7 +107,7 @@ data ObsCtx :: * where
   deriving (Show, Eq)
 
 instance Pretty ObsCtx where
-  pp ObsHead       = "□"
+  pp ObsHead       = "#"
   pp (ObsDest h c) = pp h <+> (brackets . pp $ c)
   pp (ObsFun c t)  = (brackets . pp $ c) <+> (parens . pp $ t)
 
@@ -172,7 +172,7 @@ data CoPattern where
   deriving (Eq,Show)
 
 instance Pretty CoPattern where
-  pp QHead       = "□"
+  pp QHead       = "#"
   pp (QDest h q) = pp h <+> (brackets . pp $ q)
   pp (QPat q p)  = (brackets . pp $ q) <+> (parens . pp $ p)
   pp (QVar v q)  = pp v <+> (brackets . pp $ q)
