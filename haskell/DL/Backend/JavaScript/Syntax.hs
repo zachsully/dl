@@ -49,10 +49,8 @@ instance Pretty Program where
   pp pgm =   "appDest = function (v,t){"
          <-> "  if (typeof t[v] === 'function'){"
          <-> "      if (t.isEval){"
-         <-> "          console.log(\"no evaluation\")"
          <-> "          return eval(\"t.\" + v +\"()\")"
          <-> "      }else{"
-         <-> "          console.log(\"evaluation\")"
          <-> "          let value = eval(\"t.\" + v +\"()\"); t.isEval = true; t.v = value; return value;"
          <-> "      }"
          <-> "  }else{"
@@ -88,7 +86,6 @@ instance Translate Program where
 
 trans :: Top.Program FlatTerm -> Program
 trans dpgm = Pgm (aNorm . transTerm . Top.pgmTerm $ dpgm)
--- trans dpgm = Pgm (transTerm . Top.pgmTerm $ dpgm)
 
 -- Because aNorm and transTerm freshen variables and thus return type Std JSTerm, we must extract the term from the Std Monad
 transTerm :: FlatTerm -> JSTerm
