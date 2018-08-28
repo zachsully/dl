@@ -1,6 +1,5 @@
 module Main where
 
-import Data.Monoid
 import Options.Applicative
 import Control.Monad.State
 import Control.Monad (when)
@@ -137,7 +136,9 @@ runFlatten _ pgm =
   do { pprint pgm
      ; print pgm
      ; putStrLn "\n->>R\n"
-     ; pprint . flattenPgm $ pgm }
+     ; let fp = flattenPgm $ pgm
+     ; pprint fp
+     ; print fp }
 
 runCompile :: CompileMode -> Top.Program T.Term -> IO ()
 runCompile cm pgm =

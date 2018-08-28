@@ -113,6 +113,7 @@ data ObsCtx :: * where
   ObsHead :: ObsCtx
   ObsFun  :: ObsCtx -> Term -> ObsCtx
   ObsDest :: Variable -> ObsCtx -> ObsCtx
+  ObsCut  :: Variable -> ObsCtx -> ObsCtx
   deriving (Show, Eq)
 
 atomicO :: ObsCtx -> Bool
@@ -124,21 +125,27 @@ instance Pretty ObsCtx where
   pp (ObsDest h c) = pp h <+> (bracketsIf (not . atomicO) c . pp $ c)
   pp (ObsFun c t)  =   (bracketsIf (not . atomicO) c . pp $ c)
                    <+> (parensIf (not . atomicT) t . pp $ t)
+  pp (ObsCut v c)  = pp v <+> (bracketsIf (not . atomicO) c . pp $ c)
 
 instance FV ObsCtx where
   fvs ObsHead = empty
   fvs (ObsFun c t) = fvs c `union` fvs t
   fvs (ObsDest _ c) = fvs c
+  fvs (ObsCut v c) =  singleton v `union` fvs c
 
+-- | Perform the substituion, q[q'/#]
 plugObsCtx :: ObsCtx -> ObsCtx -> ObsCtx
 plugObsCtx ObsHead       c' = c'
 plugObsCtx (ObsDest h c) c' = ObsDest h (plugObsCtx c c')
 plugObsCtx (ObsFun c t)  c' = ObsFun (plugObsCtx c c') t
+plugObsCtx (ObsCut v c)  c' = ObsCut v (plugObsCtx c c')
 
+-- | Perform the unsubstituion, q[q'/#]
 unplugObsCtx :: ObsCtx -> (Maybe ObsCtx,ObsCtx)
 unplugObsCtx ObsHead             = (Nothing, ObsHead)
 unplugObsCtx (ObsFun ObsHead t)  = (Nothing, ObsFun ObsHead t)
 unplugObsCtx (ObsDest h ObsHead) = (Nothing, ObsDest h ObsHead)
+unplugObsCtx (ObsCut v ObsHead)  = (Nothing, ObsCut v ObsHead)
 unplugObsCtx (ObsFun c t)        =
   let (m,i) = unplugObsCtx c in
     case m of
@@ -149,6 +156,11 @@ unplugObsCtx (ObsDest h c)       =
     case m of
       Nothing -> (Just (ObsDest h ObsHead), i)
       Just c' -> (Just (ObsDest h c'), i)
+unplugObsCtx (ObsCut v c)        =
+  let (m,i) = unplugObsCtx c in
+    case m of
+      Nothing -> (Just (ObsCut v ObsHead), i)
+      Just c' -> (Just (ObsCut v c'), i)
 
 ------------------
 -- (Co)patterns --

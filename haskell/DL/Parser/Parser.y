@@ -230,7 +230,7 @@ copattern : copattern patternA   { QPat $1 $2 }
 copattern0 :: { CoPattern }
 copattern0 : var copatternA      {% do { mp <- getPolarity $1
                                        ; case mp of
-                                           Nothing -> return (QDest $1 $2)
+                                           Nothing -> return (QVar $1 $2)
                                            Just Negative -> return (QDest $1 $2)
                                            Just Positive ->
                                              error ("constructor" <+> pp $1 <+>
@@ -252,7 +252,7 @@ obsctx : obsctx termA    { ObsFun $1 $2 }
 obsctx0 :: { ObsCtx }
 obsctx0 : var obsctxA    {% do { mp <- getPolarity $1
                                ; case mp of
-                                   Nothing -> return (ObsDest $1 $2)
+                                   Nothing -> return (ObsCut $1 $2)
                                    Just Negative -> return (ObsDest $1 $2)
                                    Just Positive ->
                                      error ("constructor" <+> pp $1 <+>
@@ -412,6 +412,11 @@ replaceCDObsCtx d (ObsFun o t)
   = ObsFun (replaceCDObsCtx d o) (replaceCD d t)
 replaceCDObsCtx d (ObsDest h o)
   = ObsDest h (replaceCDObsCtx d o)
+replaceCDObsCtx d (ObsCut v o)
+  = case lookup v d of
+      Nothing -> ObsCut v (replaceCDObsCtx d o)
+      Just Positive -> error (show v <+> "must be a destructor")
+      Just Negative -> ObsDest v (replaceCDObsCtx d o)
 
 replaceCDCoalt :: [(Variable,Polarity)] -> (CoPattern,Term) -> (CoPattern,Term)
 replaceCDCoalt d (q,t) = (replaceCDCop d q,replaceCD d t)

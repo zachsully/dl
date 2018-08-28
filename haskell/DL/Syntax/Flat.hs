@@ -51,11 +51,15 @@ data FlatTerm :: * where
   FCaseEmpty :: FlatTerm -> FlatTerm
 
   FCocase    :: FlatObsCtx -> FlatTerm -> FlatTerm
+  -- | Copattern match on applicative
   FFun       :: Variable -> FlatTerm -> FlatTerm
   -- | Destructor coalternative -> default case
   FCoalt     :: (Variable,FlatTerm)
              -> FlatTerm
              -> FlatTerm
+  -- | Like a shift operation, the variable bould is a covariable
+  FShift     :: Variable -> FlatTerm -> FlatTerm
+  -- | A failure copattern match
   FEmpty     :: FlatTerm
   deriving (Eq,Show)
 
@@ -88,6 +92,8 @@ instance Pretty FlatTerm where
                           <-> (indent (i+3) "," <+> "_ ->"
                                <+> (ppInd (i+3) d))
                           <-> (indent (i+3) "}")
+  ppInd i (FShift v t)    =  "{" <+> ppInd i v <+> "# ->"
+                          <-> indent (i+5) (ppInd (i+5) t) <+> "}"
   ppInd _ FEmpty           = "{}"
 
 -- | Do we not need parens when pretty printing?
@@ -104,6 +110,7 @@ atomic (FCaseEmpty _) = False
 atomic (FCocase _ _) = False
 atomic (FFun _ _) = True
 atomic (FCoalt _ _) = True
+atomic (FShift _ _) = True
 atomic FEmpty = True
 
 -- | Print parens if not atomic
@@ -125,11 +132,13 @@ instance Pretty FlatPattern where
 data FlatObsCtx :: * where
   FlatObsFun  :: FlatTerm -> FlatObsCtx
   FlatObsDest :: Variable -> FlatObsCtx
+  FlatObsCut  :: Variable -> FlatObsCtx
   deriving (Show, Eq)
 
 instance Pretty FlatObsCtx where
   ppInd _ (FlatObsDest h) = brackets (pp h <+> "#")
   ppInd i (FlatObsFun t)  = "[#" <+> (parens' t . ppInd (i+3) $ t) <> "]"
+  ppInd _ (FlatObsCut v)  = brackets (pp v <+> "#")
 
 data FlatCopattern
   = FlatQHead
@@ -167,11 +176,13 @@ unflatten (FCocase o t) = Cocase (unflattenObsCtx o) (unflatten t)
 unflatten (FFun v t) = Coalts [(QPat QHead (PVar v),unflatten t)]
 unflatten (FCoalt (h,t) d) = Coalts [(QDest h QHead,unflatten t)
                                     ,(QWild, unflatten d)]
+unflatten (FShift a t) = Coalts [(QVar a QHead, unflatten t)]
 unflatten FEmpty = Coalts []
 
 unflattenObsCtx :: FlatObsCtx -> ObsCtx
 unflattenObsCtx (FlatObsFun t)  = ObsFun ObsHead (unflatten t)
 unflattenObsCtx (FlatObsDest h) = ObsDest h ObsHead
+unflattenObsCtx (FlatObsCut v) = ObsCut v ObsHead
 
 
 --------------------------------------------------------------------------------
@@ -290,6 +301,8 @@ flatten' (Cocase c t) = go (unplugObsCtx c) =<< flatten' t
              ; return (FCocase (FlatObsFun u') e) }
         go (Nothing, ObsDest h ObsHead) e =
           return (FCocase (FlatObsDest h) e)
+        go (Nothing, ObsCut v ObsHead) e =
+          return (FCocase (FlatObsCut v) e)
         go (Just c', ObsFun _ u) e =
           do { e' <- go (unplugObsCtx c') e
              ; u' <- flatten' u
@@ -297,6 +310,9 @@ flatten' (Cocase c t) = go (unplugObsCtx c) =<< flatten' t
         go (Just c', ObsDest h _) e =
           do { e' <- go (unplugObsCtx c') e
              ; return (FCocase (FlatObsDest h) e') }
+        go (Just c', ObsCut v _) e =
+          do { e' <- go (unplugObsCtx c') e
+             ; return (FCocase (FlatObsCut v) e') }
         go x _ = error $ "this should not happen. Flatten ObsCtx" <+> show x
 
 flatten' (Coalts coalts) = flattenCoalts coalts
@@ -369,7 +385,9 @@ flattenCoalts (coalt:coalts) =
 flattenCoalt :: (CoPattern,Term) -> FlatTerm -> FlatM FlatTerm
 flattenCoalt (QHead,u) _ = flatten' u
 flattenCoalt (QWild,u) _ = flatten' u
-flattenCoalt (QVar _ _,_) _ =  error "flattenCoalt{QVar}"
+flattenCoalt (QVar v QHead,u) _ =
+  do { u' <- flatten' u
+     ; return (FShift v u') }
 flattenCoalt (QDest h QHead,u) def =
   do { u' <- flatten' u
      ; return (FCoalt (h,u') def) }
