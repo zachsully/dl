@@ -1,6 +1,5 @@
 module DL.Pretty where
 
-import Data.Monoid
 import Data.Char (toLower)
 
 --------------------------------------------------------------------------------
@@ -49,6 +48,9 @@ ppPrec p p' s = case p > p' of
 
 parens :: String -> String
 parens s = "(" <> s <> ")"
+
+quotes :: String -> String
+quotes s = "'" <> s <> "'"
 
 parensIf :: (a -> Bool) -> a -> String -> String
 parensIf f a s =

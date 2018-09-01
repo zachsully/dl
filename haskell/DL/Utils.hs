@@ -46,9 +46,6 @@ unimplementedErr = failure . ("<unimplemented>" <+>)
 typeErr :: String -> Std a
 typeErr = failure . ("<type error>" <+>)
 
-unificationErr :: (Pretty a, Pretty b) => a -> b -> Std c
-unificationErr a b = typeErr ("cannot unify" <+> pp a <+> "and" <+> pp b)
-
 unboundErr :: String -> Std a
 unboundErr = failure . ("<unbound variable>" <+>)
 

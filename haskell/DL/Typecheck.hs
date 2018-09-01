@@ -1,24 +1,314 @@
 {-# LANGUAGE GADTs,KindSignatures,UnicodeSyntax #-}
-module DL.Judgement
-  ( inferW, TypeScheme (..)
-  , inferBd
+module DL.Typecheck
+  ( typeCheckPgm
+  , kindCheckDecl
   ) where
 
-import qualified Data.Semigroup as S
-import Data.Monoid
-import Data.Set hiding (foldr,map)
-import Control.Arrow hiding ((<+>))
 import Control.Monad
+import Data.Map.Lazy
 
-import DL.Utils
 import DL.Pretty
 import DL.Syntax.Type
 import DL.Syntax.Term
 import DL.Syntax.Top
 import DL.Syntax.Variable
+import DL.Utils
 
-type Ctx = [(Variable,Type)]
+type Kind = Int
 
+data TcState
+  = TcState
+  { kmap        :: Map Variable Kind
+  , tmap        :: Map Variable Type
+  , freshTyVars :: [Type] }
+
+initTcState :: TcState
+initTcState
+  = TcState empty empty (zipWith (\l r -> TyVar (Variable (l++show r))) (repeat "v") [0..])
+
+-- | The typechecking monad is a state monad that can fail
+data Tc a = Tc { unTc :: TcState -> Either String (TcState,a) }
+
+instance Functor Tc where
+  fmap = liftM
+
+instance Applicative Tc where
+  pure = return
+  (<*>) = ap
+
+instance Monad Tc where
+  return x = Tc $ \s -> Right (s,x)
+  (Tc m) >>= g = Tc $ \s ->
+    case m s of
+      Left e -> Left e
+      Right (s',x) -> unTc (g x) s'
+
+tcFail :: String -> Tc a
+tcFail s = Tc (\_ -> Left s)
+
+freshTyVar :: Tc Type
+freshTyVar = Tc $ \s ->
+  let (x:xs) = freshTyVars s in
+    Right (s { freshTyVars = xs },x)
+
+-- | This is really just lookup arity
+lookupKind :: Variable -> Tc Kind
+lookupKind v = Tc $ \s ->
+  case (kmap s) !? v of
+    Nothing -> Left (quotes (pp v) <+> "is an undeclared type constructor")
+    Just k  -> Right (s,k)
+
+setKind :: Variable -> Kind -> Tc ()
+setKind v k = Tc $ \s ->
+  let km' = alter (\_ -> Just k) v (kmap s) in
+    Right (s { kmap = km' },())
+
+lookupType :: Variable -> Tc Type
+lookupType v = Tc $ \s ->
+  case (tmap s) !? v of
+    Nothing -> Left (quotes (pp v) <+> "is an undeclared variable")
+    Just ty -> Right (s,ty)
+
+setType :: Variable -> Type -> Tc ()
+setType v ty = Tc $ \s ->
+  let tm' = alter (\_ -> Just ty) v (tmap s) in
+    Right (s { tmap = tm' },())
+
+-- | Check that a delaration is well formed and add that to the typechecking
+-- state
+kindCheckDecl :: Decl -> Tc ()
+kindCheckDecl (Decl (Left (NegTyCons name fvs projs))) =
+  let kind = length fvs in
+    do { setKind name kind
+       ; mapM_ checkProjection projs }
+  where checkProjection (Proj pname ty) =
+          let expectedTy = Prelude.foldl TyApp (TyCons name) (fmap TyVar fvs)
+              failMsg s = "Expected domain type" <+> pp expectedTy
+                <+> "in the injection" <+> pp pname <-> s
+          in do { kindCheckType ty
+                ; setType pname ty
+                ; case domain ty of
+                    Nothing  -> tcFail (failMsg "The destructor must be a projection")
+                    Just dom ->
+                      case expectedTy == dom of
+                     True  -> return ()
+                     False -> tcFail (failMsg "The destructor has the wrong domain.")
+                }
+kindCheckDecl (Decl (Right (PosTyCons name fvs injs))) =
+  let kind = length fvs in
+    do { setKind name kind
+       ; mapM_ checkInjection injs }
+  where checkInjection (Inj iname ty) =
+          let expectedTy = Prelude.foldl TyApp (TyCons name) (fmap TyVar fvs)
+              failMsg s = "Expected result type of" <+> pp expectedTy
+                <+> "in the injection" <+> pp iname <-> s
+          in do { kindCheckType ty
+                ; setType iname ty
+                ; case codomain ty of
+                    Nothing  ->
+                      case expectedTy == ty of
+                        True  -> return ()
+                        False -> tcFail (failMsg "the constructor has the wrong type")
+                    Just cod ->
+                      case expectedTy == cod of
+                        True  -> return ()
+                        False -> tcFail (failMsg "the codomain has the wrong type")
+                }
+
+kindCheckType :: Type -> Tc ()
+kindCheckType ty = kindCheckType' ty 0
+
+kindCheckType' :: Type -> Int -> Tc ()
+kindCheckType' TyInt 0 = return ()
+kindCheckType' (TyArr a b) 0 = kindCheckType a >> kindCheckType b
+kindCheckType' (TyVar _) 0 = return ()
+kindCheckType' (TyCons v) n =
+  lookupKind v >>= \k ->
+    case k == n of
+      True  -> return ()
+      False -> tcFail (pp (TyCons v) <+> "does not have arity" <+> show n)
+kindCheckType' (TyApp a b) n = kindCheckType' a (n+1) >> kindCheckType b
+kindCheckType' ty n = tcFail (pp ty <+> "does not have arity" <+> show n)
+
+-- | Top level typechecker
+typeCheckPgm :: Program Term -> Type
+typeCheckPgm pgm =
+  case unTc (zonkType =<< typeCheckPgm' pgm) initTcState of
+    Left e -> error e
+    Right (_,ty) -> ty
+
+typeCheckPgm' :: Program Term -> Tc Type
+typeCheckPgm' (Pgm decls term) =
+  do { mapM_ kindCheckDecl decls -- ^ this also adds the cons/dests to the environment
+     ; typeCheckTerm term }
+
+typeCheckTerm :: Term -> Tc Type
+typeCheckTerm (Let v a b) =
+  do { aty <- typeCheckTerm a
+     ; setType v aty
+     ; typeCheckTerm b }
+typeCheckTerm (Ann a ty) =
+  do { aty <- typeCheckTerm a
+     ; assertTy aty ty }
+typeCheckTerm (Lit _) = return TyInt
+typeCheckTerm (Add a b) =
+  do { aty <- typeCheckTerm a
+     ; _ <- assertTy aty TyInt
+     ; bty <- typeCheckTerm b
+     ; _ <- assertTy bty TyInt
+     ; return TyInt }
+typeCheckTerm (Var v) = lookupType v
+typeCheckTerm (Fix v a) =
+  do { vty <- freshTyVar
+     ; setType v vty
+     ; typeCheckTerm a }
+typeCheckTerm (App a b) =
+  do { aty <- typeCheckTerm a
+     ; codTy <- freshTyVar
+     ; bty <- typeCheckTerm b
+     ; aty' <- unify (TyArr bty codTy) aty
+     ; zonkType codTy }
+typeCheckTerm (Cons k) = lookupType k
+typeCheckTerm (Case a alts) =
+  do { argTy <- typeCheckTerm a
+     ; resTy <- freshTyVar
+     ; mapM_ (typeCheckAlt argTy resTy) alts
+     ; zonkType resTy }
+typeCheckTerm (Dest h) = lookupType h
+typeCheckTerm (Coalts coalts) =
+  do { codataTy <- freshTyVar
+     ; mapM_ (typeCheckCoalt codataTy) coalts
+     ; zonkType codataTy }
+typeCheckTerm (Cocase o a) =
+  do { aTy <- typeCheckTerm a
+     ; outTy <- typeCheckObsCtx aTy o
+     ; zonkType outTy }
+typeCheckTerm (Prompt c) = typeCheckTerm c
+
+typeCheckAlt :: Type -> Type -> (Pattern,Term) -> Tc ()
+typeCheckAlt argTy resTy (p,t) =
+  do { pTy <- typeCheckPattern p
+     ; _ <- unify argTy pTy
+     ; tTy <- typeCheckTerm t
+     ; _ <- unify resTy tTy
+     ; return () }
+
+typeCheckPattern :: Pattern -> Tc Type
+typeCheckPattern PWild = freshTyVar
+typeCheckPattern (PVar v) =
+  do { ty <- freshTyVar
+     ; setType v ty
+     ; return ty }
+typeCheckPattern (PCons k ps) =
+  do { kty <- lookupType k
+     ; tys <- mapM typeCheckPattern ps
+     ; go kty tys }
+  where go ty@(TyApp _ _) [] = return ty
+        go ty@(TyCons _) [] = return ty
+        go (TyArr a b) (ty:tys) =
+          do { _ <- unify a ty
+             ; go b tys }
+        go _ _ = error "this should not happen"
+
+-- ^ Takes a codata type, returns the output type
+typeCheckCoalt :: Type -> (CoPattern,Term) -> Tc Type
+typeCheckCoalt codataTy (q,t) =
+  do { projTy <- typeCheckCopattern codataTy q
+     ; t' <- typeCheckTerm t
+     ; zonkType t' }
+
+-- ^ Takes the type of the context, returns the type of the projection
+typeCheckCopattern :: Type -> CoPattern -> Tc Type
+typeCheckCopattern codataTy QHead = return codataTy
+typeCheckCopattern codataTy (QDest h q) =
+  do { hTy <- lookupType h
+     ; qTy <- typeCheckCopattern codataTy q
+     ; outTy <- freshTyVar
+     ; _ <- unify hTy (TyArr qTy outTy)
+     ; zonkType outTy }
+typeCheckCopattern codataTy (QPat q p) = undefined
+typeCheckCopattern ctxTy (QVar v q) = undefined
+typeCheckCopattern _ QWild = freshTyVar
+
+-- ^ Takes the input codata type
+typeCheckObsCtx :: Type -> ObsCtx -> Tc Type
+typeCheckObsCtx codataTy ObsHead = return codataTy
+typeCheckObsCtx codataTy (ObsFun o t) =
+  do { oty <- typeCheckObsCtx codataTy o
+     ; outTy <- freshTyVar
+     ; tTy <- typeCheckTerm t
+     ; _ <- unify oty (TyArr tTy outTy)
+     ; zonkType outTy }
+typeCheckObsCtx codataTy (ObsDest h o) =
+  do { hTy <- lookupType h
+     ; oTy <- typeCheckObsCtx codataTy o
+     ; outTy <- freshTyVar
+     ; _ <- unify hTy (TyArr oTy outTy)
+     ; zonkType outTy }
+typeCheckObsCtx codataTy (ObsCut  v o) = undefined
+
+assertTy :: Type -> Type -> Tc Type
+assertTy a b =
+  case a == b of
+    True -> return a
+    False -> tcFail (expectedMsg a b)
+
+expectedMsg :: Type -> Type -> String
+expectedMsg a b = "Expected type" <+> quotes (pp a) <-> "Actual type" <+> quotes (pp b)
+
+unify :: Type -> Type -> Tc Type
+unify TyInt TyInt = return TyInt
+unify (TyArr a b) (TyArr c d) =
+  do { a' <- unify a c
+     ; b' <- unify b d
+     ; return (TyArr a' b') }
+unify (TyVar v) (TyVar w) = setType v (TyVar w) >> return (TyVar w)
+unify (TyVar v) b =
+  case occurs v b of
+    True -> tcFail ("circularity in" <+> pp v <+> "=" <+> pp b)
+    False -> setType v b >> return b
+unify a (TyVar v) =
+  case occurs v a of
+    True -> tcFail ("circularity in" <+> pp a <+> "=" <+> pp v)
+    False -> setType v a >> return a
+unify (TyCons k) (TyCons h) =
+  case k == h of
+    True  -> return (TyCons k)
+    False -> unificationErr (TyCons k) (TyCons h)
+unify (TyApp a b) (TyApp c d) =
+  do { a' <- unify a c
+     ; b' <- unify b d
+     ; return (TyApp a' b') }
+unify a b = unificationErr a b
+
+occurs :: Variable -> Type -> Bool
+occurs v a = elem v (fvs a)
+
+unificationErr :: Type -> Type -> Tc a
+unificationErr a b = tcFail ("cannot unify" <+> pp a <+> "and" <+> pp b)
+
+-- | Zonking a type is essentially applying all of the substitutions that are
+-- contained in the context
+zonkType :: Type -> Tc Type
+zonkType TyInt = return TyInt
+zonkType (TyArr a b) =
+  do { a' <- zonkType a
+     ; b' <- zonkType b
+     ; return (TyArr a' b') }
+-- ^ This is where all of the work of zonking is done. We lookup the variable,
+-- if we did not discover a substitution, then it remains free.
+zonkType (TyVar v) =
+  Tc $ \s ->
+  case (tmap s) !? v of
+    Nothing -> Right (s,(TyVar v))
+    Just ty -> Right (s,ty)
+zonkType (TyCons k) = return (TyCons k)
+zonkType (TyApp a b) =
+  do { a' <- zonkType a
+     ; b' <- zonkType b
+     ; return (TyApp a' b') }
+
+{-
 --------------------------------------------------------------------------------
 --                                isType                                      --
 --------------------------------------------------------------------------------
@@ -543,3 +833,4 @@ lookupInjection _ [] = Nothing
 lookupInjection k (i:is) = case injName i == k of
                              True -> Just i
                              False -> lookupInjection k is
+-}

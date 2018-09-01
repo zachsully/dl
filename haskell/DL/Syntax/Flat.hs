@@ -61,6 +61,8 @@ data FlatTerm :: * where
   FShift     :: Variable -> FlatTerm -> FlatTerm
   -- | A failure copattern match
   FEmpty     :: FlatTerm
+
+  FPrompt    :: FlatTerm -> FlatTerm
   deriving (Eq,Show)
 
 instance Pretty FlatTerm where
@@ -92,9 +94,10 @@ instance Pretty FlatTerm where
                           <-> (indent (i+3) "," <+> "_ ->"
                                <+> (ppInd (i+3) d))
                           <-> (indent (i+3) "}")
-  ppInd i (FShift v t)    =  "{" <+> ppInd i v <+> "# ->"
+  ppInd i (FShift v t)     =  "{" <+> ppInd i v <+> "# ->"
                           <-> indent (i+5) (ppInd (i+5) t) <+> "}"
   ppInd _ FEmpty           = "{}"
+  ppInd i (FPrompt t)      = "#" <+> ppInd (i+2) t
 
 -- | Do we not need parens when pretty printing?
 atomic :: FlatTerm -> Bool
@@ -112,6 +115,7 @@ atomic (FFun _ _) = True
 atomic (FCoalt _ _) = True
 atomic (FShift _ _) = True
 atomic FEmpty = True
+atomic (FPrompt _) = False
 
 -- | Print parens if not atomic
 parens' :: FlatTerm -> String -> String
@@ -178,6 +182,7 @@ unflatten (FCoalt (h,t) d) = Coalts [(QDest h QHead,unflatten t)
                                     ,(QWild, unflatten d)]
 unflatten (FShift a t) = Coalts [(QVar a QHead, unflatten t)]
 unflatten FEmpty = Coalts []
+unflatten (FPrompt t) = Prompt (unflatten t)
 
 unflattenObsCtx :: FlatObsCtx -> ObsCtx
 unflattenObsCtx (FlatObsFun t)  = ObsFun ObsHead (unflatten t)
@@ -265,7 +270,7 @@ flatten w t = fst (runState (runReaderT (unFlatM (flatten' t)) w) 0)
 -- Cons and Dests (which are eta expanded) and Case, Cocase, and Coalternatives.
 flatten' :: Term -> FlatM FlatTerm
 flatten' (Ann t _)     = flatten' t
-flatten' (Prompt t)    = flatten' t
+flatten' (Prompt t)    = FPrompt <$> flatten' t
 flatten' (App a b)     = FCocase <$> (FlatObsFun <$> flatten' b) <*> flatten' a
 flatten' (Let v a b)   = FLet v <$> flatten' a <*> flatten' b
 flatten' (Lit i)       = return (FLit i)

@@ -15,8 +15,7 @@ executable dl
   default-extensions:  UnicodeSyntax
   GHC-Options :       -Wall -j6
   hs-source-dirs:      haskell
-  other-modules:       DL.AlphaEq,
-                       DL.Backend.Haskell.Syntax,
+  other-modules:       DL.Backend.Haskell.Syntax,
                        DL.Backend.JavaScript.Syntax,
                        DL.Backend.ML.Syntax,
                        DL.Backend.Racket.Syntax,
@@ -24,7 +23,8 @@ executable dl
                        DL.IO,
                        DL.Evaluation.Interpreter,
                        DL.Evaluation.Strategy,
-                       DL.Judgement,
+                       DL.Rename,
+                       DL.Typecheck,
                        DL.Parser.Lexer,
                        DL.Parser.Parser,
                        DL.Pretty,
@@ -53,8 +53,7 @@ test-suite tests
   main-is:             Tests.hs
   default-extensions:  UnicodeSyntax
   hs-source-dirs:      tests,haskell
-  other-modules:       DL.AlphaEq,
-                       DL.Backend.Haskell.Syntax,
+  other-modules:       DL.Backend.Haskell.Syntax,
                        DL.Backend.JavaScript.Syntax,
                        DL.Backend.ML.Syntax,
                        DL.Backend.Racket.Syntax,
@@ -62,7 +61,7 @@ test-suite tests
                        DL.IO,
                        DL.Evaluation.Interpreter,
                        DL.Evaluation.Strategy,
-                       DL.Judgement,
+                       DL.Typecheck,
                        DL.Parser.Lexer,
                        DL.Parser.Parser,
                        DL.Pretty,

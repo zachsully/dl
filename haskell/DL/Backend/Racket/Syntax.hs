@@ -1,8 +1,6 @@
 {-# LANGUAGE GADTs #-}
 module DL.Backend.Racket.Syntax where
 
-import Data.Monoid
-
 import qualified DL.Syntax.Top  as Top
 import qualified DL.Syntax.Type as Ty
 import DL.Syntax.Flat

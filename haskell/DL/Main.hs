@@ -19,7 +19,8 @@ import DL.Parser.Parser
 import DL.Translation
 import DL.Evaluation.Strategy
 import DL.Evaluation.Interpreter
-import DL.Judgement ()
+import DL.Rename
+import DL.Typecheck
 import DL.Utils
 import DL.Pretty
 import DL.IO
@@ -48,7 +49,6 @@ data EvalMode
 data TypeMode
   = TypeMode
   { tmDebug  :: Bool
-  , tmBidir  :: Bool
   , tmInput  :: FilePath }
 
 data Mode
@@ -96,9 +96,6 @@ parseTypeOf = TypeMode
            <$> switch (  long "debug"
                       <> short 'D'
                       <> help "debug mode" )
-           <*> switch (  long "bidir"
-                      <> short 'B'
-                      <> help "use bidirectional type checking instead DHM type inference." )
            <*> inputFp
 
 selectMode :: Parser Mode
@@ -127,67 +124,72 @@ parseMode = execParser
 main :: IO ()
 main = do { mode <- parseMode
           ; case mode of
-              Flatten fm  -> runFlatten fm =<< getProgram (fmInput fm)
-              Compile cm  -> runCompile cm =<< getProgram (cmInput cm)
-              Evaluate em -> runEvaluate em =<< getProgram (emInput em)
-              TypeOf tm   -> runTypeOf tm =<< getProgram (tmInput tm)
+              Flatten fm  -> stdPipeline (fmInput fm) True >> return ()
+              Compile cm  -> runCompile cm =<< stdPipeline (cmInput cm) (cmDebug cm)
+              Evaluate em -> runEvaluate em =<< stdPipeline (emInput em) (emDebug em)
+              TypeOf tm   -> runTypeOf tm
               Repl        -> runRepl
           }
 
-runFlatten :: FlattenMode -> Top.Program T.Term -> IO ()
-runFlatten _ pgm =
-  do { pprint pgm
-     ; print pgm
-     ; putStrLn "\n->>R\n"
-     ; let fp = flattenPgm $ pgm
-     ; pprint fp
-     ; print fp }
-
-runCompile :: CompileMode -> Top.Program T.Term -> IO ()
-runCompile cm pgm =
-  let pgm' = flattenPgm pgm in
-    do { when (cmDebug cm) $
-         do { pprint pgm
-            ; putStrLn "\n->>R\n"
+stdPipeline :: FilePath -> Bool -> IO (Top.Program FlatTerm)
+stdPipeline fp debug =
+  do { pgm <- getProgram fp
+     ; when debug $
+         do { putStrLn "====== Parsed ======"
+            ; pprint pgm
+            ; putStrLn "" }
+     ; let pgm' :: Top.Program T.Term
+           pgm' = renamePgm pgm
+     ; when debug $
+         do { putStrLn "====== Renamed ======="
             ; pprint pgm'
-            ; putStrLn "\n=>\n" }
-       ; let !prog' = (case (cmStrat cm,cmUntyped cm,cmOO cm) of
-                         (CallByName,False,False)  -> (pp :: H.Program -> String) . translate
-                         (CallByName,True,False)   -> error "not existing call-by-name untyped translation"
-                         (CallByValue,False,False) -> (pp :: ML.Program -> String) . translate
-                         (CallByValue,True,False)  -> (pp :: Rkt.Program -> String) . translate
-                         (CallByValue,True,True)   -> (pp :: JS.Program -> String) . translate
-                         (_,_,True)                -> error "not existing object oriented translation")
+            ; putStrLn "" }
+     ; let pgm'' :: Top.Program FlatTerm
+           pgm'' = flattenPgm pgm'
+     ; when debug $
+         do { putStrLn "====== Flattened ======"
+            ; pprint pgm''
+            ; putStrLn "" }
+     ; return pgm''
+     }
 
-                    $ pgm'
-       ; case cmOutput cm of
-           "-" -> putStrLn prog'
-           fp  -> writeFile fp prog'
-       }
+runCompile :: CompileMode -> Top.Program FlatTerm -> IO ()
+runCompile cm pgm =
+  let !prog' = (case (cmStrat cm,cmUntyped cm,cmOO cm) of
+                  (CallByName,False,False)  -> (pp :: H.Program -> String) . translate
+                  (CallByName,True,False)   -> error "not existing call-by-name untyped translation"
+                  (CallByValue,False,False) -> (pp :: ML.Program -> String) . translate
+                  (CallByValue,True,False)  -> (pp :: Rkt.Program -> String) . translate
+                  (CallByValue,True,True)   -> (pp :: JS.Program -> String) . translate
+                  (_,_,True)                -> error "not existing object oriented translation")
+               $ pgm in
+    case cmOutput cm of
+      "-" -> putStrLn prog'
+      fp  -> writeFile fp prog'
 
-runEvaluate :: EvalMode -> Top.Program T.Term -> IO ()
-runEvaluate em pgm =
-  let term = Top.pgmTerm pgm in
-    do { when (emDebug em) $ pprint term
-       ; putStr "> "
-       ; case runStd (interpPgm pgm) of
-           Left s -> putStrLn s
-           Right a -> pprint a
-       }
+runEvaluate :: EvalMode -> Top.Program FlatTerm -> IO ()
+runEvaluate _ pgm =
+  do { putStrLn "====== Evaluated ======"
+     ; case runStd (interpPgm pgm) of
+         Left s -> putStrLn s
+         Right a -> pprint a
+     }
 
-runTypeOf :: TypeMode -> Top.Program T.Term -> IO ()
-runTypeOf = error "typechecking is not yet implemented"
-  -- do { when (tmDebug tm) $ print pgm
-  --    ; case tmBidir tm of
-  --        True ->
-  --          case runStd . undefined $ pgm of
-  --            Left e -> putStrLn e
-  --            Right ty -> putStrLn . pp $ ty
-  --        False ->
-  --          case runStd . undefined $ pgm of
-  --            Left e -> putStrLn e
-  --            Right ty -> putStrLn . pp $ ty
-  --    }
+runTypeOf :: TypeMode -> IO ()
+runTypeOf tm =
+  do { pgm <- getProgram (tmInput tm)
+     ; when (tmDebug tm) $
+         do { putStrLn "====== Parsed ======"
+            ; pprint pgm
+            ; putStrLn "" }
+     ; let pgm' :: Top.Program T.Term
+           pgm' = renamePgm pgm
+     ; when (tmDebug tm) $
+         do { putStrLn "====== Renamed ======="
+            ; pprint pgm'
+            ; putStrLn "" }
+     ; putStrLn "====== Type Checked ======"
+     ; pprint (typeCheckPgm pgm) }
 
 runRepl :: IO ()
 runRepl =
@@ -202,7 +204,7 @@ runRepl =
                   case runParserM (parseTerm ts) (pStateFromDecls prelude) of
                     Left e -> hPutStrLn stdout e
                     Right (t,_) ->
-                      case runStd (interpPgm (preludePgm t)) of
+                      case runStd (interpPgm (flattenPgm (preludePgm t))) of
                         Left s -> hPutStrLn stdout $ s
                         Right a -> hPutStrLn stdout $ pp a
                           -- case runStd (infer [] (reifyValue a)) of

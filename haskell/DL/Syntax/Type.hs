@@ -23,12 +23,18 @@ data Type :: * where
   TyApp  :: Type -> Type -> Type
   deriving (Eq,Show)
 
+atomicTy :: Type -> Bool
+atomicTy (TyArr _ _) = False
+atomicTy _ = True
+
 instance Pretty Type where
   pp TyInt = "Int"
-  pp (TyArr a b) = pp a <+> "→" <+> pp b
+  pp (TyArr a b) =   (parensIf (not . atomicTy) a . pp $ a)
+                 <+> "->"
+                 <+> (pp b)
   pp (TyVar v) = unVariable v
   pp (TyCons k) = unVariable k
-  pp (TyApp a b) = pp a <+> (parens . pp $ b)
+  pp (TyApp a b) = pp a <+> (parensIf (not . atomicTy) b . pp $ b)
 
 instance FV Type where
   fvs TyInt = empty

@@ -80,7 +80,7 @@ vars : strs                                    { fmap Variable $1 }
 
 program :: { Program Term }
 program : decls term                           {% get >>= \s ->
-                                                   return (Pgm $1 (replaceCD (consDecls s) $2)) }
+                                                   return (Pgm $1 (Prompt (replaceCD (consDecls s) $2))) }
 
 decl :: { Decl }
 decl : 'codata' var vars '{' projs '}'         {% addTyCons $2 >>
@@ -163,7 +163,7 @@ term2 :  'fix' var 'in' term           { Fix $2 $4 }
       |  term3                         { $1 }
 
 term3 :: { Term }
-term3 :  '▪' term                { Prompt $2 }
+term3 :  '#' term                { Prompt $2 }
       |  term4                    { $1 }
 
 term4 :: { Term }

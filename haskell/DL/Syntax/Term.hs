@@ -54,11 +54,11 @@ instance Pretty Term where
   ppInd i (Fix s t)       = "fix" <+> pp s <+> "in" <-> indent i (ppInd (i+1) t)
   ppInd i (Let s a b)     = "let" <+> pp s <+> "=" <+> ppInd (i+1) a
                         <-> indent i ("in" <+> ppInd (i+1) b)
-  ppInd i (App a b)       = (parensIf (not . atomicT) a . ppInd i $ a)
+  ppInd i (App a b)       = (ppInd i $ a)
                           <+> (parensIf (not . atomicT) b . ppInd i $ b)
   ppInd _ (Cons k)        = pp k
   ppInd i (Case t alts)   = "case"
-                        <+> ppInd i t
+                        <+> (parens (ppInd i t))
                         <-> indent (i+2) "{"
                         <+> ( stringmconcat ("\n" <> (indent (i+2) "| "))
                             . fmap (\(p,u) -> pp p <+> "->" <+> ppInd (i+4) u)
@@ -73,7 +73,7 @@ instance Pretty Term where
                             . fmap (\(q,u) -> pp q <+> "->" <+> ppInd (i+3) u)
                             $ coalts)
                         <+> "}"
-  ppInd i (Prompt t)      = "#" <+> ppInd (i+1) t
+  ppInd i (Prompt t)      = "#" <+> parensIf (not . atomicT) t (ppInd (i+1) t)
 
 instance FV Term where
   fvs (Let v a b) = fvs a `union` (fvs b \\ singleton v)

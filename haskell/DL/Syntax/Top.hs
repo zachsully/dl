@@ -18,7 +18,6 @@ module DL.Syntax.Top
   ) where
 
 import Control.Arrow ((&&&),(<<<))
-import Data.Monoid
 import DL.Pretty
 import DL.Syntax.Type
 import DL.Syntax.Variable
@@ -48,6 +47,7 @@ pgmTerm :: Program t -> t
 pgmTerm (Pgm _ x) = x
 
 instance Pretty t => Pretty (Program t) where
+  pp (Pgm [] t) = pp t
   pp pgm = (stringmconcat "\n\n" . fmap pp . pgmDecls $ pgm)
         <> "\n\n"
         <> (pp . pgmTerm $ pgm)
@@ -87,7 +87,11 @@ data NegativeTyCons
   deriving Show
 
 instance Pretty NegativeTyCons where
-  pp tc = "codata" <+> pp (negTyName tc)
+  pp tc =   "codata" <+> pp (negTyName tc)
+        <+> (smconcat (fmap pp (negTyFVars tc)))
+        <-> indent 2 "{"
+        <+> (stringmconcat "\n    " (fmap (ppInd 4) (projections tc)))
+        <+> "}"
 
 negTyArity :: NegativeTyCons -> Int
 negTyArity = length . negTyFVars
@@ -98,6 +102,9 @@ data Projection
   , projType  :: Type }
   deriving (Eq,Show)
 
+instance Pretty Projection where
+  ppInd i (Proj n ty) = pp n <+> ":" <+> ppInd i ty
+
 data PositiveTyCons
   = PosTyCons
   { posTyName  :: Variable
@@ -106,7 +113,13 @@ data PositiveTyCons
   deriving Show
 
 instance Pretty PositiveTyCons where
-  pp tc = "data" <+> pp (posTyName tc)
+  pp tc =   "data" <+> pp (posTyName tc)
+        <+> (smconcat (fmap pp (posTyFVars tc)))
+        <-> indent 2 "{"
+        <+> (stringmconcat "\n    " (fmap (ppInd 4) (injections tc)))
+        <+> "}"
+
+
 
 posTyArity :: PositiveTyCons -> Int
 posTyArity = length . posTyFVars
@@ -118,3 +131,6 @@ data Injection
   deriving Show
   {- the domain is a maybe value because unary constructors do not take
      arguments, e.g. () : Unit -}
+
+instance Pretty Injection where
+  ppInd i (Inj n ty) = pp n <+> ":" <+> ppInd i ty

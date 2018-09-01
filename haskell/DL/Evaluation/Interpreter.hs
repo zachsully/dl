@@ -11,7 +11,6 @@ import Control.Monad.State
 import DL.Utils
 import DL.Pretty
 import DL.Syntax.Top
-import DL.Syntax.Term
 import DL.Syntax.Flat
 import DL.Syntax.Variable
 import DL.Evaluation.Strategy
@@ -24,6 +23,7 @@ data EvalCtx :: Strategy -> * where
            -> EvalCtx s
   EAppFun  :: EvalCtx s -> FlatTerm -> EvalCtx s
   EAppDest :: Variable  -> EvalCtx s -> EvalCtx s
+  EPrompt  :: EvalCtx s -> EvalCtx s
 
 -- | subsititute a context for the hole
 plugEvalCtx :: (s ~ 'CallByName) => EvalCtx s -> EvalCtx s -> EvalCtx s
@@ -33,6 +33,26 @@ plugEvalCtx (EAddR i k) k' = EAddR i (plugEvalCtx k k')
 plugEvalCtx (ECase k alt def) k' = ECase (plugEvalCtx k k') alt def
 plugEvalCtx (EAppFun k t) k' = EAppFun (plugEvalCtx k k') t
 plugEvalCtx (EAppDest h k) k' = EAppDest h (plugEvalCtx k k')
+plugEvalCtx (EPrompt k) k' = EPrompt (plugEvalCtx k k')
+
+splitEvalCtx :: (s ~ 'CallByName) => EvalCtx s -> (EvalCtx s, Maybe (EvalCtx s))
+splitEvalCtx EEmpty = (EEmpty, Nothing)
+splitEvalCtx (EAddL e k t) = let (k',mk) = splitEvalCtx k in (EAddL e k' t,mk)
+splitEvalCtx (EAddR i k) = let (k',mk) = splitEvalCtx k in (EAddR i k',mk)
+splitEvalCtx (ECase k alt def) =
+  let (k',mk) = splitEvalCtx k in
+    (ECase k' alt def,mk)
+splitEvalCtx (EAppFun k t) =
+  let (k',mk) = splitEvalCtx k in
+    (EAppFun k' t, mk)
+splitEvalCtx (EAppDest h k) =
+  let (k',mk) = splitEvalCtx k in
+    (EAppDest h k', mk)
+splitEvalCtx (EPrompt k) =
+  let (k',mk) = splitEvalCtx k in
+    case mk of
+      Nothing -> (EEmpty,Just k')
+      _ -> (k',mk)
 
 instance Eq (EvalCtx s) where
   EEmpty == EEmpty = True
@@ -41,6 +61,7 @@ instance Eq (EvalCtx s) where
   (ECase e a b)  == (ECase f c d)  = e == f && a == c && b == d
   (EAppFun a t)  == (EAppFun b e)  = a == b && t == e
   (EAppDest v a) == (EAppDest w b) = a == b && v == w
+  (EPrompt a)    == (EPrompt b)    = a == b
   _ == _ = False
 
 instance Show (EvalCtx s) where
@@ -50,6 +71,7 @@ instance Show (EvalCtx s) where
   show (ECase e a b) = "case" <+> show e <+> show a <+> "|" <+> show b
   show (EAppFun e t) = show e <+> show t
   show (EAppDest h e) = show h <+> show e
+  show (EPrompt e) = "#" <+> show e
 
 instance Pretty (EvalCtx s) where
   pp EEmpty = "#"
@@ -59,6 +81,7 @@ instance Pretty (EvalCtx s) where
     smconcat ["case",pp e,"{",pp a,"->",pp b,"|",pp c,"->",pp d,"}"]
   pp (EAppFun e t) = pp e <+> pp t
   pp (EAppDest h e) = pp h <+> pp e
+  pp (EPrompt k) = "#" <+> pp k
 
 data EnvCBN
   = EnvCBN { vars   :: [(Variable,(FlatTerm,EnvCBN))]
@@ -88,9 +111,9 @@ data MState s = MState EnvCBN (EvalCtx s) FlatTerm
 instance Pretty (MState s) where
   pp (MState a b c) = "⟨" <+> stringmconcat " !¡ " [pp b,pp c,pp a] <+> "⟩\n"
 
-interpPgm :: Program Term -> Std FlatTerm
+interpPgm :: Program FlatTerm -> Std FlatTerm
 interpPgm t =
-  let mrun   = runMachine (MState emptyEnvCBN EEmpty (pgmTerm . flattenPgm $ t))
+  let mrun   = runMachine (MState emptyEnvCBN EEmpty (pgmTerm $ t))
       ss = runStateT mrun [] in
     ss >>= (\(MState _ _ t',_) -> return t')
 
@@ -163,11 +186,15 @@ step (MState _ _ FEmpty) =
      ; let string = vmconcat . fmap pp $ states
      ; lift (failure $ string <-> "<unmatched (co)case>") }
 
--- ^ Here we need to match a context up until we see an applied
--- destructor. These are the tools for which we delimit continuations
+-- ^ We split the context up to the first prompt
 step (MState e k (FShift v t)) =
-  -- ^ for now we just eat up the whole continuation, so this is call/cc
-  return (MState (extendEnvCovar v k e) EEmpty t)
+  let (k',mk) = splitEvalCtx k in
+    case mk of
+      Nothing -> return (MState (extendEnvCovar v k' e) EEmpty t)
+      Just k'' -> return (MState (extendEnvCovar v k'' e) k' t)
+
+step (MState e k (FPrompt t)) =
+  return (MState e (EPrompt k) t)
 
 step s = do { states <- get
             ; let string = vmconcat . fmap pp $ states
