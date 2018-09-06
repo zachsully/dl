@@ -1,0 +1,6 @@
+--o6
+data PosPair a b
+  { Pair : a -> b -> PosPair a b }
+
+case (Pair 1 (Pair 2 3))
+  { Pair x (Pair y z) -> x + y + z }

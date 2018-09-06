@@ -1,0 +1,6 @@
+--o42
+data Const a
+  { Const : a → Const a }
+
+case (Const (Const 42))
+  { Const (Const x) → x }

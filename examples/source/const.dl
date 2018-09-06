@@ -1,0 +1,4 @@
+data Const a
+  { Const : a -> Const a }
+
+Const 42

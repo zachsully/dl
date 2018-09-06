@@ -1,0 +1,10 @@
+--o3
+codata WithThree a b c
+  { Fst : WithThree a b c -> a
+  , Snd : WithThree a b c -> b
+  , Trd : WithThree a b c -> c }
+
+let d = { Fst # -> 0
+        , Snd # -> 1
+        , Trd # -> 2 }
+in (Fst d) + (Snd d) + (Trd d)

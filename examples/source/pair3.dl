@@ -1,0 +1,4 @@
+data Pair a b
+  { Pair : a -> b -> Pair a b }
+
+Pair 42 0

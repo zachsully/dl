@@ -1,0 +1,16 @@
+--o0
+codata Delay a
+  { Force : Delay a -> a }
+
+codata With a b
+  { Fst : With a b -> a
+  , Snd : With a b -> b }
+
+data Bool
+  { True  : Bool
+  | False : Bool }
+
+let f = { [Fst [Force #]] True  -> 0
+        , [Snd [Force #]]       -> 2
+        , [Fst [Force #]] False -> 1 } in
+(Fst (Force f)) True

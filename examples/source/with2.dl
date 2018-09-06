@@ -1,0 +1,8 @@
+--o2
+codata With a b
+  { Fst : With a b -> a
+  , Snd : With a b -> b }
+
+cocase [Fst [Snd #]]
+  { Fst # -> 1
+  , Snd # -> { Fst # -> 2, Snd # -> 3}}

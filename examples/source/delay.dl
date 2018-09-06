@@ -1,0 +1,5 @@
+--o42
+codata Delay a
+  { Force : Delay a -> a }
+
+Force { Force # -> 42 }

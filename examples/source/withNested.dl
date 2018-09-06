@@ -1,0 +1,8 @@
+codata With a b
+  { Fst : With a b -> a
+  , Snd : With a b -> b }
+
+{ Fst [Fst #] -> 0
+, Snd [Fst #] -> 1
+, Fst [Snd #] -> 2
+, Snd [Snd #] -> 3 }

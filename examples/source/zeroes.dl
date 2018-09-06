@@ -1,0 +1,9 @@
+--o0
+codata Stream a
+  { Head : Stream a -> a
+  , Tail : Stream a -> Stream a }
+
+let zeroes = fix x in
+ 	       { Head # -> 0
+    	       , Tail # -> x } in
+Head (Tail (Tail zeroes))

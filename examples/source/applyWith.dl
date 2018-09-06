@@ -1,0 +1,8 @@
+--o42
+codata With a b
+  { Fst : With a b -> a
+  , Snd : With a b -> b }
+
+let f = { Fst [# x] -> x
+        , Snd [# x] -> x+20 }
+in Snd (f 22)
