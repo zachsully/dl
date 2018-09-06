@@ -3,6 +3,6 @@ data Bool
   { True  : Bool
   | False : Bool }
 
-{ □ False → 0
-, □ True  → 42 }
-True
+cocase [# True]
+  { # False -> 0
+  , # True  -> 42 }

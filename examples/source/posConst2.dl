@@ -1,4 +1,0 @@
-data Const a
-  { Const : a -> Const a }
-
-cocase [# 42] Const

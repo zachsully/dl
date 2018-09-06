@@ -1,9 +1,0 @@
-codata Const a
-  { hConst : Const a → a }
-
-codata Pair a b
-  { hFst : Pair a b → a
-  , hSnd : Pair a b → b }
-
-{ hFst [hConst □] → 0
-, hSnd [hConst □] → 1 }

@@ -1,8 +1,0 @@
-codata NegPair a b
-  { Fst : NegPair a b → a
-  , Snd : NegPair a b → b }
-
-{ Fst [Fst □] → 0
-, Snd [Fst □] → 1
-, Fst [Snd □] → 2
-, Snd [Snd □] → 3 }

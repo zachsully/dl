@@ -1,4 +1,0 @@
-codata Const a
-  { Const : Const a -> a}
-
-Const ({ Const □ -> 42 })

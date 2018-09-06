@@ -1,3 +1,0 @@
-codata Const a { Const : Const a → a }
-
-Const (Const { Const [Const □] → 42 })

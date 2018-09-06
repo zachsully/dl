@@ -1,6 +1,0 @@
-data Bool
-  { True  : Bool
-  | False : Bool }
-
-{ □ True  → 42
-, □ False → 0  }

@@ -34,7 +34,7 @@ lookupEnv v (Env m) =
 instance FV a => FV (Env a) where
   fvs (Env m) = Set.unions . fmap fvs . elems $ m
 
--- | forall introduction
+-- | forall introduction, we only generalize constructors and destructors
 generalize :: Env Scheme -> Type -> Scheme
 generalize _ ty = Forall (fvs ty) mempty ty
 
@@ -269,7 +269,7 @@ gatherTerm env (Var v) =
      ; return (aTy, mempty) }
 gatherTerm env (Fix v a) =
   do { ty <- freshTy
-     ; gatherTerm (extendEnv v (generalize env ty) env) a }
+     ; gatherTerm (extendEnv v (Forall Set.empty mempty ty) env) a }
 gatherTerm env (App a b) =
   do { (aTy,aC) <- gatherTerm env a
      ; (bTy,bC) <- gatherTerm env b

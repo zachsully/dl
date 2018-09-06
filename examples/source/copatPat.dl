@@ -1,6 +1,0 @@
---o42
-data Bool
-  { True  : Bool
-  | False : Bool }
-
-{ # True -> 0, # False -> 42 } False

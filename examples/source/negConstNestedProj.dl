@@ -1,4 +1,0 @@
-codata Const a { Const : Const a → a }
-
-let x = { Const [Const □] → 42 }
-in Const (Const x)

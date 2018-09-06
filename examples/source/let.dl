@@ -1,2 +1,2 @@
-let f = { # x -> x + 2 }
-in f 40
+let f = { # x -> x + 2 } in
+  f 40

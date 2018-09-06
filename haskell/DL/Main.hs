@@ -140,14 +140,14 @@ stdPipeline fp debug =
             ; putStrLn "" }
      ; let pgm' :: Top.Program T.Term
            pgm' = renamePgm pgm
+     ; ty <- typeCheckPgm (TcConfig debug) pgm
+     ; when debug (pprint ty)
      ; when debug $
          do { putStrLn "====== Renamed ======="
             ; pprint pgm'
             ; putStrLn "" }
      ; let pgm'' :: Top.Program FlatTerm
            pgm'' = flattenPgm pgm'
-     -- ; ty <- typeCheckPgm (TcConfig debug) pgm
-     -- ; when debug (pprint ty)
      ; when debug $
          do { putStrLn "====== Flattened ======"
             ; pprint pgm''
