@@ -184,13 +184,7 @@ runTypeOf tm =
          do { putStrLn "====== Parsed ======"
             ; pprint pgm
             ; putStrLn "" }
-     ; let pgm' :: Top.Program T.Term
-           pgm' = renamePgm pgm
-     ; when (tmDebug tm) $
-         do { putStrLn "====== Renamed ======="
-            ; pprint pgm'
-            ; putStrLn "" }
-     ; putStrLn "====== Type Checked ======"
+     ; when (tmDebug tm) (putStrLn "====== Type Checked ======")
      ; ty <- typeCheckPgm (TcConfig (tmDebug tm)) pgm
      ; pprint ty }
 

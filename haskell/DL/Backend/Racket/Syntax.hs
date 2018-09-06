@@ -202,7 +202,7 @@ trans dpgm =
 transDecl
   :: Top.Decl
   -> (Either DataTyCons RecordTyCons,[FunDecl])
-transDecl (Top.Decl (Right d)) =
+transDecl (Top.DataDecl d) =
   (Left (DataTyCons (Top.posTyName $ d)
           (Top.posTyFVars d)
           (fmap mkDataCon . Top.injections $ d)), fmap wrapFun . Top.injections $ d)
@@ -225,7 +225,7 @@ transDecl (Top.Decl (Right d)) =
                  lams . SExpr (Top.injName i) . fmap Var $ args
           }
 
-transDecl (Top.Decl (Left d))  =
+transDecl (Top.CodataDecl d)  =
   (Right (RecordTyCons name
            (Top.negTyFVars d)
            (fmap mkRecordField (Top.projections d)))
@@ -308,6 +308,8 @@ transDecl (Top.Decl (Left d))  =
         mkRecordField :: Top.Projection -> Field
         mkRecordField p = Field (Top.projName p)
 
+transDecl (Top.IndexDecl _ _)  = error "transDecl{IndexDecl}"
+
 transTerm :: FlatTerm -> Term
 transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
 transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
@@ -330,6 +332,9 @@ transTerm (FFun v t) = Lam v (transTerm t)
 transTerm (FCocase (FlatObsFun e) t) = App (transTerm t) (transTerm e)
 transTerm (FCocase (FlatObsDest h) t) = App (Var (Variable "obs" <> h))
                                             (transTerm t)
+transTerm (FCocase (FlatObsCut _) _) = error "transTerm{FlatObsCut}"
+transTerm (FShift _ _) = error "transTerm{FShift}"
+transTerm (FPrompt _) = error "transTerm{FPrompt}"
 
 transPat :: FlatPattern -> Pattern
 transPat (FlatPatVar v)     = PVar v

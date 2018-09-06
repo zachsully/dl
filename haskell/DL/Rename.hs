@@ -56,18 +56,19 @@ renamePgm' (Pgm ds t) = Pgm <$> mapM renameDecl ds <*> renameTerm t
 
 -- | Just renames introduced constructors and destructors
 renameDecl :: Decl -> Rn Decl
-renameDecl (Decl (Left (NegTyCons name fs projs)))
-  =   Decl . Left . NegTyCons name fs
+renameDecl (CodataDecl (NegTyCons name fs projs))
+  =   CodataDecl . NegTyCons name fs
   <$> mapM renameProjection projs
-renameDecl (Decl (Right (PosTyCons name fs injs)))
-  =   Decl . Right . PosTyCons name fs
+renameDecl (DataDecl (PosTyCons name fs injs))
+  =   DataDecl . PosTyCons name fs
   <$> mapM renameInjection injs
+renameDecl i@(IndexDecl _ _) = return i
 
 renameProjection :: Projection -> Rn Projection
-renameProjection (Proj v ty) = renameVar v >>= \v' -> return (Proj v' ty)
+renameProjection (Proj v mc ty) = renameVar v >>= \v' -> return (Proj v' mc ty)
 
 renameInjection :: Injection -> Rn Injection
-renameInjection (Inj v ty) = renameVar v >>= \v' -> return (Inj v' ty)
+renameInjection (Inj v mc ty) = renameVar v >>= \v' -> return (Inj v' mc ty)
 
 
 renameTerm :: Term -> Rn Term

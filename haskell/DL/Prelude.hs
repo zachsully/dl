@@ -31,14 +31,14 @@ replace the variable occurrences with Dest and Cons.
 --------------
 
 unitDecl :: Decl
-unitDecl = mkDataDecl
+unitDecl = DataDecl
   (PosTyCons (Variable "1") []
-    [Inj (Variable "Unit") (TyCons (Variable "1"))])
+    [Inj (Variable "Unit") Nothing (TyCons (Variable "1"))])
 
 pairDecl :: Decl
-pairDecl = mkDataDecl
+pairDecl = DataDecl
   (PosTyCons (Variable "Pair") [Variable "A",Variable "B"]
-    [Inj (Variable "Pair")
+    [Inj (Variable "Pair") Nothing
       (TyArr
        (TyVar (Variable "A"))
        (TyArr (TyVar (Variable "B"))
@@ -46,34 +46,34 @@ pairDecl = mkDataDecl
                      (TyVar (Variable "B")))))])
 
 listDecl :: Decl
-listDecl = mkDataDecl
+listDecl = DataDecl
   (PosTyCons (Variable "List") [Variable "A"]
-   [Inj (Variable "Nil")
+   [Inj (Variable "Nil") Nothing
      (TyApp (TyCons (Variable "List")) (TyVar (Variable "A")))
-   ,Inj (Variable "Cons")
+   ,Inj (Variable "Cons") Nothing
      (TyArr (TyVar (Variable "A"))
        (TyArr (TyApp (TyCons (Variable "List")) (TyVar (Variable "A")))
               (TyApp (TyCons (Variable "List")) (TyVar (Variable "A")))))]
   )
 
 eitherDecl :: Decl
-eitherDecl = mkDataDecl
+eitherDecl = DataDecl
   (PosTyCons (Variable "Either") [Variable "A",Variable "B"]
-   [Inj (Variable "Left")
+   [Inj (Variable "Left") Nothing
      (TyArr (TyVar (Variable "A"))
       (TyApp (TyApp (TyCons (Variable "Either")) (TyVar (Variable "A")))
         (TyVar (Variable "B"))))
-   ,Inj (Variable "Right")
+   ,Inj (Variable "Right") Nothing
      (TyArr (TyVar (Variable "A"))
       (TyApp (TyApp (TyCons (Variable "Either")) (TyVar (Variable "A")))
         (TyVar (Variable "B"))))]
   )
 
 boolDecl :: Decl
-boolDecl = mkDataDecl
+boolDecl = DataDecl
   (PosTyCons (Variable "Bool") []
-    [Inj (Variable "True") (TyCons (Variable "Bool"))
-    ,Inj (Variable "False") (TyCons (Variable "Bool"))]
+    [Inj (Variable "True") Nothing (TyCons (Variable "Bool"))
+    ,Inj (Variable "False") Nothing (TyCons (Variable "Bool"))]
   )
 
 --------------
@@ -81,24 +81,24 @@ boolDecl = mkDataDecl
 --------------
 
 withDecl :: Decl
-withDecl = mkCodataDecl $
+withDecl = CodataDecl $
   NegTyCons (Variable "With") [Variable "A",Variable "B"]
-    [Proj (Variable "Fst")
+    [Proj (Variable "Fst") Nothing
      (TyArr (TyApp (TyApp (TyCons (Variable "With")) (TyVar (Variable "A")))
                (TyVar (Variable "B")))
        (TyVar (Variable "A")))
-    ,Proj (Variable "Snd")
+    ,Proj (Variable "Snd") Nothing
      (TyArr (TyApp (TyApp (TyCons (Variable "With")) (TyVar (Variable "A")))
               (TyVar (Variable "B")))
        (TyVar (Variable "B")))]
 
 streamDecl :: Decl
-streamDecl = mkCodataDecl $
+streamDecl = CodataDecl $
   (NegTyCons (Variable "Stream") [Variable "A"]
-   [Proj (Variable "Head")
+   [Proj (Variable "Head") Nothing
      (TyArr (TyApp (TyCons (Variable "Stream")) (TyVar (Variable "A")))
        (TyVar (Variable "A")))
-   ,Proj (Variable "Tail")
+   ,Proj (Variable "Tail") Nothing
      (TyArr (TyApp (TyCons (Variable "Stream")) (TyVar (Variable "A")))
        (TyApp (TyCons (Variable "Stream")) (TyVar (Variable "A"))))]
   )

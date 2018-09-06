@@ -1,12 +1,10 @@
-{-# LANGUAGE GADTs, DataKinds, KindSignatures #-}
+{-# LANGUAGE GADTs, DataKinds, KindSignatures, LambdaCase #-}
 module DL.Syntax.Top
   ( Program (..)
   , pgmConsDestArity
   , pgmDecls, pgmTerm
 
   , Decl (..), Polarity (..)
-  , mkDataDecl, mkCodataDecl
-  , declArity
 
   , NegativeTyCons (..)
   , Projection (..)
@@ -32,11 +30,11 @@ data Program :: * -> * where
 
 pgmConsDestArity :: Program t -> [(Variable,Int)]
 pgmConsDestArity pgm =
-  concatMap (\(Decl d) ->
-               case d of
-                 Left n  -> fmap (projName &&& const 1) (projections n)
-                 Right n -> fmap (injName &&& (arity <<< injType))
-                                 (injections n)
+  concatMap (\case
+                CodataDecl n  -> fmap (projName &&& const 1) (projections n)
+                DataDecl n    -> fmap (injName &&& (arity <<< injType))
+                                      (injections n)
+                IndexDecl _ _ -> []
             )
             (pgmDecls pgm)
 
@@ -52,23 +50,16 @@ instance Pretty t => Pretty (Program t) where
         <> "\n\n"
         <> (pp . pgmTerm $ pgm)
 
-newtype Decl = Decl (Either NegativeTyCons PositiveTyCons)
-  deriving Show
-
-mkDataDecl :: PositiveTyCons -> Decl
-mkDataDecl   = Decl . Right
-
-mkCodataDecl :: NegativeTyCons -> Decl
-mkCodataDecl = Decl . Left
-
+data Decl
+  = DataDecl   PositiveTyCons
+  | CodataDecl NegativeTyCons
+  | IndexDecl  Variable [Variable]
+  deriving (Show,Eq)
 
 instance Pretty Decl where
-  pp (Decl (Left x))  = pp x
-  pp (Decl (Right x)) = pp x
-
-declArity :: Decl -> Int
-declArity (Decl (Left d))  = length . negTyFVars $ d
-declArity (Decl (Right d)) = length . posTyFVars $ d
+  pp (DataDecl x)     = pp x
+  pp (CodataDecl x)   = pp x
+  pp (IndexDecl n vs) = "index" <+> pp n <+> smconcat (fmap pp vs)
 
 {- There is a special polarity type because positive and negative types are
    declared with the same structure, but we still need to keep them separate. -}
@@ -84,7 +75,7 @@ data NegativeTyCons
   { negTyName   :: Variable
   , negTyFVars  :: [Variable]
   , projections :: [Projection] }
-  deriving Show
+  deriving (Show,Eq)
 
 instance Pretty NegativeTyCons where
   pp tc =   "codata" <+> pp (negTyName tc)
@@ -98,19 +89,22 @@ negTyArity = length . negTyFVars
 
 data Projection
   = Proj
-  { projName :: Variable
-  , projType  :: Type }
+  { projName        :: Variable
+  , projMConstraint :: Maybe Constraint
+  , projType        :: Type }
   deriving (Eq,Show)
 
 instance Pretty Projection where
-  ppInd i (Proj n ty) = pp n <+> ":" <+> ppInd i ty
+  ppInd i (Proj n Nothing ty) = pp n <+> ":" <+> ppInd i ty
+  ppInd i (Proj n (Just c) ty) = pp n <+> ":" <+> ppInd i c <+> "=>"
+    <+> ppInd i ty
 
 data PositiveTyCons
   = PosTyCons
   { posTyName  :: Variable
   , posTyFVars :: [Variable]
   , injections :: [Injection]  }
-  deriving Show
+  deriving (Show,Eq)
 
 instance Pretty PositiveTyCons where
   pp tc =   "data" <+> pp (posTyName tc)
@@ -126,11 +120,14 @@ posTyArity = length . posTyFVars
 
 data Injection
   = Inj
-  { injName :: Variable
-  , injType  :: Type }
-  deriving Show
+  { injName        :: Variable
+  , injMConstraint :: Maybe Constraint
+  , injType        :: Type }
+  deriving (Show,Eq)
   {- the domain is a maybe value because unary constructors do not take
      arguments, e.g. () : Unit -}
 
 instance Pretty Injection where
-  ppInd i (Inj n ty) = pp n <+> ":" <+> ppInd i ty
+  ppInd i (Inj n Nothing ty) = pp n <+> ":" <+> ppInd i ty
+  ppInd i (Inj n (Just c) ty) = pp n <+> ":" <+> ppInd i c <+> "=>"
+    <+> ppInd i ty

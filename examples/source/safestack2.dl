@@ -1,0 +1,9 @@
+index Safe
+index Unsafe
+
+codata Stack i
+  { Push : j = Safe => Stack i -> Int -> Stack j
+  , Pop  : i = Safe => Stack i -> Int }
+
+let x = {} : Stack Safe in
+  Pop x

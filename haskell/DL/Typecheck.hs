@@ -35,18 +35,19 @@ instance FV a => FV (Env a) where
   fvs (Env m) = Set.unions . fmap fvs . elems $ m
 
 -- | forall introduction, we only generalize constructors and destructors
-generalize :: Env Scheme -> Type -> Scheme
-generalize _ ty = Forall (fvs ty) mempty ty
+generalize :: Env Scheme -> Maybe Constraint -> Type -> Scheme
+generalize _ Nothing ty = Forall (fvs ty) mempty ty
+generalize _ (Just c) ty = Forall (Set.difference (fvs ty) (fvs c)) c ty
 
 -- | forall elimination
-instantiate :: Scheme -> Tc Type
-instantiate (Forall vs _ ty) =
+instantiate :: Scheme -> Tc (Type,Constraint)
+instantiate (Forall vs c ty) =
   do { s <- foldM (\s v ->
                      do { fTy <- freshTy
                         ; return (replace v fTy . s) })
                   id
                   (Set.toList vs)
-     ; return (s ty) }
+     ; return (s ty,c) }
 
 --------------------------------------------------------------------------------
 --                          Typechecking Monad                                --
@@ -182,7 +183,7 @@ typeCheckPgm cfg (Pgm decls term) =
 -- | Check that a delaration is well formed and add that to the typechecking
 -- state
 gatherDecl :: Env Kind -> Decl -> Tc (Env Kind,Env Scheme)
-gatherDecl kenv (Decl (Left (NegTyCons name fs projs))) =
+gatherDecl kenv (CodataDecl (NegTyCons name fs projs)) =
   do { tenv <- foldM checkProjection emptyEnv projs
      ; return (kenv', tenv) }
   where kind :: Kind
@@ -190,7 +191,7 @@ gatherDecl kenv (Decl (Left (NegTyCons name fs projs))) =
         kenv' :: Env Kind
         kenv' = extendEnv name kind kenv
         checkProjection :: Env Scheme -> Projection -> Tc (Env Scheme)
-        checkProjection tenv (Proj pname ty) =
+        checkProjection tenv (Proj pname mc ty) =
           let expectedTy = Prelude.foldl TyApp (TyCons name) (fmap TyVar fs)
           in do { kindCheckType kenv' ty
                 ; case domain ty of
@@ -198,12 +199,13 @@ gatherDecl kenv (Decl (Left (NegTyCons name fs projs))) =
                       typeError (DestructorProjectionError pname expectedTy)
                     Just dom ->
                       case expectedTy == dom of
-                     True  ->
-                       return (extendEnv pname (generalize tenv ty) tenv)
-                     False ->
-                       typeError (DestructorProjectionError pname expectedTy)
+                        True ->
+                          let tyS = generalize tenv mc ty
+                          in return (extendEnv pname tyS tenv)
+                        False ->
+                          typeError (DestructorProjectionError pname expectedTy)
                 }
-gatherDecl kenv (Decl (Right (PosTyCons name fs injs))) =
+gatherDecl kenv (DataDecl (PosTyCons name fs injs)) =
   do { tenv <- foldM checkInjection emptyEnv injs
      ; return (kenv', tenv) }
   where kind :: Kind
@@ -211,23 +213,27 @@ gatherDecl kenv (Decl (Right (PosTyCons name fs injs))) =
         kenv' :: Env Kind
         kenv' = extendEnv name kind kenv
         checkInjection :: Env Scheme -> Injection -> Tc (Env Scheme)
-        checkInjection tenv (Inj iname ty) =
+        checkInjection tenv (Inj iname mc ty) =
           let expectedTy = Prelude.foldl TyApp (TyCons name) (fmap TyVar fs)
           in do { kindCheckType kenv' ty
                 ; case codomain ty of
                     Nothing  ->
                       case expectedTy == ty of
                         True  ->
-                          return (extendEnv iname (generalize tenv ty) tenv)
+                          let tyS = generalize tenv mc ty
+                          in return (extendEnv iname tyS tenv)
                         False ->
                           typeError (ConstructorInjectionError iname expectedTy)
                     Just cod ->
                       case expectedTy == cod of
                         True  ->
-                          return (extendEnv iname (generalize tenv ty) tenv)
+                          let tyS = generalize tenv mc ty
+                          in return (extendEnv iname tyS tenv)
                         False ->
                           typeError (ConstructorInjectionError iname expectedTy)
                 }
+gatherDecl kenv (IndexDecl name vs)
+  = return (extendEnv name (Kind (length vs)) kenv, emptyEnv)
 
 kindCheckType :: Env Kind -> Type -> Tc ()
 kindCheckType e ty = kindCheckType' e ty 0
@@ -264,9 +270,7 @@ gatherTerm env (Add a b) =
      ; return (TyInt
               , aC <> bC <> (aTy `ceq` TyInt) <> (bTy `ceq` TyInt))
      }
-gatherTerm env (Var v) =
-  do { aTy <- instantiate =<< lookupEnv v env
-     ; return (aTy, mempty) }
+gatherTerm env (Var v) = instantiate =<< lookupEnv v env
 gatherTerm env (Fix v a) =
   do { ty <- freshTy
      ; gatherTerm (extendEnv v (Forall Set.empty mempty ty) env) a }
@@ -275,17 +279,13 @@ gatherTerm env (App a b) =
      ; (bTy,bC) <- gatherTerm env b
      ; outTy <- freshTy
      ; return (outTy,aC <>  bC <> (aTy `ceq` (TyArr bTy outTy))) }
-gatherTerm env (Cons k) =
-  do { kTy <- instantiate =<< lookupEnv k env
-     ; return (kTy, mempty) }
+gatherTerm env (Cons k) = instantiate =<< lookupEnv k env
 gatherTerm env (Case t alts) =
   do { (tTy,tC) <- gatherTerm env t
      ; outTy <- freshTy
      ; cs <- mapM (gatherAlt env tTy outTy) alts
      ; return (outTy, tC <> mconcat cs) }
-gatherTerm env (Dest h) =
-  do { hTy <- instantiate =<< lookupEnv h env
-     ; return (hTy, mempty) }
+gatherTerm env (Dest h) = instantiate =<< lookupEnv h env
 gatherTerm env (Coalts coalts) =
   do { codataTy <- freshTy
      ; cs <- mapM (gatherCoalt env codataTy) coalts
@@ -310,8 +310,9 @@ gatherPattern env argTy (PVar v)
   = return (extendEnv v (Forall mempty mempty argTy) env,mempty)
 gatherPattern env argTy (PCons k pats) =
   do { kS <- lookupEnv k env
-     ; kTy <- instantiate kS
-     ; foldPatterns env kTy pats }
+     ; (kTy,kC) <- instantiate kS
+     ; (env',pC) <- foldPatterns env kTy pats
+     ; return (env', kC <> pC )}
   where foldPatterns e ty@(TyApp _ _) [] = return (e,argTy `ceq` ty)
         foldPatterns e ty@(TyCons _)  [] = return (e,argTy `ceq` ty)
         foldPatterns e ty@(TyVar _)   [] = return (e,argTy `ceq` ty)
@@ -330,9 +331,9 @@ gatherObsCtx env codataTy (ObsFun o a) =
      ; return (outTy, obsC <> aC <> (obsTy `ceq` (TyArr aTy outTy))) }
 gatherObsCtx env codataTy (ObsDest h o) =
   do { (obsTy,obsC) <- gatherObsCtx env codataTy o
-     ; hTy <- instantiate =<< lookupEnv h env
+     ; (hTy,hC) <- instantiate =<< lookupEnv h env
      ; outTy <- freshTy
-     ; return (outTy, obsC <> (hTy `ceq` (TyArr obsTy outTy))) }
+     ; return (outTy, obsC <> hC <> (hTy `ceq` (TyArr obsTy outTy))) }
 gatherObsCtx _ _ (ObsCut _ _) = error "gatherObsCtx{ObsCut}"
 
 -- ^ Takes a codata type, returns the output type
@@ -348,9 +349,9 @@ gatherCopattern
 gatherCopattern env codataTy QHead = return (codataTy,mempty,env)
 gatherCopattern env codataTy (QDest h q) =
   do { (projTy,qC,env') <- gatherCopattern env codataTy q
-     ; hTy <- instantiate =<< lookupEnv h env
+     ; (hTy,hC) <- instantiate =<< lookupEnv h env
      ; outTy <- freshTy
-     ; return (outTy, qC <> (hTy `ceq` (TyArr projTy outTy)), env') }
+     ; return (outTy, qC <> hC <> (hTy `ceq` (TyArr projTy outTy)), env') }
 gatherCopattern env codataTy (QPat q p) =
   do { (projTy,qC,env') <- gatherCopattern env codataTy q
      ; domTy <- freshTy

@@ -19,6 +19,7 @@ tokens :-
   \+         { const TokPlus }
   codata     { const TokCodata }
   data       { const TokData }
+  index      { const TokIndex }
   cocase     { const TokCocase }
   case       { const TokCase }
   fix        { const TokFix }
@@ -31,6 +32,7 @@ tokens :-
   ▪         { const TokBoxFill }
   _          { const TokUnderscore }
   \->        { const TokArr }
+  =>         { const TokDArr }
   →         { const TokArr }
   \{         { const TokLBrace }
   \}         { const TokRBrace }
@@ -52,6 +54,7 @@ data Token
   | TokString String
   | TokCodata
   | TokData
+  | TokIndex
   | TokCase
   | TokCocase
   | TokFix
@@ -64,6 +67,7 @@ data Token
   | TokBoxFill
   | TokUnderscore
   | TokArr
+  | TokDArr
   | TokLBrace
   | TokRBrace
   | TokLParen

@@ -245,10 +245,11 @@ instance Translate Program where
 These functions must be in scope for the term. -}
 trans :: Top.Program FlatTerm -> Program
 trans dpgm =
-  let negTys = foldr (\(Top.Decl d) acc ->
+  let negTys = foldr (\d acc ->
                         case d of
-                          Right _ -> acc
-                          Left d' -> pure (Top.negTyName d') <> acc
+                          Top.DataDecl _ -> acc
+                          Top.CodataDecl d' -> pure (Top.negTyName d') <> acc
+                          Top.IndexDecl _ _ -> acc
                      )
                      []
                      (Top.pgmDecls dpgm)
@@ -287,7 +288,7 @@ transDecl
   :: [Variable]
   -> Top.Decl
   -> (Either DataTyCons RecordTyCons,[FunDecl])
-transDecl negTys (Top.Decl (Right d)) =
+transDecl negTys (Top.DataDecl d) =
   (Left (DataTyCons (Top.posTyName $ d)
           (Top.posTyFVars d)
           (fmap mkDataCon . Top.injections $ d)), fmap wrapFun . Top.injections $ d)
@@ -324,7 +325,7 @@ transDecl negTys (Top.Decl (Right d)) =
                                  xs
           }
 
-transDecl negTys (Top.Decl (Left d))  =
+transDecl negTys (Top.CodataDecl d)  =
   (Right (RecordTyCons name
            (Top.negTyFVars d)
            (fmap mkRecordField (Top.projections d)))
@@ -396,6 +397,8 @@ transDecl negTys (Top.Decl (Left d))  =
                                 . transType
                                 . Top.projType $ p)
 
+transDecl _ (Top.IndexDecl _ _) = error "transDecl{IndexDecl}"
+
 transTerm :: FlatTerm -> Term
 transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
 {-
@@ -426,6 +429,9 @@ transTerm (FFun v t) = Lam v (transTerm t)
 transTerm (FCocase (FlatObsFun e) t) = App (transTerm t) (transTerm e)
 transTerm (FCocase (FlatObsDest h) t) = App (Var (Variable "obs" <> h))
                                             (transTerm t)
+transTerm (FCocase (FlatObsCut _) _) = error "transTerm{FlatObsCut}"
+transTerm (FShift _ _) = error "transTerm{FShift}"
+transTerm (FPrompt _) = error "transTerm{FPrompt}"
 
 transPat :: FlatPattern -> Pattern
 transPat (FlatPatVar v)     = PVar v

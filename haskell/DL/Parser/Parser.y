@@ -23,7 +23,7 @@ import DL.Utils
 import DL.Pretty
 }
 -- All shift/reduce conflicts
-%expect 32
+%expect 34
 
 %name parseProgram program
 %name parseType type
@@ -39,6 +39,7 @@ import DL.Pretty
   str      { TokString $$ }
   'codata' { TokCodata }
   'data'   { TokData }
+  'index'  { TokIndex }
   'case'   { TokCase }
   'cocase' { TokCocase }
   'fix'    { TokFix }
@@ -47,9 +48,9 @@ import DL.Pretty
   'in'     { TokIn }
   '#'      { TokHash }
   '□'     { TokBox }
-  '▪'     { TokBoxFill }
   '_'      { TokUnderscore }
   '->'     { TokArr }
+  '=>'     { TokDArr }
   '{'      { TokLBrace }
   '}'      { TokRBrace }
   '('      { TokLParen }
@@ -59,7 +60,6 @@ import DL.Pretty
   ','      { TokComma }
   '|'      { TokMid }
   ':'      { TokColon }
-  'module' { TokModule }
 
 %%
 
@@ -85,33 +85,39 @@ program : decls term                           {% get >>= \s ->
 decl :: { Decl }
 decl : 'codata' var vars '{' projs '}'         {% addTyCons $2 >>
                                                   (return . replaceWithTyCons $2 $
-                                                    mkCodataDecl (NegTyCons $2
-                                                                  (reverse $3)
-                                                                  (reverse $5)))
+                                                    CodataDecl (NegTyCons $2
+                                                                 (reverse $3)
+                                                                 (reverse $5)))
                                                }
 
      | 'data'   var vars '{' injs  '}'         {% (addTyCons $2) >>
                                                   (return . replaceWithTyCons $2 $
-                                                    mkDataDecl (PosTyCons $2
-                                                                (reverse $3)
-                                                                (reverse $5)))
+                                                    DataDecl (PosTyCons $2
+                                                               (reverse $3)
+                                                               (reverse $5)))
                                                }
+     | 'index' var vars                        {% (addTyCons $2) >>
+                                                  (return (IndexDecl $2 (reverse $3))) }
 
 decls :: { [Decl] }
 decls : decl decls                             { $1 : $2 }
       | {- empty -}                            { [] }
 
 proj :: { Projection }
-proj : var ':' type                            {% do { addVar $1 Negative
-                                                     ; return (Proj $1 $3) } }
+proj : var ':' constraint '=>' type            {% do { addVar $1 Negative
+                                                     ; return (Proj $1 (Just $3) $5) } }
+     | var ':' type                            {% do { addVar $1 Negative
+                                                     ; return (Proj $1 Nothing $3) } }
 projs :: { [Projection] }
 projs : projs ',' proj                         { $3 : $1 }
       | proj                                   { [$1] }
       | {- empty-}                             { [] }
 
 inj :: { Injection }
-inj : var ':' type                             {% do { addVar $1 Positive
-                                                     ; return (Inj $1 $3)  } }
+inj : var ':' constraint '=>' type            {% do { addVar $1 Positive
+                                                     ; return (Inj $1 (Just $3) $5) } }
+    | var ':' type                             {% do { addVar $1 Positive
+                                                     ; return (Inj $1 Nothing $3)  } }
 
 injs :: { [Injection] }
 injs : injs '|' inj                            { $3 : $1 }
@@ -121,6 +127,13 @@ injs : injs '|' inj                            { $3 : $1 }
 --------------------------------------------------------------------------------
 --                                 Types                                      --
 --------------------------------------------------------------------------------
+
+constraint :: { Constraint }
+constraint : constraint0 ',' constraint0   { CConj $1 $3 }
+           | constraint0                   { $1 }
+
+constraint0 :: { Constraint }
+constraint0 : type '=' type                { CEq $1 $3 }
 
 type :: { Type }
 type : type0                           { $1 }
@@ -312,14 +325,14 @@ emptyPState = PState [] []
 
 pStateFromDecls :: [Decl] -> PState
 pStateFromDecls d = PState (fmap getTyCons d) (concatMap getConsDecls d)
-  where getTyCons (Decl d) =
-          case d of
-            Left d  -> negTyName d
-            Right d -> posTyName d
-        getConsDecls (Decl d) =
-          case d of
-            Left d  -> fmap (flip (,) Negative . projName) . projections $ d
-            Right d -> fmap (flip (,) Positive . injName)  . injections  $ d
+  where getTyCons (CodataDecl d)  = negTyName d
+        getTyCons (DataDecl d)    = posTyName d
+        getTyCons (IndexDecl n _) = n
+        getConsDecls (CodataDecl d)
+          = fmap (flip (,) Negative . projName) . projections $ d
+        getConsDecls (DataDecl d)
+          = fmap (flip (,) Positive . injName)  . injections  $ d
+        getConsDecls (IndexDecl _ _) = []
 
 addTyCons :: Variable -> ParserM ()
 addTyCons s = get >>= \(PState ts ss) -> put (PState (s:ts) ss)
@@ -349,10 +362,11 @@ parseString s =
 replaceWithTyCons :: Variable -> Decl -> Decl
 replaceWithTyCons v d =
   case d of
-    (Decl (Left n))  -> mkCodataDecl
+    CodataDecl n -> CodataDecl
       (n { projections = replaceProj <$> projections n })
-    (Decl (Right n)) -> mkDataDecl
+    DataDecl n -> DataDecl
       (n { injections = replaceInj <$> injections n })
+    IndexDecl n vs -> IndexDecl n vs
   where replaceProj p = p { projType = replaceType (projType p) }
         replaceInj i = i { injType = replaceType (injType i) }
         replaceType TyInt = TyInt

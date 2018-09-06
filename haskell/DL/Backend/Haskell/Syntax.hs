@@ -219,7 +219,7 @@ typeCodom x = error ("type" <+> ppType x 0 <+> "is not a projection")
 transDecl
   :: Top.Decl
   -> (Either DataTyCons RecordTyCons,[FunDecl])
-transDecl (Top.Decl (Right d)) =
+transDecl (Top.DataDecl d) =
   (Left (DataTyCons
           (Top.posTyName d)
           (Top.posTyFVars d)
@@ -229,7 +229,7 @@ transDecl (Top.Decl (Right d)) =
         mkDataCon inj = DataCon (Top.injName inj)
                                    (transType . Top.injType $ inj)
 
-transDecl (Top.Decl (Left d))  =
+transDecl (Top.CodataDecl d)  =
   ( Right (RecordTyCons
            name
            (Top.negTyFVars d)
@@ -257,6 +257,8 @@ transDecl (Top.Decl (Left d))  =
         mkRecordField p = Field (pname p)
                                    (typeCodom . transType . Top.projType $ p)
 
+transDecl (Top.IndexDecl _ _) = error "transDecl{IndexDecl}"
+
 transTerm :: FlatTerm -> Term
 transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
 transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
@@ -279,6 +281,9 @@ transTerm (FFun v t) = Lam v (transTerm t)
 transTerm (FCocase (FlatObsFun e) t) = App (transTerm t) (transTerm e)
 transTerm (FCocase (FlatObsDest h) t) = App (Var (Variable "_" <> h))
                                             (transTerm t)
+transTerm (FCocase (FlatObsCut _) _) = error "transTerm{FlatObsCut}"
+transTerm (FShift _ _) = error "transTerm{FShift}"
+transTerm (FPrompt _) = error "transTerm{FPrompt}"
 
 transPat :: FlatPattern -> Pattern
 transPat (FlatPatVar v)     = PVar v
