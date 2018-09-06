@@ -25,7 +25,7 @@ data Scheme = Forall (Set Variable) Constraint Type
 
 instance Pretty Scheme where
   pp (Forall vs c t) = "forall" <+> (smconcat . fmap pp . toList $ vs) <> "."
-    <+> pp c <+> "=>" <+> pp t
+    <-> indent 2 (ppInd 2 c) <-> (indent 2 ("=>" <+> ppInd 2 t))
 
 instance FV Scheme where
   fvs (Forall vs _ ty) = fvs ty \\ vs
@@ -47,11 +47,10 @@ atomicConstr (CConj _ _) = True
 atomicConstr _ = False
 
 instance Pretty Constraint where
-  pp CTrue  = "true"
-  pp (CEq a b) = pp a <+> "=" <+> pp b
-  pp (CConj a b) = (parensIf (not . atomicConstr) a (pp a)) <> ","
-    <+> (parensIf (not . atomicConstr) b (pp b))
-  pp (CNumeric t) = "numeric" <+> (pp t)
+  ppInd _ CTrue  = "true"
+  ppInd _ (CEq a b) = pp a <+> "=" <+> pp b
+  ppInd i (CConj a b) = ppInd i a <-> (indent i (ppInd i b))
+  ppInd _ (CNumeric t) = "numeric" <+> (pp t)
 
 instance Semigroup Constraint where
   (<>) = mappend
@@ -63,6 +62,12 @@ instance Monoid Constraint where
   mappend CTrue c     = c
   mappend c     CTrue = c
   mappend a     b     = CConj a b
+
+instance FV Constraint where
+  fvs CTrue = empty
+  fvs (CConj a b) = union (fvs a) (fvs b)
+  fvs (CNumeric a) = fvs a
+  fvs (CEq a b) = union (fvs a) (fvs b)
 
 ceq :: Type -> Type -> Constraint
 ceq  = CEq

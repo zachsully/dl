@@ -1,11 +1,11 @@
 module DL.Typecheck
-  ( typeCheckPgm
+  ( TcConfig (..)
+  , typeCheckPgm
   ) where
 
 import Control.Monad
 import Data.Map.Lazy hiding (foldr)
 import qualified Data.Set as Set
-import Debug.Trace
 
 import DL.Pretty
 import DL.Syntax.Type
@@ -85,8 +85,22 @@ freshTy = Tc $ \s ->
     Right (s { freshNames = xs },x)
 
 --------------------------------------------------------------------------------
---                              Unification                                   --
+--                           Constraint Solver                                --
 --------------------------------------------------------------------------------
+
+type Subst = Type -> Type
+
+replace :: Variable -> Type -> Subst
+replace _ _ TyInt = TyInt
+replace v ty (TyArr a b) =
+  TyArr (replace v ty a) (replace v ty b)
+replace v ty (TyVar w) =
+  case v == w of
+    True  -> ty
+    False -> TyVar w
+replace _ _ (TyCons k) = TyCons k
+replace v ty (TyApp a b) =
+  TyApp (replace v ty a) (replace v ty b)
 
 unify :: Type -> Type -> Tc Subst
 unify a b | a == b = return id
@@ -115,29 +129,11 @@ unify a b = typeError (UnificationError a b)
 occurs :: Variable -> Type -> Bool
 occurs v a = elem v (fvs a)
 
---------------------------------------------------------------------------------
---                           Constraint Solver                                --
---------------------------------------------------------------------------------
-
-type Subst = Type -> Type
-
-replace :: Variable -> Type -> Subst
-replace _ _ TyInt = TyInt
-replace v ty (TyArr a b) =
-  TyArr (replace v ty a) (replace v ty b)
-replace v ty (TyVar w) =
-  case v == w of
-    True  -> ty
-    False -> TyVar w
-replace _ _ (TyCons k) = TyCons k
-replace v ty (TyApp a b) =
-  TyApp (replace v ty a) (replace v ty b)
-
 solve :: Subst -> Constraint -> Tc Subst
 solve s CTrue = return s
 solve s c =
-  do { (c',s') <- solve' c
-     ; solve (s' . s) (applyConstraint (s' . s) c') }
+  do { (c',s') <- solve' (applyConstraint s c)
+     ; solve (s' . s) c' }
 
 solve' :: Constraint -> Tc (Constraint,Subst)
 solve' CTrue = return (mempty,id)
@@ -146,7 +142,7 @@ solve' (CConj c CTrue) = solve' c
 solve' (CConj a b) =
   do { (aC,aS) <- solve' a
      ; (bC,bS) <- solve' (applyConstraint aS b)
-     ; return (applyConstraint bS (aC <> bC),bS . aS) }
+     ; return (applyConstraint (bS . aS) (aC <> bC),bS . aS) }
 solve' (CNumeric TyInt) = return (mempty, id)
 solve' (CNumeric ty) = typeError (UnificationError ty TyInt)
 solve' (CEq a b) | a == b = return (mempty, id)
@@ -164,16 +160,21 @@ applyConstraint s (CNumeric a) = CNumeric (s a)
 --                             Top Level                                      --
 --------------------------------------------------------------------------------
 
-typeCheckPgm :: Program Term -> Type
-typeCheckPgm (Pgm decls term) =
+data TcConfig
+  = TcConfig { tcDumpConstraints :: Bool }
+
+typeCheckPgm :: TcConfig -> Program Term -> IO Type
+typeCheckPgm cfg (Pgm decls term) =
   case unTc m initTcState of
     Left e       -> error (pp e)
-    Right (_,ty) -> ty
+    Right (_,(unsolved,ty)) ->
+      do { when (tcDumpConstraints cfg) (pprint unsolved >> putStrLn "")
+         ; return ty }
   where m = do { (_,tenv) <- foldM runCheck (emptyEnv,emptyEnv) decls
                ; (ty,constraint) <- gatherTerm tenv term
-               ; trace (pp constraint <+> "=>" <+> pp ty) return ()
                ; s <- solve id constraint
-               ; return (s ty) }
+               ; let unsolved = Forall (Set.union (fvs constraint) (fvs ty)) constraint ty
+               ; return (unsolved,s ty) }
         runCheck (kenv,Env tm) decl =
           do { (kenv',Env tm') <- gatherDecl kenv decl
              ; return (kenv',Env (union tm tm')) }
@@ -251,7 +252,7 @@ kindCheckType' _ ty n = typeError (KindError ty (Kind n) Nothing)
 gatherTerm :: Env Scheme -> Term -> Tc (Type,Constraint)
 gatherTerm env (Let v a b) =
   do { (aTy,aC) <- gatherTerm env a
-     ; (bTy,bC) <- gatherTerm (extendEnv v (generalize env aTy) env) b
+     ; (bTy,bC) <- gatherTerm (extendEnv v (Forall Set.empty mempty aTy) env) b
      ; return (bTy, aC <> bC) }
 gatherTerm env (Ann a ty) =
   do { (aTy, aC) <- gatherTerm env a

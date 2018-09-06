@@ -146,6 +146,8 @@ stdPipeline fp debug =
             ; putStrLn "" }
      ; let pgm'' :: Top.Program FlatTerm
            pgm'' = flattenPgm pgm'
+     -- ; ty <- typeCheckPgm (TcConfig debug) pgm
+     -- ; when debug (pprint ty)
      ; when debug $
          do { putStrLn "====== Flattened ======"
             ; pprint pgm''
@@ -189,7 +191,8 @@ runTypeOf tm =
             ; pprint pgm'
             ; putStrLn "" }
      ; putStrLn "====== Type Checked ======"
-     ; pprint (typeCheckPgm pgm) }
+     ; ty <- typeCheckPgm (TcConfig (tmDebug tm)) pgm
+     ; pprint ty }
 
 runRepl :: IO ()
 runRepl =
