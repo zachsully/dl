@@ -1,11 +1,11 @@
-{-# LANGUAGE GADTs,KindSignatures,UnicodeSyntax #-}
 module DL.Typecheck
   ( typeCheckPgm
-  , kindCheckDecl
   ) where
 
 import Control.Monad
-import Data.Map.Lazy
+import Data.Map.Lazy hiding (foldr)
+import qualified Data.Set as Set
+import Debug.Trace
 
 import DL.Pretty
 import DL.Syntax.Type
@@ -14,20 +14,53 @@ import DL.Syntax.Top
 import DL.Syntax.Variable
 import DL.Utils
 
-type Kind = Int
+--------------------------------------------------------------------------------
+--                            Environments                                    --
+--------------------------------------------------------------------------------
+newtype Env a = Env (Map Variable a)
 
-data TcState
-  = TcState
-  { kmap        :: Map Variable Kind
-  , tmap        :: Map Variable Type
-  , freshTyVars :: [Type] }
+emptyEnv :: Env a
+emptyEnv = Env empty
+
+extendEnv :: Variable -> a -> Env a -> Env a
+extendEnv v a (Env m) = Env (insert v a m)
+
+lookupEnv :: Variable -> Env a -> Tc a
+lookupEnv v (Env m) =
+  case Data.Map.Lazy.lookup v m of
+    Nothing -> typeError (UnboundVarError v)
+    Just a  -> return a
+
+instance FV a => FV (Env a) where
+  fvs (Env m) = Set.unions . fmap fvs . elems $ m
+
+-- | forall introduction
+generalize :: Env Scheme -> Type -> Scheme
+generalize _ ty = Forall (fvs ty) mempty ty
+
+-- | forall elimination
+instantiate :: Scheme -> Tc Type
+instantiate (Forall vs _ ty) =
+  do { s <- foldM (\s v ->
+                     do { fTy <- freshTy
+                        ; return (replace v fTy . s) })
+                  id
+                  (Set.toList vs)
+     ; return (s ty) }
+
+--------------------------------------------------------------------------------
+--                          Typechecking Monad                                --
+--------------------------------------------------------------------------------
+data TcState = TcState { freshNames :: [Type] }
 
 initTcState :: TcState
 initTcState
-  = TcState empty empty (zipWith (\l r -> TyVar (Variable (l++show r))) (repeat "v") [0..])
+  = TcState (zipWith (\l r -> TyVar (Variable (l++show r)))
+                     (repeat "t")
+                     [(0 :: Integer)..])
 
 -- | The typechecking monad is a state monad that can fail
-data Tc a = Tc { unTc :: TcState -> Either String (TcState,a) }
+data Tc a = Tc { unTc :: TcState -> Either TypeError (TcState,a) }
 
 instance Functor Tc where
   fmap = liftM
@@ -43,794 +76,317 @@ instance Monad Tc where
       Left e -> Left e
       Right (s',x) -> unTc (g x) s'
 
-tcFail :: String -> Tc a
-tcFail s = Tc (\_ -> Left s)
+typeError :: TypeError -> Tc a
+typeError e = Tc (\_ -> Left e)
 
-freshTyVar :: Tc Type
-freshTyVar = Tc $ \s ->
-  let (x:xs) = freshTyVars s in
-    Right (s { freshTyVars = xs },x)
+freshTy :: Tc Type
+freshTy = Tc $ \s ->
+  let (x:xs) = freshNames s in
+    Right (s { freshNames = xs },x)
 
--- | This is really just lookup arity
-lookupKind :: Variable -> Tc Kind
-lookupKind v = Tc $ \s ->
-  case (kmap s) !? v of
-    Nothing -> Left (quotes (pp v) <+> "is an undeclared type constructor")
-    Just k  -> Right (s,k)
+--------------------------------------------------------------------------------
+--                              Unification                                   --
+--------------------------------------------------------------------------------
 
-setKind :: Variable -> Kind -> Tc ()
-setKind v k = Tc $ \s ->
-  let km' = alter (\_ -> Just k) v (kmap s) in
-    Right (s { kmap = km' },())
-
-lookupType :: Variable -> Tc Type
-lookupType v = Tc $ \s ->
-  case (tmap s) !? v of
-    Nothing -> Left (quotes (pp v) <+> "is an undeclared variable")
-    Just ty -> Right (s,ty)
-
-setType :: Variable -> Type -> Tc ()
-setType v ty = Tc $ \s ->
-  let tm' = alter (\_ -> Just ty) v (tmap s) in
-    Right (s { tmap = tm' },())
-
--- | Check that a delaration is well formed and add that to the typechecking
--- state
-kindCheckDecl :: Decl -> Tc ()
-kindCheckDecl (Decl (Left (NegTyCons name fvs projs))) =
-  let kind = length fvs in
-    do { setKind name kind
-       ; mapM_ checkProjection projs }
-  where checkProjection (Proj pname ty) =
-          let expectedTy = Prelude.foldl TyApp (TyCons name) (fmap TyVar fvs)
-              failMsg s = "Expected domain type" <+> pp expectedTy
-                <+> "in the injection" <+> pp pname <-> s
-          in do { kindCheckType ty
-                ; setType pname ty
-                ; case domain ty of
-                    Nothing  -> tcFail (failMsg "The destructor must be a projection")
-                    Just dom ->
-                      case expectedTy == dom of
-                     True  -> return ()
-                     False -> tcFail (failMsg "The destructor has the wrong domain.")
-                }
-kindCheckDecl (Decl (Right (PosTyCons name fvs injs))) =
-  let kind = length fvs in
-    do { setKind name kind
-       ; mapM_ checkInjection injs }
-  where checkInjection (Inj iname ty) =
-          let expectedTy = Prelude.foldl TyApp (TyCons name) (fmap TyVar fvs)
-              failMsg s = "Expected result type of" <+> pp expectedTy
-                <+> "in the injection" <+> pp iname <-> s
-          in do { kindCheckType ty
-                ; setType iname ty
-                ; case codomain ty of
-                    Nothing  ->
-                      case expectedTy == ty of
-                        True  -> return ()
-                        False -> tcFail (failMsg "the constructor has the wrong type")
-                    Just cod ->
-                      case expectedTy == cod of
-                        True  -> return ()
-                        False -> tcFail (failMsg "the codomain has the wrong type")
-                }
-
-kindCheckType :: Type -> Tc ()
-kindCheckType ty = kindCheckType' ty 0
-
-kindCheckType' :: Type -> Int -> Tc ()
-kindCheckType' TyInt 0 = return ()
-kindCheckType' (TyArr a b) 0 = kindCheckType a >> kindCheckType b
-kindCheckType' (TyVar _) 0 = return ()
-kindCheckType' (TyCons v) n =
-  lookupKind v >>= \k ->
-    case k == n of
-      True  -> return ()
-      False -> tcFail (pp (TyCons v) <+> "does not have arity" <+> show n)
-kindCheckType' (TyApp a b) n = kindCheckType' a (n+1) >> kindCheckType b
-kindCheckType' ty n = tcFail (pp ty <+> "does not have arity" <+> show n)
-
--- | Top level typechecker
-typeCheckPgm :: Program Term -> Type
-typeCheckPgm pgm =
-  case unTc (zonkType =<< typeCheckPgm' pgm) initTcState of
-    Left e -> error e
-    Right (_,ty) -> ty
-
-typeCheckPgm' :: Program Term -> Tc Type
-typeCheckPgm' (Pgm decls term) =
-  do { mapM_ kindCheckDecl decls -- ^ this also adds the cons/dests to the environment
-     ; typeCheckTerm term }
-
-typeCheckTerm :: Term -> Tc Type
-typeCheckTerm (Let v a b) =
-  do { aty <- typeCheckTerm a
-     ; setType v aty
-     ; typeCheckTerm b }
-typeCheckTerm (Ann a ty) =
-  do { aty <- typeCheckTerm a
-     ; assertTy aty ty }
-typeCheckTerm (Lit _) = return TyInt
-typeCheckTerm (Add a b) =
-  do { aty <- typeCheckTerm a
-     ; _ <- assertTy aty TyInt
-     ; bty <- typeCheckTerm b
-     ; _ <- assertTy bty TyInt
-     ; return TyInt }
-typeCheckTerm (Var v) = lookupType v
-typeCheckTerm (Fix v a) =
-  do { vty <- freshTyVar
-     ; setType v vty
-     ; typeCheckTerm a }
-typeCheckTerm (App a b) =
-  do { aty <- typeCheckTerm a
-     ; codTy <- freshTyVar
-     ; bty <- typeCheckTerm b
-     ; aty' <- unify (TyArr bty codTy) aty
-     ; zonkType codTy }
-typeCheckTerm (Cons k) = lookupType k
-typeCheckTerm (Case a alts) =
-  do { argTy <- typeCheckTerm a
-     ; resTy <- freshTyVar
-     ; mapM_ (typeCheckAlt argTy resTy) alts
-     ; zonkType resTy }
-typeCheckTerm (Dest h) = lookupType h
-typeCheckTerm (Coalts coalts) =
-  do { codataTy <- freshTyVar
-     ; mapM_ (typeCheckCoalt codataTy) coalts
-     ; zonkType codataTy }
-typeCheckTerm (Cocase o a) =
-  do { aTy <- typeCheckTerm a
-     ; outTy <- typeCheckObsCtx aTy o
-     ; zonkType outTy }
-typeCheckTerm (Prompt c) = typeCheckTerm c
-
-typeCheckAlt :: Type -> Type -> (Pattern,Term) -> Tc ()
-typeCheckAlt argTy resTy (p,t) =
-  do { pTy <- typeCheckPattern p
-     ; _ <- unify argTy pTy
-     ; tTy <- typeCheckTerm t
-     ; _ <- unify resTy tTy
-     ; return () }
-
-typeCheckPattern :: Pattern -> Tc Type
-typeCheckPattern PWild = freshTyVar
-typeCheckPattern (PVar v) =
-  do { ty <- freshTyVar
-     ; setType v ty
-     ; return ty }
-typeCheckPattern (PCons k ps) =
-  do { kty <- lookupType k
-     ; tys <- mapM typeCheckPattern ps
-     ; go kty tys }
-  where go ty@(TyApp _ _) [] = return ty
-        go ty@(TyCons _) [] = return ty
-        go (TyArr a b) (ty:tys) =
-          do { _ <- unify a ty
-             ; go b tys }
-        go _ _ = error "this should not happen"
-
--- ^ Takes a codata type, returns the output type
-typeCheckCoalt :: Type -> (CoPattern,Term) -> Tc Type
-typeCheckCoalt codataTy (q,t) =
-  do { projTy <- typeCheckCopattern codataTy q
-     ; t' <- typeCheckTerm t
-     ; zonkType t' }
-
--- ^ Takes the type of the context, returns the type of the projection
-typeCheckCopattern :: Type -> CoPattern -> Tc Type
-typeCheckCopattern codataTy QHead = return codataTy
-typeCheckCopattern codataTy (QDest h q) =
-  do { hTy <- lookupType h
-     ; qTy <- typeCheckCopattern codataTy q
-     ; outTy <- freshTyVar
-     ; _ <- unify hTy (TyArr qTy outTy)
-     ; zonkType outTy }
-typeCheckCopattern codataTy (QPat q p) = undefined
-typeCheckCopattern ctxTy (QVar v q) = undefined
-typeCheckCopattern _ QWild = freshTyVar
-
--- ^ Takes the input codata type
-typeCheckObsCtx :: Type -> ObsCtx -> Tc Type
-typeCheckObsCtx codataTy ObsHead = return codataTy
-typeCheckObsCtx codataTy (ObsFun o t) =
-  do { oty <- typeCheckObsCtx codataTy o
-     ; outTy <- freshTyVar
-     ; tTy <- typeCheckTerm t
-     ; _ <- unify oty (TyArr tTy outTy)
-     ; zonkType outTy }
-typeCheckObsCtx codataTy (ObsDest h o) =
-  do { hTy <- lookupType h
-     ; oTy <- typeCheckObsCtx codataTy o
-     ; outTy <- freshTyVar
-     ; _ <- unify hTy (TyArr oTy outTy)
-     ; zonkType outTy }
-typeCheckObsCtx codataTy (ObsCut  v o) = undefined
-
-assertTy :: Type -> Type -> Tc Type
-assertTy a b =
-  case a == b of
-    True -> return a
-    False -> tcFail (expectedMsg a b)
-
-expectedMsg :: Type -> Type -> String
-expectedMsg a b = "Expected type" <+> quotes (pp a) <-> "Actual type" <+> quotes (pp b)
-
-unify :: Type -> Type -> Tc Type
-unify TyInt TyInt = return TyInt
+unify :: Type -> Type -> Tc Subst
+unify a b | a == b = return id
 unify (TyArr a b) (TyArr c d) =
-  do { a' <- unify a c
-     ; b' <- unify b d
-     ; return (TyArr a' b') }
-unify (TyVar v) (TyVar w) = setType v (TyVar w) >> return (TyVar w)
+  do { s1 <- unify a c
+     ; s2 <- unify (s1 b) (s1 d)
+     ; return (s2 . s1) }
 unify (TyVar v) b =
   case occurs v b of
-    True -> tcFail ("circularity in" <+> pp v <+> "=" <+> pp b)
-    False -> setType v b >> return b
+    True  -> typeError (InfiniteTypeError v b)
+    False -> return (replace v b)
 unify a (TyVar v) =
   case occurs v a of
-    True -> tcFail ("circularity in" <+> pp a <+> "=" <+> pp v)
-    False -> setType v a >> return a
+    True  -> typeError (InfiniteTypeError v a)
+    False -> return (replace v a)
 unify (TyCons k) (TyCons h) =
   case k == h of
-    True  -> return (TyCons k)
-    False -> unificationErr (TyCons k) (TyCons h)
+    True  -> return id
+    False -> typeError (UnificationError (TyCons k) (TyCons h))
 unify (TyApp a b) (TyApp c d) =
-  do { a' <- unify a c
-     ; b' <- unify b d
-     ; return (TyApp a' b') }
-unify a b = unificationErr a b
+  do { s1 <- unify a c
+     ; s2 <- unify (s1 b) (s1 d)
+     ; return (s2 . s1) }
+unify a b = typeError (UnificationError a b)
 
 occurs :: Variable -> Type -> Bool
 occurs v a = elem v (fvs a)
 
-unificationErr :: Type -> Type -> Tc a
-unificationErr a b = tcFail ("cannot unify" <+> pp a <+> "and" <+> pp b)
-
--- | Zonking a type is essentially applying all of the substitutions that are
--- contained in the context
-zonkType :: Type -> Tc Type
-zonkType TyInt = return TyInt
-zonkType (TyArr a b) =
-  do { a' <- zonkType a
-     ; b' <- zonkType b
-     ; return (TyArr a' b') }
--- ^ This is where all of the work of zonking is done. We lookup the variable,
--- if we did not discover a substitution, then it remains free.
-zonkType (TyVar v) =
-  Tc $ \s ->
-  case (tmap s) !? v of
-    Nothing -> Right (s,(TyVar v))
-    Just ty -> Right (s,ty)
-zonkType (TyCons k) = return (TyCons k)
-zonkType (TyApp a b) =
-  do { a' <- zonkType a
-     ; b' <- zonkType b
-     ; return (TyApp a' b') }
-
-{-
 --------------------------------------------------------------------------------
---                                isType                                      --
---------------------------------------------------------------------------------
-{- Checks whether a type is well formed -}
-
-isType :: [Decl]            -- ^ A set of type signatures
-       → [(Variable,Type)] -- ^ A context of bindings of type variables
-       → Type
-       → Bool
-isType _ _   TyInt         = True
-isType s ctx (TyArr a b)   = isType s ctx a && isType s ctx b
-isType s ctx (TyVar v)     = case lookup v ctx of
-                               Just t → isType s ctx t
-                               Nothing → False
-
-{- A standalone type constructor is only valid if its arity is 0 -}
-isType s _   (TyCons tc)   = case lookupDecl tc s of
-                               Just d -> declArity d == 0
-                               Nothing -> False
-isType s ctx ty@(TyApp _ _) = case collectTyArgs ty of
-                               Just (tc,tys) ->
-                                 case lookupDecl tc s of
-                                   Just d -> (all (isType s ctx) tys)
-                                          && (length tys == declArity d)
-                                   Nothing -> False
-                               Nothing -> False
-
---------------------------------------------------------------------------------
---                            Type Scheme Inference                           --
---------------------------------------------------------------------------------
-{-
-Citations:
-- Damas and Milner. /Principal type-schemes for functional programs/. 1982.
-- Lee and Yi. /Proofs about a Folklore Let-Polymorphic Type Inference
-  Algorithm/. 1998.
-- Odersky, Sulzmann, and Wehr. /Type Inference with Constrained Types/. 1999.
--}
-
-data TypeScheme :: * where
-  TyForall :: Set Variable → Type → TypeScheme
-  deriving Eq
-
-instance Pretty TypeScheme where
-  pp (TyForall vs τ) =
-    case size vs == 0 of
-      True -> pp τ
-      False -> "∀" <+> (smconcat . fmap pp . toList $ vs) <+> "⇒"
-                    <+> pp τ
-
-instance Show TypeScheme where
-  show = pp
-
-instance FV TypeScheme where
-  fvs (TyForall vs τs) = fvs τs \\  vs
-
-schemeArity :: TypeScheme -> Int
-schemeArity (TyForall _ τ) = arity τ
-
-applyScheme :: Subst → TypeScheme → TypeScheme
-applyScheme σ (TyForall vs τ) = TyForall vs (applyType σ τ)
-
-codomainTS :: TypeScheme → Maybe Type
-codomainTS (TyForall _ τ) = codomain τ
-
-{-
-The environment and substitution types are closely related. The difference
-between the two is that environments map to type-schemes and substitutions map
-types.
-
-Environments are finite maps from variables to type schemes.
--}
-newtype Env = Env { unEnv :: [(Variable,TypeScheme)] }
-  deriving Show
-
-emptyEnv :: Env
-emptyEnv = Env []
-
-extendEnv :: Variable → TypeScheme → Env → Env
-extendEnv v s = Env . ((v,s):) . unEnv
-
-instance FV Env where
-  fvs (Env []) = empty
-  fvs (Env ((_,t):e)) = fvs t `union` fvs (Env e)
-
-applyEnv :: Subst → Env → Env
-applyEnv σ = Env . fmap (\(v,s) → (v,applyScheme σ s)) . unEnv
-
-instance S.Semigroup Env
-
-instance Monoid Env where
-  mempty = Env []
-  mappend (Env a) (Env b) = Env (a <> b)
-
-
-{-
-Substitutions map types to types. This actually maps type variables within types
-to types.
--}
-newtype Subst = Subst { unSubst :: Type → Type }
-
-applyType :: Subst → Type → Type
-applyType = unSubst
-
-idSubst :: Subst
-idSubst = Subst id
-
-{- Create a subsitution -}
-infixr 1 ./.
-(./.) :: Type → Variable → Subst
-t ./. v = Subst (substVar t v)
-   where substVar :: Type → Variable → Type → Type
-         substVar _ _ TyInt = TyInt
-         substVar t' v' (TyArr a b) = TyArr (substVar t' v' a)
-                                            (substVar t' v' b)
-         substVar t' v' (TyVar v'') =
-           case v' == v'' of
-             True → t'
-             False → TyVar v''
-         substVar _ _ (TyCons c) = TyCons c
-         substVar t' v' (TyApp a b) = TyApp (substVar t' v' a)
-                                            (substVar t' v' b)
-
-
-{- A composition operation for substitutions. -}
-infixr 0 ∘
-(∘) :: Subst → Subst → Subst
-(Subst f) ∘ (Subst g) = Subst (f . g)
-
-{- Other helpers -}
-tsElim :: TypeScheme → Std Type
-tsElim (TyForall vs τ) =
-  foldM (\τ' v →
-            do { α ← TyVar <$> freshen v
-               ; return (applyType (α ./. v) τ') })
-         τ
-        (toList vs)
-
-typeClosure :: Env → Type → TypeScheme
-typeClosure e τ = TyForall (fvs τ \\ fvs e) τ
-
-newTyVar :: Std Type
-newTyVar = TyVar <$> freshVariable
-
-{-
-The top level inference creates an environment filled with binds which will be
-used for construction, observation, and the creation of (co)patterns.
-
-It then obtains a substituion by running ~inferTS~ and applies that to a top
-level variable to return the final type scheme of the program.
--}
-inferW :: Program Term → Std TypeScheme
-inferW pgm =
-  do { τ ← newTyVar
-     ; s ← inferTS ( mkContextTS . pgmDecls $ pgm )
-                    ( pgmTerm pgm )
-                    τ
-     ; return . typeClosure emptyEnv . applyType s $ τ }
-
-{-
-~inferTS~ uses a modified version of algorithm M presented by Lee and Yi. The
-type argument ~ρ~ is type information propagated down from the root. Instead of
-generating a type and substitution as a result as in algorithm W (Damas and
-Milner), algorithm M constrains the type as an argument. We use unification to
-check that our type satisfies the constraint /and/ to create substitutions.
--}
-inferTS :: Env → Term → Type → Std Subst
-inferTS e (Let v a b) ρ =
-  do { α  ← newTyVar
-     ; sa ← inferTS e a α
-     ; sb ← inferTS (applyEnv sa (extendEnv v (typeClosure e α) e))
-                     b
-                     (applyType sa ρ)
-     ; return (sb ∘ sa) }
-inferTS e (Var v) ρ = unify ρ =<< tsElim =<< lookupStd v (unEnv e)
-inferTS e (Fix v t) ρ = inferTS (extendEnv v (typeClosure e ρ) e) t ρ
-inferTS e (Ann a τ) ρ =
-  do { sa ← inferTS e a τ
-     ; unify τ (applyType sa ρ) }
-
-inferTS _ (Lit _) ρ = unify ρ TyInt
-inferTS e (Add a b) ρ =
-  do { sa ← inferTS e a TyInt
-     ; sb ← inferTS (applyEnv sa e) b TyInt
-     ; unify (applyType (sb ∘ sa) ρ) TyInt  }
-
-
-inferTS e (App a b) ρ =
-  do { β ← newTyVar
-     ; sa ← inferTS e a (TyArr β ρ)
-     ; sb ← inferTS (applyEnv sa e) b (applyType sa β)
-     ; return (sb ∘ sa) }
-
-inferTS e (Cons k) ρ = unify ρ =<< tsElim =<< lookupStd k (unEnv e)
-
-inferTS e (Case t alts) ρ =
-  do { τ ← newTyVar
-     ; st ← inferTS e t τ
-     ; salts ← mapM (\(p,u) → inferTSAlt (applyEnv st e)
-                      p u (applyType st τ) (applyType st ρ))
-                     alts
-     ; unify ρ (applyType (foldr (∘) st salts) ρ)
-     }
-
-inferTS e (Dest h) ρ = unify ρ =<< tsElim =<< lookupStd h (unEnv e)
-
-inferTS _ (Cocase _ _) _ = unimplementedErr "Cocase"
-  -- do { _ ← newTyVar
-  --    ; _ ← inferTSObsCtx e o
-  --    ; undefined }
-
-{- Cocase inference:
-We must be able to unify the types of all the branches of a cocase, e.g.
-{ Head [□ x] → x ; Tail [□ x] → nats } both branches must unify to ~Stream Int~.
-The judgement of the types is actually done by coalternative inference.
--}
-inferTS e (Coalts coalts) _ =
-  do { vs ← replicateM (length coalts) (TyVar <$> freshVariable)
-     ; _ ← mapM (\(v,(q,u)) → inferTSCoalt e q u v) (zip vs coalts)
-     ; unimplementedErr "inferTS{coalts}"
-     -- ; foldM (unify ρ) idSubst scoalts
-     }
-
-inferTS _ (Prompt _) _ = unimplementedErr "inferTS{prompt}"
-
-{-
-The first of the type arguments describes the type of the interrogated term.
-The second of the type arguments describes the output type of the alternative
-statement.
--}
-inferTSAlt :: Env → Pattern → Term → Type → Type → Std Subst
-inferTSAlt e p u τ σ =
-  do { (e',sp) ← inferTSPattern e p τ
-     ; inferTS (applyEnv sp e') u (applyType sp σ) }
-
-inferTSPattern :: Env → Pattern → Type → Std (Env,Subst)
-inferTSPattern e PWild _ = return (e,idSubst)
-inferTSPattern e (PVar v) ρ = return (extendEnv v (typeClosure e ρ) e, idSubst)
-inferTSPattern e (PCons k ps) _ =
-  do { κ ← tsElim =<< lookupStd k (unEnv e)
-     ; case length ps == arity κ of
-         False → typeErr ("constructor" <+> pp k <+> "requires"
-                          <+> show (arity κ) <+> "arguments")
-         True →
-           case collectTyArgs κ of
-             Just (_,args) →
-               do { _ ← mapM (\(τ,p) → inferTSPattern e p τ) (zip args ps)
-                  ; unimplementedErr "inferTSPattern{PCons}" }
-             Nothing → typeErr "pattern not constructor"
-     }
-
-{-
-Unlike infering the type of an alternative, coalternatives do not necessarily
-have an interrogated term.
--}
-inferTSCoalt :: Env → CoPattern → Term → Type → Std Subst
-inferTSCoalt e q u ρ =
-  do { (e',sq) ← inferTSCopattern e q ρ
-     ; inferTS (applyEnv sq e') u (applyType sq ρ) }
-
-inferTSCopattern :: Env → CoPattern → Type → Std (Env,Subst)
-inferTSCopattern e QHead _ = return (e,idSubst)
-inferTSCopattern e (QDest h q) ρ =
-  do { _ ← tsElim =<< lookupStd h (unEnv e)
-     ; (_,_) ← inferTSCopattern e q ρ
-     ; unimplementedErr "inferTSCopattern{qdest}" }
-
-inferTSCopattern e (QPat q p) ρ =
-  do { σ ← newTyVar
-     ; ε ← newTyVar
-     ; (e',s) ← inferTSPattern e p σ
-     ; (e'',s') ← inferTSCopattern e' q (applyType s ε)
-     ; s'' ← unify ρ (applyType s' (TyArr σ ε))
-     ; return (e'', s'') }
-inferTSCopattern _ _ _ = unimplementedErr "inferTSCopattern{qvar}"
-
-{-
-Type unification, this is standard (i.e. unmodified from other unification
-algorithms).
--}
-unify :: Type → Type → Std Subst
-unify TyInt TyInt = return idSubst
-
-unify (TyArr a b) (TyArr a' b') =
-  do { as ← unify a a'
-     ; bs ← unify b b'
-     ; return (bs ∘ as) }
-
-unify (TyVar v) τ =
-  case occurs v τ of
-    True → unificationErr (TyVar v) τ
-    False → return (τ ./. v)
-
-unify τ (TyVar v) =
-  case occurs v τ of
-    True → unificationErr (TyVar v) τ
-    False → return (τ ./. v)
-
-unify (TyCons k) (TyCons h) =
-  case k == h of
-    True  → return idSubst
-    False → unificationErr (TyCons k) (TyCons h)
-
-unify (TyApp a b) (TyApp a' b') =
-  do { as ← unify a a'
-     ; bs ← unify b b'
-     ; return (bs ∘ as) }
-
-unify α β = unificationErr α β
-
-occurs :: Variable → Type → Bool
-occurs v τ = elem v (fvs τ)
-
---------------------------------------------------------------------------------
---                              Bidirectional Tc                              --
---------------------------------------------------------------------------------
-{- Attempt at a bidirectional typechecker. We do not include declarations in the
-~infer~ and ~check~ functions because we populate the Ctx with the necessary
-information before running.
--}
-
-inferBd :: Program Term -> Std Type
-inferBd (Pgm decls term) = infer (mkContext decls) term
-
------------
--- infer --
------------
-infer :: Ctx -> Term -> Std Type
-infer c (Let x a b) =
-  do { aty <- infer c a
-     ; infer ((x,aty):c) b }
-
-infer c (Ann a ty) = check c a ty >> return ty
-
-infer _ (Lit _) = return TyInt
-
-infer c (Add a b) =
-  do { check c a TyInt
-     ; check c b TyInt
-     ; return TyInt }
-
-infer c (Var v) = lookupStd v c
-infer c (Fix _ t) = infer c t
-infer c (Cons k) = lookupStd k c
-infer c (Dest h) = lookupStd h c
-
-infer c (App a b) =
-  do { ty <- infer c a
-     ; case ty of
-         TyArr tyDom tyCod ->
-           do { check c b tyDom
-              ; return tyCod }
-         _ -> typeErr ("must have a function type: " ++ pp a)
-     }
-
-infer c (Case e alts) =
-  do { ety <- infer c e
-     ; tys <- mapM (\(p,u) -> checkPat c p ety >>= \c' -> infer c' u)
-                   alts
-     ; case tys of
-         [] -> typeErr "cannot type empty case"
-         (t:ts) ->
-           case all (== t) ts of
-             True  -> return t
-             False -> typeErr "all branches must return the same type."
-     }
-
-infer _ (Cocase _ _) = unimplementedErr "infer{Cocase}"
-infer _ (Coalts _) = unimplementedErr "infer{Coalts}"
-{- Consider the term
-```
-  fst { fst □ -> 42 }
-```
-We must check that the arugment
--}
-
-infer c (Prompt t) = infer c t
-
-inferCopat :: Ctx -> Type -> CoPattern -> Std (Type,Ctx)
-inferCopat c ety QHead = return (ety,c)
-inferCopat c ety (QDest h q) =
-  do { (_,c') <- inferCopat c ety q
-     ; _ <- lookupStd h c'
-     ; return (TyInt,c') }
-
-inferCopat _ _ (QPat _ _) = unimplementedErr "inferCopat"
-inferCopat _ _ (QVar _ _) = unimplementedErr "inferCopat{qvar}"
-
------------
--- check --
------------
-
-check :: Ctx -> Term -> Type -> Std ()
-check _ (Let _ _ _) _ = unimplementedErr "check{Let}"
-check c (Ann a aty) ty =
-  case aty == ty of
-    True -> check c a ty
-    False -> typeErr ("expected type" <+> pp ty <+> "given" <+> pp aty)
-check _ (Lit _) ty =
-  case ty == TyInt of
-    True -> return ()
-    False -> typeErr ("expected type" <+> pp ty <+> "given" <+> pp TyInt)
-check c (Add a b) ty =
-  case ty == TyInt of
-    True -> check c a TyInt >> check c b TyInt
-    False -> typeErr ("expected type" <+> pp ty <+> "given" <+> pp TyInt)
-check c (Var v) ty =
-  do { ty' <- lookupStd v c
-     ; case ty == ty' of
-         True -> return ()
-         False -> typeErr ("expected '" <+> pp v
-                           <+> "' to have type" <+> pp ty) }
-check c (Fix v t) ty = check ((v,ty):c) t ty
-check c (Cons k) ty =
-  do { ty' <- lookupStd k c
-     ; case ty == ty' of
-         True -> return ()
-         False -> typeErr ("expected '" <+> pp k
-                           <+> "' to have type" <+> pp ty) }
-check c (Dest h) ty =
-  do { ty' <- lookupStd h c
-     ; case ty == ty' of
-         True -> return ()
-         False -> typeErr ("expected '" <+> pp h
-                           <+> "' to have type" <+> pp ty) }
-check c (App a b) ty =
-  do { aty <- infer c a
-     ; case aty of
-         TyArr dom cod ->
-           case cod == ty of
-             True -> check c b dom
-             False -> typeErr ("expected '" <+> pp a
-                               <+> "' to have return type" <+> pp ty)
-         _ -> typeErr ("must have a function type: " ++ pp a)
-     }
-check c (Case e alts) ty =
-  do { ety <- infer c e
-     ; alttys <- mapM (\(p,u) -> checkPat c p ety >>= \c' -> infer c' u) alts
-     ; case all (== ty) alttys of
-         True  -> return ()
-         False -> typeErr ("alternatives do not have expected type" <+> pp ty)
-     }
-check _ (Coalts _) _ = error "check{Coalts}"
-check _ (Cocase _ _) _ = error "check{Cocase}"
-check c (Prompt t) ty =
-  do { ty' <- infer c t
-     ; case ty' == ty of
-         True -> return ()
-         False -> typeErr ("expected type" <+> pp ty <+> "given" <+> pp ty')
-     }
-
-{- checking patterns produces a new context that binds variables of some type.
--}
-checkPat :: Ctx -> Pattern -> Type -> Std Ctx
-checkPat c PWild        _ = return c
-checkPat c (PVar v)     t = return ((v,t):c)
-checkPat c (PCons k ps) ty =
-  do { kty <- lookupStd k c
-     ; case tyCodomain kty == ty of
-         True ->
-           case length ps == arity kty of
-             True  ->
-               do { cs <- mapM (\(ty',p') -> checkPat c p' ty')
-                               (zip (collectFunArgTys kty) ps)
-                  ; return (mconcat cs <> c) }
-             False -> typeErr ("constructor '" <> pp k
-                               <> "' has arity" <+> show (arity kty))
-         False -> typeErr (pp k <+> "is not a constructor of type" <+> pp ty)
-     }
-  where collectFunArgTys :: Type -> [Type]
-        collectFunArgTys (TyArr a b) = a : collectFunArgTys b
-        collectFunArgTys x = [x]
-        tyCodomain :: Type -> Type
-        tyCodomain (TyArr _ b) = tyCodomain b
-        tyCodomain t = t
-
---------------------------------------------------------------------------------
---                                 Utils                                      --
+--                           Constraint Solver                                --
 --------------------------------------------------------------------------------
 
-mkContext :: [Decl] -> [(Variable,Type)]
-mkContext [] = []
-mkContext (d:ds) =
-  (case d of
-     (Decl (Left neg)) -> map (arr projName &&& arr projType)
-                    (projections neg)
-     (Decl (Right pos)) -> map (arr injName &&& arr injType) (injections pos)
-  ) <> (mkContext ds)
+type Subst = Type -> Type
 
-mkContextTS :: [Decl] -> Env
-mkContextTS = Env . fmap (second (typeClosure emptyEnv)) . mkContext
+replace :: Variable -> Type -> Subst
+replace _ _ TyInt = TyInt
+replace v ty (TyArr a b) =
+  TyArr (replace v ty a) (replace v ty b)
+replace v ty (TyVar w) =
+  case v == w of
+    True  -> ty
+    False -> TyVar w
+replace _ _ (TyCons k) = TyCons k
+replace v ty (TyApp a b) =
+  TyApp (replace v ty a) (replace v ty b)
 
-lookupDecl :: Variable -> [Decl] -> Maybe Decl
-lookupDecl _ [] = Nothing
-lookupDecl v (Decl (Left d):ds) =
-  case v == negTyName d of
-    True -> Just . mkCodataDecl $ d
-    False -> lookupDecl v ds
-lookupDecl v (Decl (Right d):ds) =
-  case v == posTyName d of
-    True -> Just . mkDataDecl $ d
-    False -> lookupDecl v ds
+solve :: Subst -> Constraint -> Tc Subst
+solve s CTrue = return s
+solve s c =
+  do { (c',s') <- solve' c
+     ; solve (s' . s) (applyConstraint (s' . s) c') }
 
-lookupDatum :: Variable -> [Decl] -> Maybe Decl
-lookupDatum _ [] = Nothing
-lookupDatum h (Decl (Left  d):ds) =
-  case lookupProjection h (projections d) of
-    Just _ -> Just . mkCodataDecl $ d
-    Nothing -> lookupDatum h ds
-lookupDatum k (Decl (Right d):ds) =
-  case lookupInjection k (injections d) of
-    Just _ -> Just . mkDataDecl $ d
-    Nothing -> lookupDatum k ds
+solve' :: Constraint -> Tc (Constraint,Subst)
+solve' CTrue = return (mempty,id)
+solve' (CConj CTrue c) = solve' c
+solve' (CConj c CTrue) = solve' c
+solve' (CConj a b) =
+  do { (aC,aS) <- solve' a
+     ; (bC,bS) <- solve' (applyConstraint aS b)
+     ; return (applyConstraint bS (aC <> bC),bS . aS) }
+solve' (CNumeric TyInt) = return (mempty, id)
+solve' (CNumeric ty) = typeError (UnificationError ty TyInt)
+solve' (CEq a b) | a == b = return (mempty, id)
+solve' (CEq a b) =
+  do { s <- unify a b
+     ; return (mempty, s) }
 
-lookupProjection :: Variable -> [Projection] -> Maybe Projection
-lookupProjection _ [] = Nothing
-lookupProjection h (p:ps) = case projName p == h of
-                             True -> Just p
-                             False -> lookupProjection h ps
+applyConstraint :: Subst -> Constraint -> Constraint
+applyConstraint _ CTrue = CTrue
+applyConstraint s (CConj a b) = CConj (applyConstraint s a) (applyConstraint s b)
+applyConstraint s (CEq a b) = CEq (s a) (s b)
+applyConstraint s (CNumeric a) = CNumeric (s a)
 
-lookupInjection :: Variable -> [Injection] -> Maybe Injection
-lookupInjection _ [] = Nothing
-lookupInjection k (i:is) = case injName i == k of
-                             True -> Just i
-                             False -> lookupInjection k is
--}
+--------------------------------------------------------------------------------
+--                             Top Level                                      --
+--------------------------------------------------------------------------------
+
+typeCheckPgm :: Program Term -> Type
+typeCheckPgm (Pgm decls term) =
+  case unTc m initTcState of
+    Left e       -> error (pp e)
+    Right (_,ty) -> ty
+  where m = do { (_,tenv) <- foldM runCheck (emptyEnv,emptyEnv) decls
+               ; (ty,constraint) <- gatherTerm tenv term
+               ; trace (pp constraint <+> "=>" <+> pp ty) return ()
+               ; s <- solve id constraint
+               ; return (s ty) }
+        runCheck (kenv,Env tm) decl =
+          do { (kenv',Env tm') <- gatherDecl kenv decl
+             ; return (kenv',Env (union tm tm')) }
+
+-- | Check that a delaration is well formed and add that to the typechecking
+-- state
+gatherDecl :: Env Kind -> Decl -> Tc (Env Kind,Env Scheme)
+gatherDecl kenv (Decl (Left (NegTyCons name fs projs))) =
+  do { tenv <- foldM checkProjection emptyEnv projs
+     ; return (kenv', tenv) }
+  where kind :: Kind
+        kind = Kind (length fs)
+        kenv' :: Env Kind
+        kenv' = extendEnv name kind kenv
+        checkProjection :: Env Scheme -> Projection -> Tc (Env Scheme)
+        checkProjection tenv (Proj pname ty) =
+          let expectedTy = Prelude.foldl TyApp (TyCons name) (fmap TyVar fs)
+          in do { kindCheckType kenv' ty
+                ; case domain ty of
+                    Nothing  ->
+                      typeError (DestructorProjectionError pname expectedTy)
+                    Just dom ->
+                      case expectedTy == dom of
+                     True  ->
+                       return (extendEnv pname (generalize tenv ty) tenv)
+                     False ->
+                       typeError (DestructorProjectionError pname expectedTy)
+                }
+gatherDecl kenv (Decl (Right (PosTyCons name fs injs))) =
+  do { tenv <- foldM checkInjection emptyEnv injs
+     ; return (kenv', tenv) }
+  where kind :: Kind
+        kind = Kind (length fs)
+        kenv' :: Env Kind
+        kenv' = extendEnv name kind kenv
+        checkInjection :: Env Scheme -> Injection -> Tc (Env Scheme)
+        checkInjection tenv (Inj iname ty) =
+          let expectedTy = Prelude.foldl TyApp (TyCons name) (fmap TyVar fs)
+          in do { kindCheckType kenv' ty
+                ; case codomain ty of
+                    Nothing  ->
+                      case expectedTy == ty of
+                        True  ->
+                          return (extendEnv iname (generalize tenv ty) tenv)
+                        False ->
+                          typeError (ConstructorInjectionError iname expectedTy)
+                    Just cod ->
+                      case expectedTy == cod of
+                        True  ->
+                          return (extendEnv iname (generalize tenv ty) tenv)
+                        False ->
+                          typeError (ConstructorInjectionError iname expectedTy)
+                }
+
+kindCheckType :: Env Kind -> Type -> Tc ()
+kindCheckType e ty = kindCheckType' e ty 0
+
+kindCheckType' :: Env Kind -> Type -> Int -> Tc ()
+kindCheckType' _ TyInt 0 = return ()
+kindCheckType' e (TyArr a b) 0 = kindCheckType e a >> kindCheckType e b
+kindCheckType' _ (TyVar _) 0 = return ()
+kindCheckType' e (TyCons v) n =
+  lookupEnv v e >>= \(Kind k) ->
+    case k == n of
+      True  -> return ()
+      False -> typeError (KindError (TyCons v) (Kind n) (Just (Kind k)))
+kindCheckType' e (TyApp a b) n = kindCheckType' e a (n+1) >> kindCheckType e b
+kindCheckType' _ ty n = typeError (KindError ty (Kind n) Nothing)
+
+
+--------------------------------------------------------------------------------
+--                       Gather Constraints from Terms                        --
+--------------------------------------------------------------------------------
+
+gatherTerm :: Env Scheme -> Term -> Tc (Type,Constraint)
+gatherTerm env (Let v a b) =
+  do { (aTy,aC) <- gatherTerm env a
+     ; (bTy,bC) <- gatherTerm (extendEnv v (generalize env aTy) env) b
+     ; return (bTy, aC <> bC) }
+gatherTerm env (Ann a ty) =
+  do { (aTy, aC) <- gatherTerm env a
+     ; return (aTy, aC <> (aTy `ceq` ty)) }
+gatherTerm _   (Lit _) = return (TyInt,mempty)
+gatherTerm env (Add a b) =
+  do { (aTy,aC) <- gatherTerm env a
+     ; (bTy,bC) <- gatherTerm env b
+     ; return (TyInt
+              , aC <> bC <> (aTy `ceq` TyInt) <> (bTy `ceq` TyInt))
+     }
+gatherTerm env (Var v) =
+  do { aTy <- instantiate =<< lookupEnv v env
+     ; return (aTy, mempty) }
+gatherTerm env (Fix v a) =
+  do { ty <- freshTy
+     ; gatherTerm (extendEnv v (generalize env ty) env) a }
+gatherTerm env (App a b) =
+  do { (aTy,aC) <- gatherTerm env a
+     ; (bTy,bC) <- gatherTerm env b
+     ; outTy <- freshTy
+     ; return (outTy,aC <>  bC <> (aTy `ceq` (TyArr bTy outTy))) }
+gatherTerm env (Cons k) =
+  do { kTy <- instantiate =<< lookupEnv k env
+     ; return (kTy, mempty) }
+gatherTerm env (Case t alts) =
+  do { (tTy,tC) <- gatherTerm env t
+     ; outTy <- freshTy
+     ; cs <- mapM (gatherAlt env tTy outTy) alts
+     ; return (outTy, tC <> mconcat cs) }
+gatherTerm env (Dest h) =
+  do { hTy <- instantiate =<< lookupEnv h env
+     ; return (hTy, mempty) }
+gatherTerm env (Coalts coalts) =
+  do { codataTy <- freshTy
+     ; cs <- mapM (gatherCoalt env codataTy) coalts
+     ; return (codataTy, mconcat cs) }
+gatherTerm env (Cocase o a) =
+  do { (aTy,aC) <- gatherTerm env a
+     ; (obsTy,obsC) <- gatherObsCtx env aTy o
+     ; return (obsTy,obsC <> aC) }
+gatherTerm env (Prompt a) = gatherTerm env a
+
+-- | Takes the argument type, the output type, and an alternative and generates
+-- a constraint
+gatherAlt :: Env Scheme -> Type -> Type -> (Pattern,Term) -> Tc Constraint
+gatherAlt env argTy outTy (p,t) =
+  do { (env',pC) <- gatherPattern env argTy p
+     ; (tTy,tC) <- gatherTerm env' t
+     ; return (pC <> tC <> (outTy `ceq` tTy)) }
+
+gatherPattern :: Env Scheme -> Type -> Pattern -> Tc (Env Scheme,Constraint)
+gatherPattern env _ PWild = return (env,mempty)
+gatherPattern env argTy (PVar v)
+  = return (extendEnv v (Forall mempty mempty argTy) env,mempty)
+gatherPattern env argTy (PCons k pats) =
+  do { kS <- lookupEnv k env
+     ; kTy <- instantiate kS
+     ; foldPatterns env kTy pats }
+  where foldPatterns e ty@(TyApp _ _) [] = return (e,argTy `ceq` ty)
+        foldPatterns e ty@(TyCons _)  [] = return (e,argTy `ceq` ty)
+        foldPatterns e ty@(TyVar _)   [] = return (e,argTy `ceq` ty)
+        foldPatterns e (TyArr a b) (p:ps) =
+          do { (e',pC) <- gatherPattern e a p
+             ; (e'',psC) <- foldPatterns e' b ps
+             ; return (e'',pC <> psC) }
+        foldPatterns _ _ _ = typeError undefined
+
+gatherObsCtx :: Env Scheme -> Type -> ObsCtx -> Tc (Type,Constraint)
+gatherObsCtx _ codataTy ObsHead = return (codataTy,mempty)
+gatherObsCtx env codataTy (ObsFun o a) =
+  do { (obsTy,obsC) <- gatherObsCtx env codataTy o
+     ; (aTy, aC) <- gatherTerm env a
+     ; outTy <- freshTy
+     ; return (outTy, obsC <> aC <> (obsTy `ceq` (TyArr aTy outTy))) }
+gatherObsCtx env codataTy (ObsDest h o) =
+  do { (obsTy,obsC) <- gatherObsCtx env codataTy o
+     ; hTy <- instantiate =<< lookupEnv h env
+     ; outTy <- freshTy
+     ; return (outTy, obsC <> (hTy `ceq` (TyArr obsTy outTy))) }
+gatherObsCtx _ _ (ObsCut _ _) = error "gatherObsCtx{ObsCut}"
+
+-- ^ Takes a codata type, returns the output type
+gatherCoalt :: Env Scheme -> Type -> (CoPattern,Term) -> Tc Constraint
+gatherCoalt env codataTy (q,t) =
+  do { (projTy,qC,env') <- gatherCopattern env codataTy q
+     ; (tTy, tC) <- gatherTerm env' t
+     ; return (tC <> qC <> (projTy `ceq` tTy)) }
+
+-- ^ Takes the type of the context, returns the type of the projection
+gatherCopattern
+  :: Env Scheme -> Type -> CoPattern -> Tc (Type,Constraint, Env Scheme)
+gatherCopattern env codataTy QHead = return (codataTy,mempty,env)
+gatherCopattern env codataTy (QDest h q) =
+  do { (projTy,qC,env') <- gatherCopattern env codataTy q
+     ; hTy <- instantiate =<< lookupEnv h env
+     ; outTy <- freshTy
+     ; return (outTy, qC <> (hTy `ceq` (TyArr projTy outTy)), env') }
+gatherCopattern env codataTy (QPat q p) =
+  do { (projTy,qC,env') <- gatherCopattern env codataTy q
+     ; domTy <- freshTy
+     ; (env'',pC) <- gatherPattern env' domTy p
+     ; outTy <- freshTy
+     ; return (outTy, qC <> pC <> (projTy `ceq` (TyArr domTy outTy)), env'') }
+gatherCopattern _ _ (QVar _ _) = error "gatherCopattern{QVar}"
+gatherCopattern env _ QWild =
+  do { outTy <- freshTy
+     ; return (outTy,mempty,env) }
+
+--------------------------------------------------------------------------------
+--                             Type Errors                                    --
+--------------------------------------------------------------------------------
+data TypeError
+  = InfiniteTypeError Variable Type
+  | UnificationError Type Type
+  | KindError Type Kind (Maybe Kind)
+  | DestructorProjectionError Variable Type
+  | ConstructorInjectionError Variable Type
+  | UnboundVarError Variable
+
+instance Pretty TypeError where
+  pp te = "<static error>\n" <> ppTypeError te <> "\n"
+
+ppTypeError :: TypeError -> String
+ppTypeError (InfiniteTypeError v ty) =
+  "Cannot construct infinite type:" <+> pp v <+> "=" <+> pp ty
+ppTypeError (UnificationError a b) =
+  "Unable to unify" <+> quasiquotes (pp a) <+> "with" <+> quasiquotes (pp b)
+ppTypeError (KindError ty i _) =
+  "Type" <+> pp ty <+> "does not have kind" <+> pp i
+ppTypeError (DestructorProjectionError h ty) =
+  "Destructor" <+> quasiquotes (pp h) <+> "must be a projection from type"
+  <+> quasiquotes (pp ty)
+ppTypeError (ConstructorInjectionError k ty) =
+  "Constructor" <+> quasiquotes (pp k) <+> "must be a injection into type"
+  <+> quasiquotes (pp ty)
+ppTypeError (UnboundVarError v) =
+  "Unbound variable" <+> quasiquotes (pp v)

@@ -14,26 +14,20 @@ import DL.Utils
 --------------------------------------------------------------------------------
 {- Terms are parameterized over the type of pattern and copattern. This is
 important because we only translate flat (co)patterns. -}
-data Term where
-  Let :: Variable -> Term -> Term -> Term
-  Ann :: Term -> Type -> Term
-
-  -- ^ Number primitives
-  Lit :: Int -> Term
-  Add :: Term -> Term -> Term
-
-  Var   :: Variable -> Term
-  Fix   :: Variable -> Term -> Term
-  App   :: Term -> Term -> Term
-
-  Cons   :: Variable -> Term
-  Case   :: Term -> [(Pattern,Term)] -> Term
-
-  Dest   :: Variable -> Term
-  Coalts :: [(CoPattern,Term)] -> Term
-  Cocase :: ObsCtx -> Term -> Term
-
-  Prompt :: Term -> Term -- sets a point to delimit continuations
+data Term
+  = Let Variable Term Term
+  | Ann Term Type
+  | Lit Int
+  | Add Term Term
+  | Var Variable
+  | Fix Variable Term
+  | App Term Term
+  | Cons Variable
+  | Case Term [(Pattern,Term)]
+  | Dest Variable
+  | Coalts [(CoPattern,Term)]
+  | Cocase ObsCtx Term
+  | Prompt Term -- sets a point to delimit continuations
   deriving (Eq,Show)
 
 atomicT :: Term -> Bool
@@ -73,7 +67,7 @@ instance Pretty Term where
                             . fmap (\(q,u) -> pp q <+> "->" <+> ppInd (i+3) u)
                             $ coalts)
                         <+> "}"
-  ppInd i (Prompt t)      = "#" <+> parensIf (not . atomicT) t (ppInd (i+1) t)
+  ppInd i (Prompt t)      = "#" <+> parensIf (not . atomicT) t (ppInd (i+2) t)
 
 instance FV Term where
   fvs (Let v a b) = fvs a `union` (fvs b \\ singleton v)
@@ -167,10 +161,10 @@ unplugObsCtx (ObsCut v c)        =
 ------------------
 
 {- Pattern -}
-data Pattern where
-  PWild :: Pattern
-  PVar  :: Variable -> Pattern
-  PCons :: Variable -> [Pattern] -> Pattern
+data Pattern
+  = PWild
+  | PVar Variable
+  | PCons Variable [Pattern]
   deriving (Eq,Show)
 
 atomicP :: Pattern -> Bool

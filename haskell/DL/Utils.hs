@@ -85,5 +85,5 @@ instance Monad Std where
 --                          Free Variable Typeclass                           --
 --------------------------------------------------------------------------------
 
-class FV α where
-  fvs   :: α → Set Variable
+class FV a where
+  fvs   :: a → Set Variable

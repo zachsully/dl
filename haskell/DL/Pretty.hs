@@ -52,6 +52,9 @@ parens s = "(" <> s <> ")"
 quotes :: String -> String
 quotes s = "'" <> s <> "'"
 
+quasiquotes :: String -> String
+quasiquotes s = "`" <> s <> "`"
+
 parensIf :: (a -> Bool) -> a -> String -> String
 parensIf f a s =
   case f a of
