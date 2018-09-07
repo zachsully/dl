@@ -1,9 +1,9 @@
-index Safe
-index Unsafe
+index Zero
+index Succ n
 
-codata Stack i
-  { Push : j = Safe => Stack i -> Int -> Stack j
-  , Pop  : i = Safe => Stack i -> Int }
+codata Stack n
+  { Push : m = Succ n => Stack n -> Int -> Stack m
+  , Pop  : n = Succ m => Stack n -> Int }
 
-let x = {} : Stack Unsafe in
+let x = {} : Stack (Succ m) in
   Pop x

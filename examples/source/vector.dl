@@ -1,0 +1,8 @@
+index Zero
+index Succ n
+
+data Vector n
+  { Nil  : n = Zero   => Vector n
+  | Cons : n = Succ m => Int -> Vector m -> Vector n }
+
+Cons 42 Nil

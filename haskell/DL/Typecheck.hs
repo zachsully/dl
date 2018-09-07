@@ -37,7 +37,7 @@ instance FV a => FV (Env a) where
 -- | forall introduction, we only generalize constructors and destructors
 generalize :: Env Scheme -> Maybe Constraint -> Type -> Scheme
 generalize _ Nothing ty = Forall (fvs ty) mempty ty
-generalize _ (Just c) ty = Forall (Set.difference (fvs ty) (fvs c)) c ty
+generalize _ (Just c) ty = Forall (Set.union (fvs ty) (fvs c)) c ty
 
 -- | forall elimination
 instantiate :: Scheme -> Tc (Type,Constraint)
@@ -47,7 +47,7 @@ instantiate (Forall vs c ty) =
                         ; return (replace v fTy . s) })
                   id
                   (Set.toList vs)
-     ; return (s ty,c) }
+     ; return (s ty,applyConstraint s c) }
 
 --------------------------------------------------------------------------------
 --                          Typechecking Monad                                --
@@ -173,8 +173,8 @@ typeCheckPgm cfg (Pgm decls term) =
          ; return ty }
   where m = do { (_,tenv) <- foldM runCheck (emptyEnv,emptyEnv) decls
                ; (ty,constraint) <- gatherTerm tenv term
-               ; s <- solve id constraint
                ; let unsolved = Forall (Set.union (fvs constraint) (fvs ty)) constraint ty
+               ; s <- solve id constraint
                ; return (unsolved,s ty) }
         runCheck (kenv,Env tm) decl =
           do { (kenv',Env tm') <- gatherDecl kenv decl

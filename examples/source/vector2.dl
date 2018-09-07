@@ -1,0 +1,9 @@
+index Zero
+index Succ n
+
+data Vector n
+  { Nil  : n = Zero   => Vector n
+  | Cons : n = Succ m => Int -> Vector m -> Vector n }
+
+case (Cons 42 Nil)
+  { Cons _ (Cons x _) -> x }

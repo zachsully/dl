@@ -81,7 +81,7 @@ instance Pretty NegativeTyCons where
   pp tc =   "codata" <+> pp (negTyName tc)
         <+> (smconcat (fmap pp (negTyFVars tc)))
         <-> indent 2 "{"
-        <+> (stringmconcat "\n    " (fmap (ppInd 4) (projections tc)))
+        <+> (stringmconcat "\n  , " (fmap (ppInd 4) (projections tc)))
         <+> "}"
 
 negTyArity :: NegativeTyCons -> Int
@@ -110,7 +110,7 @@ instance Pretty PositiveTyCons where
   pp tc =   "data" <+> pp (posTyName tc)
         <+> (smconcat (fmap pp (posTyFVars tc)))
         <-> indent 2 "{"
-        <+> (stringmconcat "\n    " (fmap (ppInd 4) (injections tc)))
+        <+> (stringmconcat "\n  | " (fmap (ppInd 4) (injections tc)))
         <+> "}"
 
 
