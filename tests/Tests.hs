@@ -8,20 +8,21 @@ import System.Directory
 import System.Exit
 import Text.Read
 
-import qualified DL.Syntax.Flat as F
-import qualified DL.Backend.JavaScript.Syntax as JS
 import DL.Syntax.Top
 import DL.Syntax.Term
 import DL.Syntax.Flat
 import DL.Evaluation.Interpreter
-import DL.Judgement
+import DL.Typecheck
 import DL.Utils
 import DL.IO
 import DL.Pretty
 import DL.Translation
-import qualified DL.Backend.Haskell.Syntax as H
-import qualified DL.Backend.ML.Syntax      as ML
-import qualified DL.Backend.Racket.Syntax  as Rkt
+import qualified DL.Syntax.Flat               as F
+import qualified DL.Syntax.Type               as Ty
+import qualified DL.Backend.JavaScript.Syntax as JS
+import qualified DL.Backend.Haskell.Syntax    as H
+import qualified DL.Backend.ML.Syntax         as ML
+import qualified DL.Backend.Racket.Syntax     as Rkt
 
 -- | Holds information for a particular test
 data TestCase
@@ -31,6 +32,8 @@ data TestCase
   , toutput :: Maybe Int
     -- | Parser output
   , tpgm    :: Maybe (Program Term)
+    -- | Type checker output
+  , pgmTy   :: Maybe Ty.Type
     -- | Flattening output
   , tfpgm   :: Maybe (Program FlatTerm)
     -- | Evalutation output
@@ -45,8 +48,63 @@ data TestCase
   , tjs     :: Maybe Int
   }
 
+instance Pretty TestCase where
+  pp (TestCase
+      { tfile   = f
+      , toutput = o
+      , tpgm    = p
+      , pgmTy   = t
+      , tfpgm   = p'
+      , teval   = e
+      , ths     = h
+      , tml     = m
+      , trkt    = r
+      , tjs     = j })
+    = vmconcat
+    [ "===============" <+> f <+> "==============="
+    , "did parse?      " <+> (case p of
+                          Nothing -> "false"
+                          Just _ -> "true"
+                       )
+    , "type?           " <+> ppMaybe t
+    , "expected output?" <+> (case o of
+                                Nothing -> "none"
+                                Just n -> "some" <> DL.Pretty.parens (show n)
+                             )
+    , "eval output?    " <+> (case e of
+                            Nothing -> "none"
+                            Just n -> "some" <> DL.Pretty.parens (show n)
+                         )
+    , "", ""
+    ]
+
 main :: IO ()
-main = mapM_ testFile =<< getPgmFiles
+main =
+  do { cases <- mapM (\p -> testFile p >>= \c -> pprint c >> return c) =<< getPgmFiles
+     ; report cases }
+  where report cases =
+          let n = length cases
+              failedToType = foldr (\c a ->
+                                      case (do { _ <- tpgm c
+                                               ; pgmTy c }) of
+                                        Nothing -> a + 1
+                                        Just _ -> a
+                                   ) 0 cases
+              badOutput = foldr (\c a ->
+                                      case (do { _ <- tpgm c
+                                               ; expected <- toutput c
+                                               ; actual <- teval c
+                                               ; return (expected == actual) }) of
+                                        Nothing -> a
+                                        Just True -> a
+                                        Just False -> a + 1
+                                   ) 0 cases
+          in do { putStrLn ("Failed to type:" <+> show failedToType <> "/" <> show n)
+                ; putStrLn ("Bad output:" <+> show badOutput <> "/" <> show n)
+                ; case (failedToType == 0 && badOutput == 0) of
+                    True -> exitWith ExitSuccess
+                    False -> exitWith (ExitFailure 42)
+                }
 
 getPgmFiles :: IO [FilePath]
 getPgmFiles = (fmap ("examples/source/"++) . filter ((==".dl") . takeExtension))
@@ -54,43 +112,33 @@ getPgmFiles = (fmap ("examples/source/"++) . filter ((==".dl") . takeExtension))
 
 testFile :: FilePath -> IO TestCase
 testFile fp =
-  do { putStrLn fp
-
-     ; mpgm <- getProgram' fp
-     ; printRes "parse" False mpgm
-
+  do { mpgm <- getProgram' fp
      ; mout <- getProgramOutput fp
-     ; printRes "contain output" True mout
-
+     ; ty <- case mpgm of
+               Nothing -> return Nothing
+               Just p ->
+                 do { e <- typeCheckPgm (TcConfig False) p
+                    ; case e of
+                        Left _ -> return Nothing
+                        Right x -> return (Just x)
+                    }
      ; let fpgm = fmap flattenPgm mpgm
-
-     ; mhs <- runIfJust (fmap interpHaskell fpgm)
-     ; printRes "Haskell output" True mhs
-
-     ; mml <- runIfJust (fmap interpOcaml fpgm)
-     ; printRes "Ocaml output" True mml
-
-     ; mrkt <- runIfJust (fmap interpRacket fpgm)
-     ; printRes "Racket output" True mrkt
-
-     ; putStrLn ""
-
+     ; let me = join (fmap interp fpgm)
+     -- ; mhs <- runIfJust (fmap interpHaskell fpgm)
+     -- ; mml <- runIfJust (fmap interpOcaml fpgm)
+     -- ; mrkt <- runIfJust (fmap interpRacket fpgm)
      ; return (TestCase { tfile   = fp
                         , toutput = mout
                         , tpgm    = mpgm
+                        , pgmTy   = ty
                         , tfpgm   = fpgm
-                        , teval   = Nothing
-                        , ths     = mhs
-                        , tml     = mml
-                        , trkt    = mrkt
+                        , teval   = me
+                        , ths     = Nothing
+                        , tml     = Nothing
+                        , trkt    = Nothing
                         , tjs     = Nothing })
      }
-  where printRes :: Show a => String -> Bool -> Maybe a -> IO ()
-        printRes verb _ Nothing = putStrLn (indent 2 ("failed to" <+> verb))
-        printRes verb True (Just a) =  putStrLn (indent 2 (verb <+> "with" <+> show a))
-        printRes _ _ _ = return ()
-
-        runIfJust :: Maybe (IO (Maybe a)) -> IO (Maybe a)
+  where runIfJust :: Maybe (IO (Maybe a)) -> IO (Maybe a)
         runIfJust Nothing  = return Nothing
         runIfJust (Just i) = i
 
@@ -109,6 +157,12 @@ getProgramOutput fp =
                   _ -> return Nothing
               }
      }
+
+interp :: Program FlatTerm -> Maybe Int
+interp prog =
+  case runStd (interpPgm prog) of
+    Right (F.FLit i) -> return i
+    _ -> Nothing
 
 
 -- | Different interpreters for the backends

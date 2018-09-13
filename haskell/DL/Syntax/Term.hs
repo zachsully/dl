@@ -183,7 +183,7 @@ patBinds (PVar v) = singleton v
 patBinds (PCons _ ps) = unions (fmap patBinds ps)
 
 invertPattern :: Pattern -> Term
-invertPattern PWild = error "cannot invert wildcard"
+invertPattern PWild = Coalts []
 invertPattern (PVar v) = Var v
 invertPattern (PCons k ps) = distributeArgs (k,fmap invertPattern ps)
 

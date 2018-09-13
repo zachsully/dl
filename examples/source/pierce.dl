@@ -1,0 +1,13 @@
+-- This is the counter example from Pierce's TAPL, Chapter 18.  I have had to
+-- avoid the parts that use subtyping
+
+codata Counter
+  { Get : Counter -> Int
+  , Set : Counter -> Int -> Counter
+  , Inc : Counter -> Counter }
+
+let newCounter = fix self in
+                   { Get [# i] -> i
+                   , [Set [# _]] j -> self j
+                   , Inc [# i] -> Set (self i) (1 + (Get (self i))) } in
+Get (Set (newCounter 0) 5)

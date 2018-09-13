@@ -164,13 +164,13 @@ applyConstraint s (CNumeric a) = CNumeric (s a)
 data TcConfig
   = TcConfig { tcDumpConstraints :: Bool }
 
-typeCheckPgm :: TcConfig -> Program Term -> IO Type
+typeCheckPgm :: TcConfig -> Program Term -> IO (Either String Type)
 typeCheckPgm cfg (Pgm decls term) =
   case unTc m initTcState of
-    Left e       -> error (pp e)
+    Left e       -> return (Left (pp e))
     Right (_,(unsolved,ty)) ->
       do { when (tcDumpConstraints cfg) (pprint unsolved >> putStrLn "")
-         ; return ty }
+         ; return (Right ty) }
   where m = do { (_,tenv) <- foldM runCheck (emptyEnv,emptyEnv) decls
                ; (ty,constraint) <- gatherTerm tenv term
                ; let unsolved = Forall (Set.union (fvs constraint) (fvs ty)) constraint ty
@@ -320,7 +320,7 @@ gatherPattern env argTy (PCons k pats) =
           do { (e',pC) <- gatherPattern e a p
              ; (e'',psC) <- foldPatterns e' b ps
              ; return (e'',pC <> psC) }
-        foldPatterns _ _ _ = typeError undefined
+        foldPatterns _ _ _ = typeError (Unimplemented "foldPatterns")
 
 gatherObsCtx :: Env Scheme -> Type -> ObsCtx -> Tc (Type,Constraint)
 gatherObsCtx _ codataTy ObsHead = return (codataTy,mempty)
@@ -334,7 +334,7 @@ gatherObsCtx env codataTy (ObsDest h o) =
      ; (hTy,hC) <- instantiate =<< lookupEnv h env
      ; outTy <- freshTy
      ; return (outTy, obsC <> hC <> (hTy `ceq` (TyArr obsTy outTy))) }
-gatherObsCtx _ _ (ObsCut _ _) = error "gatherObsCtx{ObsCut}"
+gatherObsCtx _ _ (ObsCut _ _) = typeError (Unimplemented "gatherObsCtx{ObsCut}")
 
 -- ^ Takes a codata type, returns the output type
 gatherCoalt :: Env Scheme -> Type -> (CoPattern,Term) -> Tc Constraint
@@ -358,7 +358,7 @@ gatherCopattern env codataTy (QPat q p) =
      ; (env'',pC) <- gatherPattern env' domTy p
      ; outTy <- freshTy
      ; return (outTy, qC <> pC <> (projTy `ceq` (TyArr domTy outTy)), env'') }
-gatherCopattern _ _ (QVar _ _) = error "gatherCopattern{QVar}"
+gatherCopattern _ _ (QVar _ _) = typeError (Unimplemented "gatherCopattern{QVar}")
 gatherCopattern env _ QWild =
   do { outTy <- freshTy
      ; return (outTy,mempty,env) }
@@ -373,6 +373,7 @@ data TypeError
   | DestructorProjectionError Variable Type
   | ConstructorInjectionError Variable Type
   | UnboundVarError Variable
+  | Unimplemented String
 
 instance Pretty TypeError where
   pp te = "<static error>\n" <> ppTypeError te <> "\n"
@@ -392,3 +393,5 @@ ppTypeError (ConstructorInjectionError k ty) =
   <+> quasiquotes (pp ty)
 ppTypeError (UnboundVarError v) =
   "Unbound variable" <+> quasiquotes (pp v)
+ppTypeError (Unimplemented s) =
+  "Unimplemented:" <+> s

@@ -17,6 +17,10 @@ class Pretty a where
 pprint :: Pretty a => a -> IO ()
 pprint = putStrLn . pp
 
+ppMaybe :: Pretty a => Maybe a -> String
+ppMaybe Nothing = "none"
+ppMaybe (Just x) = "some" <> parens (pp x)
+
 infixr 0 <+>
 (<+>) :: String -> String -> String
 a <+> b = a <> " " <> b

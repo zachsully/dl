@@ -1,0 +1,13 @@
+--o42
+index Zero
+index Succ n
+
+codata Delay a
+  { Force : Delay a -> a }
+
+data Vector n a
+  { Nil  : n = Zero   => Vector n a
+  | Cons : n = Succ m => a -> Vector m a -> Vector n a }
+
+case (Cons { Force # -> 42 } Nil)
+  { Cons x Nil -> cocase [Force #] x }

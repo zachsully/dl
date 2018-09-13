@@ -1,1 +1,2 @@
+--o42
 1 + { k # -> cocase [k #] (cocase [k #] 40) }

@@ -130,6 +130,7 @@ runMachine s =
 finalState :: MState a -> Bool
 finalState (MState _ EEmpty (FLit _)) = True
 finalState (MState _ EEmpty (FConsApp _ _)) = True
+finalState (MState e (EPrompt k) t) = finalState (MState e k t)
 finalState _ = False
 
 step :: (s ~ 'CallByName) => MState s -> StateT [MState s] Std (MState s)

@@ -7,6 +7,7 @@ import System.IO
 
 -- local
 import qualified DL.Syntax.Term            as T
+import qualified DL.Syntax.Type            as Ty
 import qualified DL.Syntax.Top             as Top
 import qualified DL.Backend.Haskell.Syntax as H
 import qualified DL.Backend.ML.Syntax      as ML
@@ -131,7 +132,7 @@ main = do { mode <- parseMode
               Repl        -> runRepl
           }
 
-stdPipeline :: FilePath -> Bool -> IO (Top.Program FlatTerm)
+stdPipeline :: FilePath -> Bool -> IO (Top.Program FlatTerm, Ty.Type)
 stdPipeline fp debug =
   do { pgm <- getProgram fp
      ; when debug $
@@ -141,7 +142,6 @@ stdPipeline fp debug =
      ; let pgm' :: Top.Program T.Term
            pgm' = renamePgm pgm
      ; ty <- typeCheckPgm (TcConfig debug) pgm
-     ; when debug (pprint ty)
      ; when debug $
          do { putStrLn "====== Renamed ======="
             ; pprint pgm'
@@ -152,11 +152,11 @@ stdPipeline fp debug =
          do { putStrLn "====== Flattened ======"
             ; pprint pgm''
             ; putStrLn "" }
-     ; return pgm''
+     ; return (pgm'',ty)
      }
 
-runCompile :: CompileMode -> Top.Program FlatTerm -> IO ()
-runCompile cm pgm =
+runCompile :: CompileMode -> (Top.Program FlatTerm,Ty.Type) -> IO ()
+runCompile cm (pgm,_) =
   let !prog' = (case (cmStrat cm,cmUntyped cm,cmOO cm) of
                   (CallByName,False,False)  -> (pp :: H.Program -> String) . translate
                   (CallByName,True,False)   -> error "not existing call-by-name untyped translation"
@@ -169,12 +169,12 @@ runCompile cm pgm =
       "-" -> putStrLn prog'
       fp  -> writeFile fp prog'
 
-runEvaluate :: EvalMode -> Top.Program FlatTerm -> IO ()
-runEvaluate _ pgm =
+runEvaluate :: EvalMode -> (Top.Program FlatTerm,Ty.Type) -> IO ()
+runEvaluate _ (pgm,ty) =
   do { putStrLn "====== Evaluated ======"
      ; case runStd (interpPgm pgm) of
-         Left s -> putStrLn s
-         Right a -> pprint a
+         Left s -> putStrLn s >> putStrLn (pp ty)
+         Right a -> putStrLn (pp a <+> ":" <+> pp ty)
      }
 
 runTypeOf :: TypeMode -> IO ()
