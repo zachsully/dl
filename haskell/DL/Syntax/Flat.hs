@@ -261,6 +261,7 @@ fresh v = do { n <- get
 flattenPgm :: Program Term -> Program FlatTerm
 flattenPgm p = Pgm (pgmDecls p)
                    (flatten (pgmConsDestArity p) . pgmTerm $ p)
+                   (pgmMetadata p)
 
 -- | Flatten a term given a list of Cons/Dest arities
 flatten :: [(Variable,Int)] -> Term -> FlatTerm

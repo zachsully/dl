@@ -4,6 +4,7 @@ import Options.Applicative
 import Control.Monad.State
 import Control.Monad (when)
 import System.IO
+import System.Exit
 
 -- local
 import qualified DL.Syntax.Term            as T
@@ -141,7 +142,7 @@ stdPipeline fp debug =
             ; putStrLn "" }
      ; let pgm' :: Top.Program T.Term
            pgm' = renamePgm pgm
-     ; ty <- typeCheckPgm (TcConfig debug) pgm
+     ; ety <- typeCheckPgm (TcConfig debug) pgm
      ; when debug $
          do { putStrLn "====== Renamed ======="
             ; pprint pgm'
@@ -152,7 +153,9 @@ stdPipeline fp debug =
          do { putStrLn "====== Flattened ======"
             ; pprint pgm''
             ; putStrLn "" }
-     ; return (pgm'',ty)
+     ; case ety of
+         Right ty -> return (pgm'',ty)
+         Left e -> putStrLn e >> exitWith (ExitFailure 1)
      }
 
 runCompile :: CompileMode -> (Top.Program FlatTerm,Ty.Type) -> IO ()
@@ -185,8 +188,10 @@ runTypeOf tm =
             ; pprint pgm
             ; putStrLn "" }
      ; when (tmDebug tm) (putStrLn "====== Type Checked ======")
-     ; ty <- typeCheckPgm (TcConfig (tmDebug tm)) pgm
-     ; pprint ty }
+     ; ety <- typeCheckPgm (TcConfig (tmDebug tm)) pgm
+     ; case ety of
+         Left err -> putStrLn err >> exitWith (ExitFailure 1)
+         Right ty -> pprint ty >> exitWith ExitSuccess }
 
 runRepl :: IO ()
 runRepl =

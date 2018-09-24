@@ -1,8 +1,8 @@
-{-# LANGUAGE GADTs, DataKinds, KindSignatures, LambdaCase #-}
+{-# LANGUAGE LambdaCase #-}
 module DL.Syntax.Top
   ( Program (..)
   , pgmConsDestArity
-  , pgmDecls, pgmTerm
+  , Metadata (..), emptyMd
 
   , Decl (..), Polarity (..)
 
@@ -24,9 +24,20 @@ import DL.Syntax.Variable
 --                             Top Level                                      --
 --------------------------------------------------------------------------------
 
-data Program :: * -> * where
-  Pgm :: [Decl] -> t -> Program t
-  deriving Show
+data Program t
+  = Pgm
+  { pgmDecls    :: [Decl]
+  , pgmTerm     :: t
+  , pgmMetadata :: Metadata
+  } deriving Show
+
+data Metadata
+  = Md
+  { mdExpectedOutput :: Maybe Int
+  } deriving Show
+
+emptyMd :: Metadata
+emptyMd = Md Nothing
 
 pgmConsDestArity :: Program t -> [(Variable,Int)]
 pgmConsDestArity pgm =
@@ -38,15 +49,18 @@ pgmConsDestArity pgm =
             )
             (pgmDecls pgm)
 
-pgmDecls :: Program t -> [Decl]
-pgmDecls (Pgm x _) = x
-
-pgmTerm :: Program t -> t
-pgmTerm (Pgm _ x) = x
-
 instance Pretty t => Pretty (Program t) where
-  pp (Pgm [] t) = pp t
-  pp pgm = (stringmconcat "\n\n" . fmap pp . pgmDecls $ pgm)
+  pp (Pgm [] t md) =
+    (case md of
+        Md (Just i) -> "Expected Output:" <+> show i <> "\n\n"
+        _ -> ""
+    )
+    <> pp t
+  pp pgm = (case pgmMetadata pgm of
+              Md (Just i) -> "Expected Output:" <+> show i <> "\n\n"
+              _ -> ""
+           )
+        <> (stringmconcat "\n\n" . fmap pp . pgmDecls $ pgm)
         <> "\n\n"
         <> (pp . pgmTerm $ pgm)
 

@@ -165,7 +165,7 @@ data TcConfig
   = TcConfig { tcDumpConstraints :: Bool }
 
 typeCheckPgm :: TcConfig -> Program Term -> IO (Either String Type)
-typeCheckPgm cfg (Pgm decls term) =
+typeCheckPgm cfg (Pgm decls term _) =
   case unTc m initTcState of
     Left e       -> return (Left (pp e))
     Right (_,(unsolved,ty)) ->

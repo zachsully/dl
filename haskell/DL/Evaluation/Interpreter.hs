@@ -192,7 +192,7 @@ step (MState e k (FShift v t)) =
   let (k',mk) = splitEvalCtx k in
     case mk of
       Nothing -> return (MState (extendEnvCovar v k' e) EEmpty t)
-      Just k'' -> return (MState (extendEnvCovar v k'' e) k' t)
+      Just k'' -> return (MState (extendEnvCovar v k' e) k'' t)
 
 step (MState e k (FPrompt t)) =
   return (MState e (EPrompt k) t)

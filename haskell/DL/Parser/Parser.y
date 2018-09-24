@@ -60,6 +60,9 @@ import DL.Pretty
   ','      { TokComma }
   '|'      { TokMid }
   ':'      { TokColon }
+  'EXPECTED' { TokExpectedOutput }
+  '{-'     { TokPragmaOpen }
+  '-}'     { TokPragmaClose }
 
 %%
 
@@ -79,8 +82,19 @@ vars : strs                                    { fmap Variable $1 }
 --------------------------------------------------------------------------------
 
 program :: { Program Term }
-program : decls term                           {% get >>= \s ->
-                                                   return (Pgm $1 (Prompt (replaceCD (consDecls s) $2))) }
+program : metadata decls term                  {% get >>= \s ->
+                                                   return (Pgm $2
+                                                           (Prompt (replaceCD (consDecls s) $3))
+                                                           $1
+                                                          ) }
+        | decls term                           {% get >>= \s ->
+                                                   return (Pgm $1
+                                                           (Prompt (replaceCD (consDecls s) $2))
+                                                           emptyMd
+                                                          ) }
+
+metadata :: { Metadata }
+metadata : '{-' 'EXPECTED' ':' num '-}'        { Md (Just $4) }
 
 decl :: { Decl }
 decl : 'codata' var vars '{' projs '}'         {% addTyCons $2 >>
