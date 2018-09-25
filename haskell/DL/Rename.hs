@@ -52,7 +52,7 @@ renamePgm :: Program Term -> Program Term
 renamePgm pgm = snd $ unRn (renamePgm' pgm) initRnState
 
 renamePgm' :: Program Term -> Rn (Program Term)
-renamePgm' (Pgm ds t) = Pgm <$> mapM renameDecl ds <*> renameTerm t
+renamePgm' (Pgm ds t md) = Pgm <$> mapM renameDecl ds <*> renameTerm t <*> pure md
 
 -- | Just renames introduced constructors and destructors
 renameDecl :: Decl -> Rn Decl

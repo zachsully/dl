@@ -23,12 +23,18 @@ data Program
    declaration.
 -}
 
-data Type where
-  TyInt  :: Type
-  TyArr  :: Type -> Type -> Type
-  TyVar  :: Variable -> Type
-  TyCons :: Variable -> Type
-  TyApp  :: Type -> Type -> Type
+data Constraint = CEq Type Type
+  deriving (Eq,Show)
+
+instance Pretty Constraint where
+  pp (CEq t1 t2) = pp t1 <+> "~" <+> pp t2
+
+data Type
+  = TyInt
+  | TyArr Type Type
+  | TyVar Variable
+  | TyCons Variable
+  | TyApp Type Type
   deriving (Eq,Show)
 
 data DataTyCons
@@ -53,8 +59,9 @@ data RecordTyCons
 
 data Field
   = Field
-  { fieldName :: Variable
-  , fieldType :: Type }
+  { fieldName        :: Variable
+  , fieldConstraints :: [Constraint]
+  , fieldType        :: Type }
   deriving (Eq,Show)
 
 data FunDecl
@@ -119,12 +126,14 @@ ppTyDecl :: Either DataTyCons RecordTyCons -> String
 ppTyDecl = either ppDataDecl ppRecordDecl
 
 ppDataDecl :: DataTyCons -> String
-ppDataDecl d = "data"
-           <+> pp (dataName d)
-           <+> (smconcat . fmap unVariable . dataFVars $ d)
-           <+> "where"
-           <-> (vmconcat . fmap ppDataCons . dataCons $ d)
-           <-> (indent 1 "deriving Show\n")
+ppDataDecl d | dataCons d == [] = "data" <+> pp (dataName d)
+                                         <+> (smconcat . fmap unVariable . dataFVars $ d)
+             | otherwise = "data"
+                           <+> pp (dataName d)
+                           <+> (smconcat . fmap unVariable . dataFVars $ d)
+                           <+> "where"
+                           <-> (vmconcat . fmap ppDataCons . dataCons $ d)
+                           <-> (indent 1 "deriving Show\n")
 
   where ppDataCons :: DataCon -> String
         ppDataCons dc = indent 1 (   pp (conName dc)
@@ -145,6 +154,10 @@ ppRecordDecl r = "data"
 ppRecordField :: Field -> String
 ppRecordField f = pp (fieldName f)
   <+> "::"
+  <>  (case fieldConstraints f of
+         []     -> mempty
+         (c:cs) -> " " <> parens (stringmconcat "," (fmap pp (c:cs))) <+> "=>"
+      )
   <+> (flip ppType 9 . fieldType $ f) <> "\n"
 
 
@@ -153,6 +166,9 @@ instance Pretty FunDecl where
         <+> (smconcat . fmap (allLower . unVariable) . funArgs $ fd)
         <+> "="
         <-> indent 1 (ppTerm (funRhs fd) 1 9)
+
+instance Pretty Type where
+  ppInd i ty = ppType ty i
 
 ppType :: Type -> Int -> String
 ppType TyInt       _ = "Int"
@@ -212,6 +228,13 @@ transType (Ty.TyApp a b) = TyApp (transType a) (transType b)
 transType (Ty.TyVar v)   = TyVar v
 transType (Ty.TyCons k)  = TyCons k
 
+transConstraint :: Ty.Constraint -> [Constraint]
+transConstraint Ty.CTrue = []
+transConstraint (Ty.CConj c1 c2) = transConstraint c1 ++ transConstraint c2
+transConstraint (Ty.CEq t1 t2) = [CEq (transType t1) (transType t2)]
+transConstraint (Ty.CNumeric _) = error "transConstraint{CNumeric}"
+
+
 typeCodom :: Type -> Type
 typeCodom (TyArr _ b) = b
 typeCodom x = error ("type" <+> ppType x 0 <+> "is not a projection")
@@ -255,9 +278,13 @@ transDecl (Top.CodataDecl d)  =
 
         mkRecordField :: Top.Projection -> Field
         mkRecordField p = Field (pname p)
-                                   (typeCodom . transType . Top.projType $ p)
+                                (case Top.projMConstraint p of
+                                   Nothing -> []
+                                   Just c  -> transConstraint c
+                                )
+                                (typeCodom . transType . Top.projType $ p)
 
-transDecl (Top.IndexDecl _ _) = error "transDecl{IndexDecl}"
+transDecl (Top.IndexDecl n args) = (Left (DataTyCons n args []), [])
 
 transTerm :: FlatTerm -> Term
 transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
@@ -283,7 +310,7 @@ transTerm (FCocase (FlatObsDest h) t) = App (Var (Variable "_" <> h))
                                             (transTerm t)
 transTerm (FCocase (FlatObsCut _) _) = error "transTerm{FlatObsCut}"
 transTerm (FShift _ _) = error "transTerm{FShift}"
-transTerm (FPrompt _) = error "transTerm{FPrompt}"
+transTerm (FPrompt t) = transTerm t
 
 transPat :: FlatPattern -> Pattern
 transPat (FlatPatVar v)     = PVar v

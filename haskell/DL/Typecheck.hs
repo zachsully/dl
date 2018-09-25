@@ -167,15 +167,17 @@ data TcConfig
 typeCheckPgm :: TcConfig -> Program Term -> IO (Either String Type)
 typeCheckPgm cfg (Pgm decls term _) =
   case unTc m initTcState of
-    Left e       -> return (Left (pp e))
-    Right (_,(unsolved,ty)) ->
-      do { when (tcDumpConstraints cfg) (pprint unsolved >> putStrLn "")
-         ; return (Right ty) }
+    Left e -> return (Left (pp e))
+    Right (tcState',(ty,constraint)) ->
+      let unsolved = Forall (Set.union (fvs constraint) (fvs ty)) constraint ty
+      in do { when (tcDumpConstraints cfg) (pprint unsolved >> putStrLn "")
+            ; case unTc (solveAndApp ty constraint) tcState' of
+                Left e -> return (Left (pp e <-> pp unsolved))
+                Right (_,ty') -> return (Right ty')
+            }
   where m = do { (_,tenv) <- foldM runCheck (emptyEnv,emptyEnv) decls
-               ; (ty,constraint) <- gatherTerm tenv term
-               ; let unsolved = Forall (Set.union (fvs constraint) (fvs ty)) constraint ty
-               ; s <- solve id constraint
-               ; return (unsolved,s ty) }
+               ; gatherTerm tenv term }
+        solveAndApp ty constraint = solve id constraint <*> pure ty
         runCheck (kenv,Env tm) decl =
           do { (kenv',Env tm') <- gatherDecl kenv decl
              ; return (kenv',Env (union tm tm')) }
@@ -273,7 +275,8 @@ gatherTerm env (Add a b) =
 gatherTerm env (Var v) = instantiate =<< lookupEnv v env
 gatherTerm env (Fix v a) =
   do { ty <- freshTy
-     ; gatherTerm (extendEnv v (Forall Set.empty mempty ty) env) a }
+     -- ; gatherTerm (extendEnv v (Forall Set.empty mempty ty) env) a }
+     ; gatherTerm (extendEnv v (generalize env Nothing ty) env) a }
 gatherTerm env (App a b) =
   do { (aTy,aC) <- gatherTerm env a
      ; (bTy,bC) <- gatherTerm env b
