@@ -1,75 +1,166 @@
-{-# LANGUAGE GADTs #-}
 module DL.Backend.Haskell.Syntax where
 
-import qualified DL.Syntax.Type as Ty
-import qualified DL.Syntax.Top  as Top
-import DL.Syntax.Flat
-import DL.Translation
 import DL.Syntax.Variable
 import DL.Pretty
+import DL.Utils
 
-data Program
-  = Pgm
-  { pgmTyDecls  :: [Either DataTyCons RecordTyCons]
-  , pgmFunDecls :: [FunDecl]
-  , pgmTerm     :: Term }
+data HsProgram
+  = HsPgm
+  { hsPgmDecls :: [HsDecl]
+  , hsPgmTerm  :: HsTerm }
   deriving (Show,Eq)
+
+instance Pretty HsProgram where
+  pp pgm =   "{-# LANGUAGE GADTs, RankNTypes #-}"
+         <-> "module Main where"
+         <-> ""
+         <-> "import Prelude (Show, IO, error, print, (+),Int,Num)"
+         <-> ""
+         <-> (vmconcat . fmap pp . hsPgmDecls $ pgm)
+         <-> ""
+         <-> "prog =" <-> (indent 2 . ppInd 2 . hsPgmTerm $ pgm)
+         <-> ""
+         <-> "main :: IO ()\nmain = print prog"
 
 --------------------------------------------------------------------------------
 --                                 Types                                      --
 --------------------------------------------------------------------------------
-{- Most of the type level is the same as in DualSyn. The notable difference is
-   that all of the types are positive so there is no polarity in the data
-   declaration.
--}
 
-data Constraint = CEq Type Type
+-- | For GADTs
+data HsConstraint
+  = HsCEq HsType HsType
+  | HsCNumeric HsType
   deriving (Eq,Show)
 
-instance Pretty Constraint where
-  pp (CEq t1 t2) = pp t1 <+> "~" <+> pp t2
+instance Pretty HsConstraint where
+  pp (HsCEq t1 t2) = pp t1 <+> "~" <+> pp t2
+  pp (HsCNumeric ty) = "Num" <+> pp ty
 
-data Type
-  = TyInt
-  | TyArr Type Type
-  | TyVar Variable
-  | TyCons Variable
-  | TyApp Type Type
+-- | The notable difference between Type and HsType is that we have RankNTypes
+-- because of HsTyForall
+data HsType
+  = HsTyInt
+  | HsTyArr HsType HsType
+  | HsTyVar Variable
+  | HsTyCons Variable
+  | HsTyApp HsType HsType
+  | HsTyForall [Variable] [HsConstraint] HsType
   deriving (Eq,Show)
 
-data DataTyCons
-  = DataTyCons
-  { dataName  :: Variable
-  , dataFVars :: [Variable]
-  , dataCons  :: [DataCon] }
+instance Pretty HsType where
+  pp HsTyInt = "Int"
+  pp (HsTyArr a b) = ppAtomic a <+> "->" <+> ppAtomic b
+  pp (HsTyVar s) = pp s
+  pp (HsTyCons s) = pp s
+  pp (HsTyApp a b) = ppAtomic a <+> ppAtomic b
+  pp (HsTyForall [] [] ty) = pp ty
+  pp (HsTyForall [] cs ty)
+    = (parens . stringmconcat "," . fmap pp $ cs) <+> "=>" <+> pp ty
+  pp (HsTyForall vs cs ty)
+    = ("forall"
+        <+> (smconcat (fmap pp vs)) <> "."
+        <+> (parens . stringmconcat "," . fmap pp $ cs)
+        <+> "=>" <+> pp ty)
+
+instance Atomic HsType where
+  isAtomic HsTyInt = True
+  isAtomic (HsTyVar _) = True
+  isAtomic (HsTyCons _) = True
+  isAtomic _ = False
+
+-- | Top level declarations
+data HsDecl
+  = HsDataDecl HsData
+  | HsRecordDecl HsRecord
+  | HsFunDecl HsFun
   deriving (Eq,Show)
 
-data DataCon
-  = DataCon
-  { conName :: Variable
-  , conType :: Type }
+instance Pretty HsDecl where
+  pp (HsDataDecl d) = pp d
+  pp (HsRecordDecl d) = pp d
+  pp (HsFunDecl d) = pp d
+
+-- | Declare a data type
+data HsData
+  = HsData
+  { hsDataName  :: Variable
+  , hsDataFVars :: [Variable]
+  , hsDataCons  :: [HsDataCon] }
   deriving (Eq,Show)
 
-data RecordTyCons
-  = RecordTyCons
-  { recordName   :: Variable
-  , recordFVars  :: [Variable]
-  , recordFields :: [Field] }
+instance Pretty HsData where
+  pp d | hsDataCons d == [] = "data"
+                              <+> pp (hsDataName d)
+                              <+> (smconcat . fmap unVariable . hsDataFVars $ d)
+       | otherwise = "data"
+                     <+> pp (hsDataName d)
+                     <+> (smconcat . fmap unVariable . hsDataFVars $ d)
+                     <+> "where"
+                     <-> (vmconcat . fmap pp . hsDataCons $ d)
+                     <-> (indent 1 "deriving Show\n")
+
+data HsDataCon
+  = HsDataCon
+  { hsConName :: Variable
+  , hsConType :: HsType }
   deriving (Eq,Show)
 
-data Field
-  = Field
-  { fieldName        :: Variable
-  , fieldConstraints :: [Constraint]
-  , fieldType        :: Type }
+instance Pretty HsDataCon where
+  pp dc = indent 1 (   pp (hsConName dc)
+                   <+> "::"
+                   <+> pp . hsConType $ dc )
+
+data HsRecord
+  = HsRecord
+  { hsRecordName   :: Variable
+  , hsRecordFVars  :: [Variable]
+  , hsRecordFields :: [HsField] }
   deriving (Eq,Show)
 
-data FunDecl
-  = FunDecl
-  { funName :: Variable
-  , funArgs :: [Variable]
-  , funRhs  :: Term }
+instance Pretty HsRecord where
+  pp r = "data"
+         <+> pp (hsRecordName r)
+         <+> (smconcat . fmap pp . hsRecordFVars $ r)
+         <-> indent 1 "="
+         <+> pp (hsRecordName r)
+         <-> indent 1 "{" <+> (stringmconcat (indent 1 ", ")
+                                (fmap pp . hsRecordFields $ r))
+         <> indent 1 "} deriving Show"
+
+data HsField
+  = HsField
+  { hsFieldName        :: Variable
+  , hsFieldConstraints :: [HsConstraint]
+  , hsFieldType        :: HsType }
   deriving (Eq,Show)
+
+instance Pretty HsField where
+  pp f = pp (hsFieldName f)
+         <+> "::"
+         <>  (case hsFieldConstraints f of
+                []     -> mempty
+                (c:cs) -> " " <> parens (stringmconcat "," (fmap pp (c:cs))) <+> "=>"
+             )
+         <+> (ppAtomic . hsFieldType $ f) <> "\n"
+
+-- | Top level function declarations, not these can have type annotations
+data HsFun
+  = HsFun
+  { hsFunName :: Variable
+  , hsFunArgs :: [Variable]
+  , hsFunType :: Maybe HsType
+  , hsFunRhs  :: HsTerm }
+  deriving (Eq,Show)
+
+instance Pretty HsFun where
+  pp fd =   (case hsFunType fd of
+               Nothing -> mempty
+               Just ty ->
+                 (pp . hsFunName $ fd) <+> "::" <+> pp ty <> "\n")
+        <>  (pp . hsFunName $ fd)
+        <+> (smconcat . fmap (allLower . unVariable) . hsFunArgs $ fd)
+        <+> "="
+        <-> indent 2 (ppInd 2 (hsFunRhs fd))
 
 --------------------------------------------------------------------------------
 --                                 Terms                                      --
@@ -79,239 +170,65 @@ data FunDecl
    `fix` term is actually a let
 -}
 
-data Term where
-  Let  :: Variable -> Term -> Term -> Term
-  Lit  :: Int -> Term
-  Add  :: Term -> Term -> Term
-  Var  :: Variable -> Term
-  Lam  :: Variable -> Term -> Term
-  App  :: Term -> Term -> Term
-  Cons :: Variable -> Term
-  Case :: Term -> [(Pattern,Term)] -> Term
-  Fail :: Term
+data HsTerm
+  = HsLet Variable HsTerm HsTerm
+  | HsLit Int
+  | HsAdd HsTerm HsTerm
+  | HsVar Variable
+  | HsLam Variable HsTerm
+  | HsApp HsTerm HsTerm
+  | HsCons Variable
+  | HsCase HsTerm [(HsPattern,HsTerm)]
+  | HsFail
   deriving (Eq,Show)
 
 {- `distributeArgs` will take a constructor and its arguments and construct a
    term applying the constructor to all of its arguments -}
-distributeArgs :: (Variable,[Term]) -> Term
-distributeArgs (k,ts) = foldl App (Cons k) ts
+distributeArgs :: (Variable,[HsTerm]) -> HsTerm
+distributeArgs (k,ts) = foldl HsApp (HsCons k) ts
 
+{- The Int passed in is the indentation level and precedence -}
+instance Pretty HsTerm where
+  ppInd i (HsLet s a b)
+    = (smconcat ["let {",pp s,"="])
+      <-> indent (i+1) (ppInd (i+1) a) <+> "}"
+      <-> indent i "in"
+      <-> indent (i+1) (ppInd (i+1) b)
+  ppInd _ (HsLit n) = show n
+  ppInd i (HsAdd a b) = ppAtomicInd i a <+> "+" <+> ppAtomicInd i b
+  ppInd i (HsVar s) = pp s
+  ppInd i (HsLam s t)
+    = parens ( "\\" <> pp s <+> "->" <+> (ppInd (i+3) t))
+  ppInd i (HsApp a b) = ppAtomicInd i a <+> ppAtomicInd i b
+  ppInd i (HsCons s) = pp s
+  ppInd i (HsCase t alts) =
+    "case" <+> ppInd (i+5) t <+> "of"
+    <-> (vmconcat . map (indent (i+4) . ppAlt) $ alts)
+    where ppAlt (pat,t') = pp pat <+> "->"
+                           <-> indent (i+6) (ppInd (i+6) t')
+  ppInd _ HsFail = "(error \"match fail\")"
+
+instance Atomic HsTerm where
+  isAtomic (HsLit _) = True
+  isAtomic (HsVar _) = True
+  isAtomic (HsCons _) = True
+  isAtomic HsFail = True
+  isAtomic _ = False
 
 {- Only need flat patterns here -}
-data Pattern where
-  PWild :: Pattern
-  PVar  :: Variable -> Pattern
-  PCons :: Variable -> [Variable] -> Pattern
+data HsPattern
+  = HsPWild
+  | HsPVar Variable
+  | HsPCons Variable [Variable]
   deriving (Eq,Show)
+
+instance Pretty HsPattern where
+  pp HsPWild = "_"
+  pp (HsPVar s) = pp s
+  pp (HsPCons s vs) = pp s <+> smconcat . fmap pp $ vs
+
+
 
 --------------------------------------------------------------------------------
 --                              Pretty Print                                  --
 --------------------------------------------------------------------------------
-
-instance Pretty Program where
-  pp pgm =   "{-# LANGUAGE GADTs #-}"
-         <-> "module Main where"
-         <-> ""
-         <-> "import Prelude (Show, IO, error, print, (+))"
-         <-> ""
-         <-> (vmconcat . fmap ppTyDecl . pgmTyDecls $ pgm)
-         <-> ""
-         <-> (vmconcat . fmap pp . pgmFunDecls $ pgm)
-         <-> ""
-         <-> "prog =" <-> indent 1 ((\t -> ppTerm t 1 9) . pgmTerm $ pgm)
-         <-> ""
-         <-> "main :: IO ()\nmain = print prog"
-
-ppTyDecl :: Either DataTyCons RecordTyCons -> String
-ppTyDecl = either ppDataDecl ppRecordDecl
-
-ppDataDecl :: DataTyCons -> String
-ppDataDecl d | dataCons d == [] = "data" <+> pp (dataName d)
-                                         <+> (smconcat . fmap unVariable . dataFVars $ d)
-             | otherwise = "data"
-                           <+> pp (dataName d)
-                           <+> (smconcat . fmap unVariable . dataFVars $ d)
-                           <+> "where"
-                           <-> (vmconcat . fmap ppDataCons . dataCons $ d)
-                           <-> (indent 1 "deriving Show\n")
-
-  where ppDataCons :: DataCon -> String
-        ppDataCons dc = indent 1 (   pp (conName dc)
-                                 <+> "::"
-                                 <+> flip ppType 9 . conType $ dc )
-
-
-ppRecordDecl :: RecordTyCons -> String
-ppRecordDecl r = "data"
-             <+> pp (recordName r)
-             <+> (smconcat . fmap pp . recordFVars $ r)
-             <-> indent 1 "="
-             <+> pp (recordName r)
-             <-> indent 1 "{" <+> (stringmconcat (indent 1 ", ")
-                                   (fmap ppRecordField . recordFields $ r))
-             <> indent 1 "} deriving Show"
-
-ppRecordField :: Field -> String
-ppRecordField f = pp (fieldName f)
-  <+> "::"
-  <>  (case fieldConstraints f of
-         []     -> mempty
-         (c:cs) -> " " <> parens (stringmconcat "," (fmap pp (c:cs))) <+> "=>"
-      )
-  <+> (flip ppType 9 . fieldType $ f) <> "\n"
-
-
-instance Pretty FunDecl where
-  pp fd =   (unVariable . funName $ fd)
-        <+> (smconcat . fmap (allLower . unVariable) . funArgs $ fd)
-        <+> "="
-        <-> indent 1 (ppTerm (funRhs fd) 1 9)
-
-instance Pretty Type where
-  ppInd i ty = ppType ty i
-
-ppType :: Type -> Int -> String
-ppType TyInt       _ = "Int"
-ppType (TyArr a b) p = ppPrec 1 p (ppType a p <+> "->" <+> ppType b p)
-ppType (TyVar s)   _ = pp s
-ppType (TyCons s)  _ = pp s
-ppType (TyApp a b) p = ppPrec 9 p (ppType a p <+> ppType b p)
-
-{- The Int passed in is the indentation level and precedence -}
-ppTerm :: Term -> Int -> Int -> String
-ppTerm (Let s a b)   i p =     (smconcat ["let {",pp s,"="])
-                           <-> indent (i+1) (ppTerm a (i+1) p) <+> "}"
-                           <-> indent i "in"
-                           <-> indent (i+1) (ppTerm b (i+1) p)
-ppTerm (Lit n)       _ _ = show n
-ppTerm (Add a b)     i p = ppPrec 6 p (ppTerm a i p <+> "+" <+> ppTerm b i p)
-ppTerm (Var s)       _ _ = pp s
-ppTerm (Lam s t)     i p = parens ( "\\" <> pp s <+> "->" <+> (ppTerm t (i+3) p))
-ppTerm (App a b)     i p = ppTerm a i 9 <+> (parens (ppTerm b i p))
-ppTerm (Cons s)      _ _ = pp s
-ppTerm (Case t alts) i p =
-  "case" <+> ppTerm t i 0 <+> "of"
-    <-> (vmconcat . map (indent i . ppAlt) $ alts)
-  where ppAlt :: (Pattern,Term) -> String
-        ppAlt (pat,t') = ppPattern pat
-                         <+> "->"
-                         <-> indent (i+1) (ppTerm t' (i+2) p)
-
-        ppPattern :: Pattern -> String
-        ppPattern PWild = "_"
-        ppPattern (PVar s) = pp s
-        ppPattern (PCons s vs) = pp s <+> smconcat . fmap pp $ vs
-ppTerm Fail _ _ = "(error \"match fail\")"
-
---------------------------------------------------------------------------------
---                              Translation                                   --
---------------------------------------------------------------------------------
-
-instance Translate Program where
-  translate = trans
-
-{- Local translation defines new functions when a declaration is transformed.
-These functions must be in scope for the term. -}
-trans :: Top.Program FlatTerm -> Program
-trans dpgm =
-  let (decls',fds) = foldr (\d (ds,fs) ->
-                              let (d',fs') = transDecl d
-                              in  (d':ds,fs'<>fs))
-                           ([],[])
-                           (Top.pgmDecls dpgm)
-  in Pgm decls' fds (transTerm . Top.pgmTerm $ dpgm)
-
-transType :: Ty.Type -> Type
-transType Ty.TyInt       = TyInt
-transType (Ty.TyArr a b) = TyArr (transType a) (transType b)
-transType (Ty.TyApp a b) = TyApp (transType a) (transType b)
-transType (Ty.TyVar v)   = TyVar v
-transType (Ty.TyCons k)  = TyCons k
-
-transConstraint :: Ty.Constraint -> [Constraint]
-transConstraint Ty.CTrue = []
-transConstraint (Ty.CConj c1 c2) = transConstraint c1 ++ transConstraint c2
-transConstraint (Ty.CEq t1 t2) = [CEq (transType t1) (transType t2)]
-transConstraint (Ty.CNumeric _) = error "transConstraint{CNumeric}"
-
-
-typeCodom :: Type -> Type
-typeCodom (TyArr _ b) = b
-typeCodom x = error ("type" <+> ppType x 0 <+> "is not a projection")
-
-transDecl
-  :: Top.Decl
-  -> (Either DataTyCons RecordTyCons,[FunDecl])
-transDecl (Top.DataDecl d) =
-  (Left (DataTyCons
-          (Top.posTyName d)
-          (Top.posTyFVars d)
-          (fmap mkDataCon . Top.injections $ d))
-  , [] )
-  where mkDataCon :: Top.Injection -> DataCon
-        mkDataCon inj = DataCon (Top.injName inj)
-                                   (transType . Top.injType $ inj)
-
-transDecl (Top.CodataDecl d)  =
-  ( Right (RecordTyCons
-           name
-           (Top.negTyFVars d)
-           (fmap mkRecordField (Top.projections d)))
-  , fmap setter . Top.projections $ d )
-  where name = Top.negTyName d
-        pname p = Variable "_" <> Top.projName p
-
-        setter :: Top.Projection -> FunDecl
-        setter p = FunDecl
-          { funName = Variable "set_" <> Top.projName p
-          , funArgs = [Variable "cd", Variable "br"]
-          , funRhs  =
-              foldl (\c p' ->
-                        let t = case p == p' of
-                                  True  -> Var (Variable "br")
-                                  False -> App (Var (pname p')) (Var (Variable "cd"))
-                        in App c t
-                    )
-                    (Cons name)
-                    (Top.projections d)
-          }
-
-        mkRecordField :: Top.Projection -> Field
-        mkRecordField p = Field (pname p)
-                                (case Top.projMConstraint p of
-                                   Nothing -> []
-                                   Just c  -> transConstraint c
-                                )
-                                (typeCodom . transType . Top.projType $ p)
-
-transDecl (Top.IndexDecl n args) = (Left (DataTyCons n args []), [])
-
-transTerm :: FlatTerm -> Term
-transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
-transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
-transTerm (FVar v) = Var v
-
-transTerm (FLit i) = Lit i
-transTerm (FAdd a b) = Add (transTerm a) (transTerm b)
-
-transTerm (FConsApp v fts) = foldr App (Var v) . fmap transTerm $ fts
-transTerm (FCase t (p,u) (y,d)) = Case (transTerm t)
-                                         [(transPat p, transTerm u)
-                                         ,(PVar y,transTerm d)]
-transTerm (FCaseEmpty t) = App (Var (Variable "(error \"unmatched\")")) (transTerm t)
-
-transTerm (FCoalt (h,u) t) = App (App (Var (Variable "set_" <> h))
-                                      (transTerm t))
-                                 (transTerm u)
-transTerm (FEmpty) = Fail
-transTerm (FFun v t) = Lam v (transTerm t)
-transTerm (FCocase (FlatObsFun e) t) = App (transTerm t) (transTerm e)
-transTerm (FCocase (FlatObsDest h) t) = App (Var (Variable "_" <> h))
-                                            (transTerm t)
-transTerm (FCocase (FlatObsCut _) _) = error "transTerm{FlatObsCut}"
-transTerm (FShift _ _) = error "transTerm{FShift}"
-transTerm (FPrompt t) = transTerm t
-
-transPat :: FlatPattern -> Pattern
-transPat (FlatPatVar v)     = PVar v
-transPat (FlatPatCons k vs) = PCons k vs

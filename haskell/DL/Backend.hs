@@ -1,5 +1,5 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
-module DL.Translation where
+{-# LANGUAGE ExistentialQuantification #-}
+module DL.Backend where
 
 import Control.Monad.State
 import Data.Monoid ((<>))
@@ -7,9 +7,14 @@ import Data.Monoid ((<>))
 import DL.Syntax.Top
 import DL.Syntax.Flat
 import DL.Syntax.Variable
+import DL.Pretty
 
-class Translate s  where
-  translate :: Program FlatTerm -> s
+-- | A Backend is an object for which we can apply on operation turning a
+-- FlatTerm into a String
+data Backend = forall rep. (Pretty rep) => Backend (Program FlatTerm -> rep)
+
+runBackend :: Backend -> Program FlatTerm -> String
+runBackend (Backend compile) p = pp (compile p)
 
 --------------------------------------------------------------------------------
 --                            Translation Monad                               --

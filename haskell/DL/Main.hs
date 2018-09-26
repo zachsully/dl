@@ -10,15 +10,15 @@ import System.Exit
 import qualified DL.Syntax.Term            as T
 import qualified DL.Syntax.Type            as Ty
 import qualified DL.Syntax.Top             as Top
-import qualified DL.Backend.Haskell.Syntax as H
-import qualified DL.Backend.ML.Syntax      as ML
-import qualified DL.Backend.Racket.Syntax  as Rkt
-import qualified DL.Backend.JavaScript.Syntax as JS
+import DL.Backend
+import DL.Backend.Haskell
+import DL.Backend.ML
+import DL.Backend.Racket
+import DL.Backend.JavaScript
 import DL.Syntax.Flat
 import DL.Prelude
 import DL.Parser.Lexer
 import DL.Parser.Parser
-import DL.Translation
 import DL.Evaluation.Strategy
 import DL.Evaluation.Interpreter
 import DL.Rename
@@ -161,11 +161,11 @@ stdPipeline fp debug =
 runCompile :: CompileMode -> (Top.Program FlatTerm,Ty.Type) -> IO ()
 runCompile cm (pgm,_) =
   let !prog' = (case (cmStrat cm,cmUntyped cm,cmOO cm) of
-                  (CallByName,False,False)  -> (pp :: H.Program -> String) . translate
+                  (CallByName,False,False)  -> runBackend hsCompile
                   (CallByName,True,False)   -> error "not existing call-by-name untyped translation"
-                  (CallByValue,False,False) -> (pp :: ML.Program -> String) . translate
-                  (CallByValue,True,False)  -> (pp :: Rkt.Program -> String) . translate
-                  (CallByValue,True,True)   -> (pp :: JS.Program -> String) . translate
+                  (CallByValue,False,False) -> runBackend mlCompile
+                  (CallByValue,True,False)  -> runBackend rktCompile
+                  (CallByValue,True,True)   -> runBackend jsCompile
                   (_,_,True)                -> error "not existing object oriented translation")
                $ pgm in
     case cmOutput cm of

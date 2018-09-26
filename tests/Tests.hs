@@ -16,13 +16,13 @@ import DL.Typecheck
 import DL.Utils
 import DL.IO
 import DL.Pretty
-import DL.Translation
 import qualified DL.Syntax.Flat               as F
 import qualified DL.Syntax.Type               as Ty
-import qualified DL.Backend.JavaScript.Syntax as JS
-import qualified DL.Backend.Haskell.Syntax    as H
-import qualified DL.Backend.ML.Syntax         as ML
-import qualified DL.Backend.Racket.Syntax     as Rkt
+import DL.Backend
+import DL.Backend.JavaScript
+import DL.Backend.ML
+import DL.Backend.Racket
+import DL.Backend.Haskell
 
 -- | Holds information for a particular test
 data TestCase
@@ -168,17 +168,8 @@ interp prog =
 -- | Different interpreters for the backends
 interpHaskell,interpRacket,interpOcaml
   :: Program FlatTerm -> IO (Maybe Int)
-
-interpHaskell prog =
-  let s = (pp :: H.Program -> String) . translate $ prog in
-    interpretWith s "runhaskell"
-
-interpRacket  prog =
-  let s = (pp :: Rkt.Program -> String) . translate $ prog in
-    interpretWith s "racket"
-
-interpOcaml   prog =
-  let s = (pp :: ML.Program -> String) . translate $ prog in
-    interpretWith s "ocaml"
+interpHaskell prog = interpretWith (runBackend hsCompile prog) "runhaskell"
+interpRacket  prog = interpretWith (runBackend rktCompile prog) "racket"
+interpOcaml   prog = interpretWith (runBackend mlCompile prog) "ocaml"
 
 -- interpJS      prog = interpretWith prog "node"

@@ -14,6 +14,20 @@ class Pretty a where
   ppInd :: Int -> a -> String
   ppInd = const pp
 
+-- | The Atomic class is a simple way to know if we need to add parenthesis
+class Atomic a where
+  isAtomic :: a -> Bool
+
+ppAtomic :: (Atomic a, Pretty a) => a -> String
+ppAtomic s = case isAtomic s of
+               False -> parens (pp s)
+               True  -> pp s
+
+ppAtomicInd :: (Atomic a, Pretty a) => Int -> a -> String
+ppAtomicInd i s = case isAtomic s of
+                    False -> parens (ppInd i s)
+                    True  -> ppInd i s
+
 pprint :: Pretty a => a -> IO ()
 pprint = putStrLn . pp
 

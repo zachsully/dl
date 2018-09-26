@@ -19,6 +19,6 @@ let mkStack = fix s in
     { Push # y    -> s (Cons y (Cons x xs))
     , Fst [Pop #] -> x
     , Snd [Pop #] -> s xs } } in
-let empty   = { Push # x -> mkStack (Cons x Nil) } : Stack Zero in
+let empty    = { Push # x -> mkStack (Cons x Nil) } : Stack Zero in
 let stackTwo = cocase [Push [[Push #] 1] 2] empty in
 cocase [Fst [Pop #]] stackTwo
