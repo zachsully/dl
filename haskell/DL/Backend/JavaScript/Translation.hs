@@ -1,6 +1,6 @@
 module DL.Backend.JavaScript.Translation (jsCompile) where
 
-import DL.Backend hiding (freshen)
+import DL.Backend
 import DL.Backend.JavaScript.Syntax
 import qualified DL.Syntax.Top as Top
 import Data.List (foldl')
@@ -11,6 +11,7 @@ import DL.Utils
 jsCompile :: Backend
 jsCompile = Backend trans
 
+trans :: Top.Program FlatTerm -> Program
 trans dpgm = Pgm (aNorm . transTerm . Top.pgmTerm $ dpgm)
 
 -- Because aNorm and transTerm freshen variables and thus return type Std JSTerm, we must extract the term from the Std Monad
@@ -71,7 +72,7 @@ transTerm' (FAdd a b) = do a' <- transTerm' a
                            b' <- transTerm' b
                            return $ JSAdd a' b'
 
-transTerm' (FConsApp v xs) = do vars <- mapM (\x -> freshen (Variable "x")) xs
+transTerm' (FConsApp v xs) = do vars <- mapM (\_ -> freshen (Variable "x")) xs
                                 xs' <- mapM transTerm' xs
                                 let body = JSFun (Variable "c") (foldl' JSApp (JSMethod v (JSVar (Variable "c"))) (map JSVar vars))
                                 return $ JSLet vars xs' body
@@ -108,3 +109,5 @@ transTerm' (FCoalt (v, t) a) = do t' <- transTerm' t
                                   return $ JSObj (v, t') a'
 
 transTerm' (FEmpty) = return $ JSFail
+
+transTerm' _ = error "transTerm'"

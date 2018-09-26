@@ -3,7 +3,6 @@ module DL.Backend.ML.Syntax where
 
 import DL.Syntax.Variable
 import DL.Pretty
-import DL.Utils
 
 data Program
   = Pgm

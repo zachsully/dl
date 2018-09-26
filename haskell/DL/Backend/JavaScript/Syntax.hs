@@ -4,8 +4,6 @@ module DL.Backend.JavaScript.Syntax where
 
 import Data.List (isPrefixOf)
 import DL.Pretty
-import DL.Backend hiding (freshen)
-import DL.Utils
 import DL.Syntax.Variable
 
 data Program
@@ -35,10 +33,10 @@ data JSTerm where
 --                              Pretty Print                                  --
 --------------------------------------------------------------------------------
 
+replace :: Eq a => [a] -> [a] -> [a] -> [a]
 replace n r h@(x:xs) = if isPrefixOf n h
                            then r ++ replace n r (drop (length n) h)
                            else x : replace n r xs
-
 replace _ _ [] = []
 
 

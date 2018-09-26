@@ -2,7 +2,6 @@ module DL.Backend.Haskell.Syntax where
 
 import DL.Syntax.Variable
 import DL.Pretty
-import DL.Utils
 
 data HsProgram
   = HsPgm
@@ -196,11 +195,11 @@ instance Pretty HsTerm where
       <-> indent (i+1) (ppInd (i+1) b)
   ppInd _ (HsLit n) = show n
   ppInd i (HsAdd a b) = ppAtomicInd i a <+> "+" <+> ppAtomicInd i b
-  ppInd i (HsVar s) = pp s
+  ppInd _ (HsVar s) = pp s
   ppInd i (HsLam s t)
     = parens ( "\\" <> pp s <+> "->" <+> (ppInd (i+3) t))
   ppInd i (HsApp a b) = ppAtomicInd i a <+> ppAtomicInd i b
-  ppInd i (HsCons s) = pp s
+  ppInd _ (HsCons s) = pp s
   ppInd i (HsCase t alts) =
     "case" <+> ppInd (i+5) t <+> "of"
     <-> (vmconcat . map (indent (i+4) . ppAlt) $ alts)
