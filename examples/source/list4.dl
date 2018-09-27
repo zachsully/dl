@@ -1,0 +1,6 @@
+data List a
+  { Nil  : List a
+  | Cons : a -> List a -> List a }
+
+case (Cons 3 (Cons 39 Nil))
+  { Cons y (Cons x Nil) -> x + y }

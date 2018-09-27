@@ -13,7 +13,7 @@ instance Pretty HsProgram where
   pp pgm =   "{-# LANGUAGE GADTs, RankNTypes #-}"
          <-> "module Main where"
          <-> ""
-         <-> "import Prelude (Show, IO, error, print, (+),Int,Num)"
+         <-> "import Prelude (Show, show, IO, error, print, (+), Integer, Num)"
          <-> ""
          <-> (vmconcat . fmap pp . hsPgmDecls $ pgm)
          <-> ""
@@ -46,8 +46,15 @@ data HsType
   | HsTyForall [Variable] [HsConstraint] HsType
   deriving (Eq,Show)
 
+-- | Does not use TyForall
+isSimple :: HsType -> Bool
+isSimple (HsTyArr a b) = isSimple a && isSimple b
+isSimple (HsTyApp a b) = isSimple a && isSimple b
+isSimple (HsTyForall _ _ _) = False
+isSimple _ = True
+
 instance Pretty HsType where
-  pp HsTyInt = "Int"
+  pp HsTyInt = "Integer"
   pp (HsTyArr a b) = ppAtomic a <+> "->" <+> ppAtomic b
   pp (HsTyVar s) = pp s
   pp (HsTyCons s) = pp s
@@ -96,7 +103,15 @@ instance Pretty HsData where
                      <+> (smconcat . fmap unVariable . hsDataFVars $ d)
                      <+> "where"
                      <-> (vmconcat . fmap pp . hsDataCons $ d)
-                     <-> (indent 1 "deriving Show\n")
+                     <>  (case any (not . isSimple . hsConType) (hsDataCons d)
+                          of
+                            True  ->
+                              newline <> newline <>
+                              "instance Show" <+> parens ((pp (hsDataName d)) <+> (smconcat . fmap unVariable . hsDataFVars $ d))
+                              <+> "where"
+                              <-> indent 2 "show _ ="
+                              <+> "\"unshowable{"<> (pp (hsDataName d)) <> "}\""
+                            False -> newline <> indent 2 ("deriving Show" <> newline))
 
 data HsDataCon
   = HsDataCon
@@ -105,7 +120,7 @@ data HsDataCon
   deriving (Eq,Show)
 
 instance Pretty HsDataCon where
-  pp dc = indent 1 (   pp (hsConName dc)
+  pp dc = indent 2 (   pp (hsConName dc)
                    <+> "::"
                    <+> pp . hsConType $ dc )
 
@@ -120,11 +135,11 @@ instance Pretty HsRecord where
   pp r = "data"
          <+> pp (hsRecordName r)
          <+> (smconcat . fmap pp . hsRecordFVars $ r)
-         <-> indent 1 "="
+         <-> indent 2 "="
          <+> pp (hsRecordName r)
-         <-> indent 1 "{" <+> (stringmconcat (indent 1 ", ")
+         <-> indent 2 "{" <+> (stringmconcat (indent 2 ", ")
                                 (fmap pp . hsRecordFields $ r))
-         <> indent 1 "} deriving Show"
+         <> indent 2 "}"
 
 data HsField
   = HsField
@@ -193,7 +208,7 @@ instance Pretty HsTerm where
       <-> indent (i+1) (ppInd (i+1) a) <+> "}"
       <-> indent i "in"
       <-> indent (i+1) (ppInd (i+1) b)
-  ppInd _ (HsLit n) = show n
+  ppInd _ (HsLit n) = parens (show n <+> "::" <+> "Integer")
   ppInd i (HsAdd a b) = ppAtomicInd i a <+> "+" <+> ppAtomicInd i b
   ppInd _ (HsVar s) = pp s
   ppInd i (HsLam s t)
@@ -225,9 +240,3 @@ instance Pretty HsPattern where
   pp HsPWild = "_"
   pp (HsPVar s) = pp s
   pp (HsPCons s vs) = pp s <+> smconcat . fmap pp $ vs
-
-
-
---------------------------------------------------------------------------------
---                              Pretty Print                                  --
---------------------------------------------------------------------------------

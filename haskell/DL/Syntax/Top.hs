@@ -4,15 +4,17 @@ module DL.Syntax.Top
   , pgmConsDestArity
   , Metadata (..), emptyMd
 
-  , Decl (..), Polarity (..)
+  , Decl (..), Polarity (..), hasConstraintsDecl
 
   , NegativeTyCons (..)
   , Projection (..)
   , negTyArity
+  , hasConstraintsProj
 
   , PositiveTyCons (..)
   , Injection (..)
   , posTyArity
+  , hasConstraintsInj
   ) where
 
 import Control.Arrow ((&&&),(<<<))
@@ -70,6 +72,12 @@ data Decl
   | IndexDecl  Variable [Variable]
   deriving (Show,Eq)
 
+-- | Checks that a declaration does not use type constraints
+hasConstraintsDecl :: Decl -> Bool
+hasConstraintsDecl (DataDecl d) = or (fmap hasConstraintsInj (injections d))
+hasConstraintsDecl (CodataDecl d) =  or (fmap hasConstraintsProj (projections d))
+hasConstraintsDecl (IndexDecl _ _) = False
+
 instance Pretty Decl where
   pp (DataDecl x)     = pp x
   pp (CodataDecl x)   = pp x
@@ -108,6 +116,12 @@ data Projection
   , projType        :: Type }
   deriving (Eq,Show)
 
+hasConstraintsProj :: Projection -> Bool
+hasConstraintsProj i =
+  case projMConstraint i of
+    Nothing -> False
+    Just _  -> True
+
 instance Pretty Projection where
   ppInd i (Proj n Nothing ty) = pp n <+> ":" <+> ppInd i ty
   ppInd i (Proj n (Just c) ty) = pp n <+> ":" <+> ppInd i c <+> "=>"
@@ -127,8 +141,6 @@ instance Pretty PositiveTyCons where
         <+> (stringmconcat "\n  | " (fmap (ppInd 4) (injections tc)))
         <+> "}"
 
-
-
 posTyArity :: PositiveTyCons -> Int
 posTyArity = length . posTyFVars
 
@@ -140,6 +152,12 @@ data Injection
   deriving (Show,Eq)
   {- the domain is a maybe value because unary constructors do not take
      arguments, e.g. () : Unit -}
+
+hasConstraintsInj :: Injection -> Bool
+hasConstraintsInj i =
+  case injMConstraint i of
+    Nothing -> False
+    Just _  -> True
 
 instance Pretty Injection where
   ppInd i (Inj n Nothing ty) = pp n <+> ":" <+> ppInd i ty

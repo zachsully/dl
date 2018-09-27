@@ -99,7 +99,7 @@ transTerm (FVar v) = HsVar v
 transTerm (FLit i) = HsLit i
 transTerm (FAdd a b) = HsAdd (transTerm a) (transTerm b)
 
-transTerm (FConsApp v fts) = foldr HsApp (HsVar v) . fmap transTerm $ fts
+transTerm (FConsApp v fts) = foldl HsApp (HsVar v) . fmap transTerm $ fts
 transTerm (FCase t (p,u) (y,d)) = HsCase (transTerm t)
                                          [(transPat p, transTerm u)
                                          ,(HsPVar y,transTerm d)]

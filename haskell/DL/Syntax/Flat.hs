@@ -78,7 +78,8 @@ instance Pretty FlatTerm where
   ppInd _ (FConsApp k [])  = pp k
   ppInd i (FConsApp k vs@(_:_))  = pp k <+> smconcat . fmap (ppInd (i+1)) $ vs
   ppInd i (FCase t (p,u) (y,d)) = ("case" <+> parens' t (ppInd (i+6) t))
-                          <-> (indent (i+2) "{" <+> pp p <+> "->"
+
+                                  <-> (indent (i+2) "{" <+> pp p <+> "->"
                                <+> (ppInd (i+4) u))
                           <-> (indent (i+2) "|" <+> pp y <+> "->"
                                <+> (ppInd (i+4) d))
@@ -300,26 +301,14 @@ flatten' (Dest h) =
   do { x <- fresh (Variable "dx")
      ; return (FFun x (FCocase (FlatObsDest h) (FVar x))) }
 
-flatten' (Cocase c t) = go (unplugObsCtx c) =<< flatten' t
-  where go (Nothing, ObsHead) e = return e
-        go (Nothing, ObsFun ObsHead u) e =
-          do { u' <- flatten' u
-             ; return (FCocase (FlatObsFun u') e) }
-        go (Nothing, ObsDest h ObsHead) e =
-          return (FCocase (FlatObsDest h) e)
-        go (Nothing, ObsCut v ObsHead) e =
-          return (FCocase (FlatObsCut v) e)
-        go (Just c', ObsFun _ u) e =
-          do { e' <- go (unplugObsCtx c') e
+flatten' (Cocase c t) = go c =<< flatten' t
+  where go ObsHead e = return e
+        go (ObsFun o u) e =
+          do { r <- go o e
              ; u' <- flatten' u
-             ; return (FCocase (FlatObsFun u') e') }
-        go (Just c', ObsDest h _) e =
-          do { e' <- go (unplugObsCtx c') e
-             ; return (FCocase (FlatObsDest h) e') }
-        go (Just c', ObsCut v _) e =
-          do { e' <- go (unplugObsCtx c') e
-             ; return (FCocase (FlatObsCut v) e') }
-        go x _ = error $ "this should not happen. Flatten ObsCtx" <+> show x
+             ; return (FCocase (FlatObsFun u') r) }
+        go (ObsDest h o) e = FCocase (FlatObsDest h) <$> go o e
+        go (ObsCut v o) e = FCocase (FlatObsCut v) <$> go o e
 
 flatten' (Coalts coalts) = flattenCoalts coalts
 
@@ -361,7 +350,7 @@ flattenAlt (PWild, u) =
      ; return (FlatPatVar v, u') }
 flattenAlt (PCons k ps, u) =
   do { u' <- flatten' u
-     ; (vs,rhs) <- foldM (\(vs,rhs) p -> flattenPattern  p vs rhs) ([],u') ps
+     ; (vs,rhs) <- foldM (\(vs,rhs) p -> flattenPattern  p vs rhs) ([],u') (reverse ps)
      ; return (FlatPatCons k vs,rhs) }
 
 flattenPattern

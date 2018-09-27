@@ -5,5 +5,5 @@ data Vector n
   { Nil  : n = Zero   => Vector n
   | Cons : n = Succ m => Int -> Vector m -> Vector n }
 
-case (Cons 3 (Cons 38 Nil))
+case (Cons 3 (Cons 39 Nil))
   { Cons y (Cons x Nil) -> x + y }

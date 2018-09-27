@@ -64,6 +64,9 @@ ppPrec p p' s = case p > p' of
                   True -> parens s
                   False -> s
 
+newline :: String
+newline = "\n"
+
 parens :: String -> String
 parens s = "(" <> s <> ")"
 
