@@ -1,3 +1,4 @@
+{- BEHAVIOR : Undefined -}
 data Pair a b
   { Pair : a -> b -> Pair a b }
 

@@ -2,7 +2,7 @@
 module DL.Syntax.Top
   ( Program (..)
   , pgmConsDestArity
-  , Metadata (..), emptyMd
+  , Metadata (..), Behavior (..)
 
   , Decl (..), Polarity (..), hasConstraintsDecl
 
@@ -35,11 +35,24 @@ data Program t
 
 data Metadata
   = Md
-  { mdExpectedOutput :: Maybe Int
+  { mdExpectedBehavior :: Behavior
   } deriving Show
 
-emptyMd :: Metadata
-emptyMd = Md Nothing
+instance Pretty Metadata where
+  pp (Md b) = "{- BEHAVIOR:" <+> pp b <+> "-}"
+
+data Behavior
+  = ThrowsTypeError
+  | ThrowsMatchingError
+  | Computes Int
+  | Undefined
+  deriving (Eq,Show)
+
+instance Pretty Behavior where
+  pp ThrowsTypeError     = "TypeError"
+  pp ThrowsMatchingError = "MatchingError"
+  pp (Computes i)        = show i
+  pp Undefined           = "Undefined"
 
 pgmConsDestArity :: Program t -> [(Variable,Int)]
 pgmConsDestArity pgm =
@@ -52,16 +65,8 @@ pgmConsDestArity pgm =
             (pgmDecls pgm)
 
 instance Pretty t => Pretty (Program t) where
-  pp (Pgm [] t md) =
-    (case md of
-        Md (Just i) -> "Expected Output:" <+> show i <> "\n\n"
-        _ -> ""
-    )
-    <> pp t
-  pp pgm = (case pgmMetadata pgm of
-              Md (Just i) -> "Expected Output:" <+> show i <> "\n\n"
-              _ -> ""
-           )
+  pp (Pgm [] t md) = pp md <-> pp t
+  pp pgm = pp (pgmMetadata pgm) <> newline
         <> (stringmconcat "\n\n" . fmap pp . pgmDecls $ pgm)
         <> "\n\n"
         <> (pp . pgmTerm $ pgm)

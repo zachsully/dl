@@ -60,7 +60,6 @@ import DL.Pretty
   ','      { TokComma }
   '|'      { TokMid }
   ':'      { TokColon }
-  'EXPECTED' { TokExpectedOutput }
   '{-'     { TokPragmaOpen }
   '-}'     { TokPragmaClose }
 
@@ -90,11 +89,23 @@ program : metadata decls term                  {% get >>= \s ->
         | decls term                           {% get >>= \s ->
                                                    return (Pgm $1
                                                            (Prompt (replaceCD (consDecls s) $2))
-                                                           emptyMd
+                                                           (Md Undefined)
                                                           ) }
 
 metadata :: { Metadata }
-metadata : '{-' 'EXPECTED' ':' num '-}'        { Md (Just $4) }
+metadata : '{-' var ':' behavior '-}'
+   { case $2 of
+       Variable "BEHAVIOR" -> Md $4
+       _ -> Md Undefined
+   }
+
+behavior :: { Behavior }
+behavior : num  { Computes $1 }
+         | var  { case $1 of
+                    Variable "TypeError" -> ThrowsTypeError
+                    Variable "MatchingError" -> ThrowsMatchingError
+                    _ -> Undefined
+                }
 
 decl :: { Decl }
 decl : 'codata' var vars '{' projs '}'         {% addTyCons $2 >>

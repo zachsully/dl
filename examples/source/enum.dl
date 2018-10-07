@@ -1,3 +1,4 @@
+{- BEHAVIOR : 6 -}
 data Counting
   { Zero  : Counting
   | One   : Counting

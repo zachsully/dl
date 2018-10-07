@@ -1,3 +1,4 @@
+{- BEHAVIOR : Undefined -}
 data Unit { one : Unit }
 
 one

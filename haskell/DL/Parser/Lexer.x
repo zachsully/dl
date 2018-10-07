@@ -16,7 +16,6 @@ tokens :-
   "--".*     ;
   "{-"       { const TokPragmaOpen }
   "-}"       { const TokPragmaClose }
-  EXPECTED   { const TokExpectedOutput }
   $digit+    { TokLit . read }
   Int        { const TokInt }
   \+         { const TokPlus }
@@ -81,7 +80,6 @@ data Token
   | TokMid
   | TokColon
   | TokModule
-  | TokExpectedOutput
   | TokPragmaOpen
   | TokPragmaClose
   deriving (Eq,Show)

@@ -137,9 +137,14 @@ transTerm (FLet v a b) = HsLet v (transTerm a) (transTerm b)
 transTerm (FFix v a) = HsApp (HsVar (Variable "fix")) (HsLam v (transTerm a))
 transTerm (FVar v) = HsVar v
 
--- ^ NOTA BENE: This is a nasty special case to please Haskells typechecker in
--- the safestack programs
-transTerm (FAnn (FFix v a) ty) = HsLet v (transTerm a) (HsAnn (HsVar v) (transType ty))
+-- NOTA BENE[Hs Annotations] This is a nasty special case to please Haskell's
+-- typechecker in the safestack programs. DL's type inference is more permissive
+-- in deciding whether an indexed type requires an annotation. The important
+-- examples here are "examples/source/safestack3.dl" and
+-- "examples/source/safestack5.dl". The annotations on "mkStack" are not
+-- necessary for DL, but we need to propogate them to satisfy Haskell.
+transTerm (FAnn (FFix v a) ty)
+  = HsLet v (transTerm a) (HsAnn (HsVar v) (transType ty))
 transTerm (FAnn t ty) = HsAnn (transTerm t) (transType ty)
 
 transTerm (FLit i) = HsAnn (HsLit i) HsTyInt

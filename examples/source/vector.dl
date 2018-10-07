@@ -1,3 +1,4 @@
+{- BEHAVIOR : Undefined -}
 index Zero
 index Succ n
 

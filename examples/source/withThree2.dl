@@ -1,4 +1,4 @@
---o3
+{- BEHAVIOR : 3 -}
 codata WithThree a b c
   { Fst : WithThree a b c -> a
   , Snd : WithThree a b c -> b

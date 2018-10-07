@@ -1,4 +1,4 @@
-{- EXPECTED : 2 -}
+{- BEHAVIOR : 2 -}
 index Zero
 index Succ n
 

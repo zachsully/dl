@@ -1,4 +1,4 @@
---o2
+{- BEHAVIOR : 2 -}
 codata With a b
   { Fst : With a b -> a
   , Snd : With a b -> b }

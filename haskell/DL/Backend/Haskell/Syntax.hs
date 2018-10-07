@@ -13,6 +13,7 @@ data HsProgram
 
 instance Pretty HsProgram where
   pp pgm =   "{-# LANGUAGE GADTs, RankNTypes #-}"
+         <-> "{-# OPTIONS_GHC -w #-}"
          <-> "module Main where"
          <-> ""
          <-> "import Prelude (Show, show, IO, error, print, (+), Integer, Num)"
@@ -225,8 +226,7 @@ hsApps = foldl HsApp
 
 {- The Int passed in is the indentation level and precedence -}
 instance Pretty HsTerm where
-  -- ^ NOTA BENE: This is a special very hacky case to deal with Haskell's type
-  -- inference. If the term of a let is annotated and equal to
+  -- NOTA BENE[Hs Annotations] See note in "DL/Backend/Haskell/Translation.hs"
   ppInd i (HsLet s a (HsAnn b ty)) | b == (HsVar s)
     = (smconcat ["let {",pp s,"::",pp ty])
       <-> indent i (smconcat ["     ;",pp s,"="])

@@ -1,2 +1,2 @@
---o42
+{- BEHAVIOR : 42 -}
 case 42 { x -> x }

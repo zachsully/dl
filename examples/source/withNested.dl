@@ -1,3 +1,4 @@
+{- BEHAVIOR : Undefined -}
 codata With a b
   { Fst : With a b -> a
   , Snd : With a b -> b }

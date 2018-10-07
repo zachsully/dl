@@ -1,1 +1,2 @@
-{ # x → x }
+{- BEHAVIOR : Undefined -}
+{ # x -> x }

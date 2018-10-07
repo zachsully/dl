@@ -1,4 +1,4 @@
---o0
+{- BEHAVIOR : 0 -}
 codata Delay a
   { Force : Delay a -> a }
 

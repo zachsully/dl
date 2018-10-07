@@ -1,4 +1,4 @@
---o0
+{- BEHAVIOR : 0 -}
 codata Stream a
   { Head : Stream a -> a
   , Tail : Stream a -> Stream a }

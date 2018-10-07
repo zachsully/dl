@@ -1,3 +1,4 @@
+{- BEHAVIOR : Undefined -}
 data List a
   { Nil  : List a
   | Cons : a -> List a -> List a }

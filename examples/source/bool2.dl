@@ -1,4 +1,4 @@
---o42
+{- BEHAVIOR : 42 -}
 data Bool
   { True  : Bool
   | False : Bool }

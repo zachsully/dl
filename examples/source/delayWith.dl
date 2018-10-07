@@ -1,3 +1,4 @@
+{- BEHAVIOR : Undefined -}
 codata Delay a
   { Force : Delay a -> a }
 

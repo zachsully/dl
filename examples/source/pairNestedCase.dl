@@ -1,4 +1,4 @@
---o6
+{- BEHAVIOR : 6 -}
 data PosPair a b
   { Pair : a -> b -> PosPair a b }
 

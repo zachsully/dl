@@ -1,1 +1,2 @@
+{- BEHAVIOR : 42 -}
 cocase # { # -> 40 + 2 }

@@ -1,3 +1,4 @@
+{- BEHAVIOR : 42 -}
 index Zero
 index Succ n
 

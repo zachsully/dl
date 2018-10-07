@@ -1,3 +1,4 @@
+{- BEHAVIOR : 5 -}
 -- This is the counter example from Pierce's TAPL, Chapter 18.  I have had to
 -- avoid the parts that use subtyping
 

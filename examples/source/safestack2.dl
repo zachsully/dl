@@ -1,3 +1,4 @@
+{- BEHAVIOR : TypeError -}
 index Zero
 index Succ n
 

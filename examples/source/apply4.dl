@@ -1,2 +1,2 @@
---o42
+{- BEHAVIOR : 42 -}
 { # w x y z -> w + x + y + z } 0 1 2 39

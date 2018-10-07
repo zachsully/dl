@@ -1,3 +1,4 @@
+{- BEHAVIOR : Undefined -}
 data Const a
   { Const : a -> Const a }
 

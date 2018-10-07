@@ -1,3 +1,4 @@
+{- BEHAVIOR : MatchingError -}
 index Zero
 index Succ n
 

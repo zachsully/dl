@@ -1,3 +1,4 @@
+{- BEHAVIOR : Undefined -}
 data Bool
   { True  : Bool
   | False : Bool }

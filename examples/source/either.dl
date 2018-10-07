@@ -1,3 +1,4 @@
+{- BEHAVIOR : 42 -}
 data Either a b
   { Inl : a -> Either a b
   | Inr : b -> Either a b }

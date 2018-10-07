@@ -14,7 +14,7 @@ prelude = [unitDecl,pairDecl,eitherDecl,boolDecl,listDecl
           ,withDecl,streamDecl]
 
 preludePgm :: Term -> Program Term
-preludePgm t = Pgm prelude t emptyMd
+preludePgm t = Pgm prelude t (Md Undefined)
 
 {-
 PROBLEMA: Because the prelude is not in scope when parsing, constructors and
