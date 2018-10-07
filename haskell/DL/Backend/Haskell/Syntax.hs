@@ -1,7 +1,9 @@
 module DL.Backend.Haskell.Syntax where
 
+import qualified Data.Set as Set
 import DL.Syntax.Variable
 import DL.Pretty
+import DL.Utils
 
 data HsProgram
   = HsPgm
@@ -15,7 +17,7 @@ instance Pretty HsProgram where
          <-> ""
          <-> "import Prelude (Show, show, IO, error, print, (+), Integer, Num)"
          <-> ""
-         <-> (vmconcat . fmap pp . hsPgmDecls $ pgm)
+         <-> (stringmconcat (newline <> newline) . fmap pp . hsPgmDecls $ pgm)
          <-> ""
          <-> "prog =" <-> (indent 2 . ppInd 2 . hsPgmTerm $ pgm)
          <-> ""
@@ -30,6 +32,10 @@ data HsConstraint
   = HsCEq HsType HsType
   | HsCNumeric HsType
   deriving (Eq,Show)
+
+instance FV HsConstraint where
+  fvs (HsCEq a b) = Set.union (fvs a) (fvs b)
+  fvs (HsCNumeric a) = fvs a
 
 instance Pretty HsConstraint where
   pp (HsCEq t1 t2) = pp t1 <+> "~" <+> pp t2
@@ -46,6 +52,10 @@ data HsType
   | HsTyForall [Variable] [HsConstraint] HsType
   deriving (Eq,Show)
 
+hsTyApps :: HsType -> [HsType] -> HsType
+hsTyApps a = foldl HsTyApp a
+
+
 -- | Does not use TyForall
 isSimple :: HsType -> Bool
 isSimple (HsTyArr a b) = isSimple a && isSimple b
@@ -53,12 +63,20 @@ isSimple (HsTyApp a b) = isSimple a && isSimple b
 isSimple (HsTyForall _ _ _) = False
 isSimple _ = True
 
+instance FV HsType where
+  fvs (HsTyVar v) = Set.singleton v
+  fvs (HsTyArr a b) = Set.union (fvs a) (fvs b)
+  fvs (HsTyApp a b) = Set.union (fvs a) (fvs b)
+  fvs (HsTyForall vs cs a) =
+    Set.difference (Set.unions (fvs a : (fmap fvs cs))) (Set.fromList vs)
+  fvs _ = mempty
+
 instance Pretty HsType where
   pp HsTyInt = "Integer"
   pp (HsTyArr a b) = ppAtomic a <+> "->" <+> ppAtomic b
   pp (HsTyVar s) = pp s
   pp (HsTyCons s) = pp s
-  pp (HsTyApp a b) = ppAtomic a <+> ppAtomic b
+  pp (HsTyApp a b) = pp a <+> ppAtomic b
   pp (HsTyForall [] [] ty) = pp ty
   pp (HsTyForall [] cs ty)
     = (parens . stringmconcat "," . fmap pp $ cs) <+> "=>" <+> pp ty
@@ -111,7 +129,7 @@ instance Pretty HsData where
                               <+> "where"
                               <-> indent 2 "show _ ="
                               <+> "\"unshowable{"<> (pp (hsDataName d)) <> "}\""
-                            False -> newline <> indent 2 ("deriving Show" <> newline))
+                            False -> newline <> indent 2 ("deriving Show"))
 
 data HsDataCon
   = HsDataCon
@@ -144,6 +162,7 @@ instance Pretty HsRecord where
 data HsField
   = HsField
   { hsFieldName        :: Variable
+  , hsFieldFVars       :: [Variable]
   , hsFieldConstraints :: [HsConstraint]
   , hsFieldType        :: HsType }
   deriving (Eq,Show)
@@ -151,6 +170,10 @@ data HsField
 instance Pretty HsField where
   pp f = pp (hsFieldName f)
          <+> "::"
+         <>  (case hsFieldFVars f of
+                [] -> mempty
+                (v:vs) -> " " <> "forall" <+> smconcat (fmap pp (v:vs)) <> "."
+             )
          <>  (case hsFieldConstraints f of
                 []     -> mempty
                 (c:cs) -> " " <> parens (stringmconcat "," (fmap pp (c:cs))) <+> "=>"
@@ -186,6 +209,7 @@ instance Pretty HsFun where
 
 data HsTerm
   = HsLet Variable HsTerm HsTerm
+  | HsAnn HsTerm HsType
   | HsLit Int
   | HsAdd HsTerm HsTerm
   | HsVar Variable
@@ -196,24 +220,31 @@ data HsTerm
   | HsFail
   deriving (Eq,Show)
 
-{- `distributeArgs` will take a constructor and its arguments and construct a
-   term applying the constructor to all of its arguments -}
-distributeArgs :: (Variable,[HsTerm]) -> HsTerm
-distributeArgs (k,ts) = foldl HsApp (HsCons k) ts
+hsApps :: HsTerm -> [HsTerm] -> HsTerm
+hsApps = foldl HsApp
 
 {- The Int passed in is the indentation level and precedence -}
 instance Pretty HsTerm where
+  -- ^ NOTA BENE: This is a special very hacky case to deal with Haskell's type
+  -- inference. If the term of a let is annotated and equal to
+  ppInd i (HsLet s a (HsAnn b ty)) | b == (HsVar s)
+    = (smconcat ["let {",pp s,"::",pp ty])
+      <-> indent i (smconcat ["     ;",pp s,"="])
+      <-> indent (i+1) (ppInd (i+1) a) <+> "}"
+      <-> indent i "in"
+      <-> indent (i+1) (ppInd (i+1) b)
   ppInd i (HsLet s a b)
     = (smconcat ["let {",pp s,"="])
       <-> indent (i+1) (ppInd (i+1) a) <+> "}"
       <-> indent i "in"
       <-> indent (i+1) (ppInd (i+1) b)
-  ppInd _ (HsLit n) = parens (show n <+> "::" <+> "Integer")
+  ppInd i (HsAnn t ty) = ppInd i t <+> "::" <+> ppInd i ty
+  ppInd _ (HsLit n) = show n
   ppInd i (HsAdd a b) = ppAtomicInd i a <+> "+" <+> ppAtomicInd i b
   ppInd _ (HsVar s) = pp s
   ppInd i (HsLam s t)
     = parens ( "\\" <> pp s <+> "->" <+> (ppInd (i+3) t))
-  ppInd i (HsApp a b) = ppAtomicInd i a <+> ppAtomicInd i b
+  ppInd i (HsApp a b) = ppInd i a <+> ppAtomicInd i b
   ppInd _ (HsCons s) = pp s
   ppInd i (HsCase t alts) =
     "case" <+> ppInd (i+5) t <+> "of"

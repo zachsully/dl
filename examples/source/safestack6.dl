@@ -13,14 +13,12 @@ codata Stack n
   { Push : Succ n = m => Stack n -> Int -> Stack m
   , Pop  : n = Succ m => Stack n -> With Int (Stack m) }
 
-let mkStack = fix s in
+let mkStack = (fix s in
   { # (Cons x xs) ->
     { Push # y    -> s (Cons y (Cons x xs))
     , Fst [Pop #] -> x
-    , Snd [Pop #] -> s xs } } in
+    , Snd [Pop #] -> s xs } }) : List Int -> Stack n in
 
 let empty = { Push # x -> mkStack (Cons x Nil) } : Stack Zero in
 
-let stackTwo = cocase [Push [[Push #] 1] 2] empty in
-
-cocase [Pop [Snd [Pop [Snd [Pop #]]]]] stackTwo
+cocase [Push [Push [[Push #] 1] 2] 3] empty

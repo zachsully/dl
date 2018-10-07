@@ -25,6 +25,7 @@ import Control.Monad.Reader
 import Data.Monoid ((<>))
 import DL.Syntax.Top
 import DL.Syntax.Term
+import DL.Syntax.Type
 import DL.Syntax.Variable
 import DL.Pretty
 
@@ -34,35 +35,25 @@ import DL.Pretty
 -- | FlatTerms where added because in addition to having only flat (co)patterns,
 -- they also have (co)case statements that contain defaults. FlatTerms are a
 -- subset of Terms.
-data FlatTerm :: * where
-  FLet       :: Variable -> FlatTerm -> FlatTerm -> FlatTerm
-  FVar       :: Variable -> FlatTerm
-  FFix       :: Variable -> FlatTerm -> FlatTerm
+data FlatTerm
+  = FLet Variable FlatTerm FlatTerm
+  | FVar Variable
+  | FFix Variable FlatTerm
+  | FAnn FlatTerm Type
 
-  FLit       :: Int -> FlatTerm
-  FAdd       :: FlatTerm -> FlatTerm -> FlatTerm
+  | FLit Int
+  | FAdd FlatTerm FlatTerm
 
-  FConsApp   :: Variable -> [FlatTerm] -> FlatTerm
-  -- | Interrogated term -> Alternative -> Default case
-  FCase      :: FlatTerm
-             -> (FlatPattern,FlatTerm)
-             -> (Variable,FlatTerm)
-             -> FlatTerm
-  FCaseEmpty :: FlatTerm -> FlatTerm
+  | FConsApp Variable [FlatTerm]
+  | FCase FlatTerm (FlatPattern,FlatTerm) (Variable,FlatTerm)   -- | Interrogated term -> Alternative -> Default case
+  | FCaseEmpty FlatTerm
 
-  FCocase    :: FlatObsCtx -> FlatTerm -> FlatTerm
-  -- | Copattern match on applicative
-  FFun       :: Variable -> FlatTerm -> FlatTerm
-  -- | Destructor coalternative -> default case
-  FCoalt     :: (Variable,FlatTerm)
-             -> FlatTerm
-             -> FlatTerm
-  -- | Like a shift operation, the variable bould is a covariable
-  FShift     :: Variable -> FlatTerm -> FlatTerm
-  -- | A failure copattern match
-  FEmpty     :: FlatTerm
-
-  FPrompt    :: FlatTerm -> FlatTerm
+  | FCocase FlatObsCtx FlatTerm
+  | FFun Variable FlatTerm   -- | Copattern match on applicative
+  | FCoalt (Variable,FlatTerm) FlatTerm   -- | Destructor coalternative -> default case
+  | FShift Variable FlatTerm  -- | Like a shift operation, the variable bould is a covariable
+  | FEmpty   -- | A failure copattern match
+  | FPrompt FlatTerm
   deriving (Eq,Show)
 
 instance Pretty FlatTerm where
@@ -73,6 +64,7 @@ instance Pretty FlatTerm where
   ppInd _ (FVar s)         = pp s
   ppInd i (FFix s t)       = "fix" <+> pp s <+> "in"
                            <-> indent (i+5) (ppInd (i+5) t)
+  ppInd _ (FAnn t ty)      = pp t <+> ":" <+> pp ty
   ppInd i (FLet s a b)     = "let" <+> pp s <+> "=" <+> ppInd (i+1) a
                             <-> indent i ("in" <+> ppInd (i+3) b)
   ppInd _ (FConsApp k [])  = pp k
@@ -105,6 +97,7 @@ atomic :: FlatTerm -> Bool
 atomic (FLet _ _ _) = False
 atomic (FVar _) = True
 atomic (FFix _ _) = False
+atomic (FAnn _ _) = False
 atomic (FLit _) = True
 atomic (FAdd _ _) = False
 atomic (FConsApp _ []) = True
@@ -166,6 +159,7 @@ unflatten :: FlatTerm -> Term
 unflatten (FLet v e t) = Let v (unflatten e) (unflatten t)
 unflatten (FVar v) = Var v
 unflatten (FFix v t) = Fix v (unflatten t)
+unflatten (FAnn t ty) = Ann (unflatten t) ty
 unflatten (FLit i) = Lit i
 unflatten (FAdd a b) = Add (unflatten a) (unflatten b)
 unflatten (FConsApp k ts) = distributeArgs (k,fmap unflatten ts)
@@ -271,7 +265,7 @@ flatten w t = fst (runState (runReaderT (unFlatM (flatten' t)) w) 0)
 -- | flatten' is the heart of the flattening pass. The interesting cases are
 -- Cons and Dests (which are eta expanded) and Case, Cocase, and Coalternatives.
 flatten' :: Term -> FlatM FlatTerm
-flatten' (Ann t _)     = flatten' t
+flatten' (Ann t ty)    = FAnn <$> flatten' t <*> pure ty
 flatten' (Prompt t)    = FPrompt <$> flatten' t
 flatten' (App a b)     = FCocase <$> (FlatObsFun <$> flatten' b) <*> flatten' a
 flatten' (Let v a b)   = FLet v <$> flatten' a <*> flatten' b

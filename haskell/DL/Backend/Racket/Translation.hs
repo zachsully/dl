@@ -139,6 +139,7 @@ transTerm :: FlatTerm -> Term
 transTerm (FLet v a b) = Let v (transTerm a) (transTerm b)
 transTerm (FFix v a) = let a' = transTerm a in Let v a' a'
 transTerm (FVar v) = Var v
+transTerm (FAnn t _) = transTerm t
 
 transTerm (FLit i) = Lit i
 transTerm (FAdd a b) = Add (transTerm a) (transTerm b)

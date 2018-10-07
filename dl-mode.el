@@ -1,3 +1,5 @@
+;; -*- lexical-binding: t -*-
+
 (defgroup dl-faces nil
   "Fonts and colours for DL mode.
 

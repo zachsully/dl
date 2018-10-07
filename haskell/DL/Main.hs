@@ -1,5 +1,6 @@
 module Main where
 
+import Text.Read (readMaybe)
 import Options.Applicative
 import Control.Monad.State
 import Control.Monad (when)
@@ -19,7 +20,6 @@ import DL.Syntax.Flat
 import DL.Prelude
 import DL.Parser.Lexer
 import DL.Parser.Parser
-import DL.Evaluation.Strategy
 import DL.Evaluation.Interpreter
 import DL.Rename
 import DL.Typecheck
@@ -37,9 +37,7 @@ data FlattenMode
 data CompileMode
   = CompileMode
   { cmDebug   :: Bool
-  , cmStrat   :: Strategy
-  , cmUntyped :: Bool
-  , cmOO      :: Bool
+  , cmBackend :: Backend
   , cmInput   :: FilePath
   , cmOutput  :: FilePath }
 
@@ -71,18 +69,16 @@ parseCompile = CompileMode
            <$> switch (  long "debug"
                       <> short 'D'
                       <> help "debug mode" )
-           <*> argument (str >>= \s ->
-                            case s of
-                              "call-by-value" -> return CallByValue
-                              "call-by-name" -> return CallByName
-                              _ -> readerError (s <+> "is not a valid evaluation strategy.")
+           <*> argument (str >>= \s -> return $
+                            case (readMaybe s) :: Maybe Int of
+                              Just 0 -> hsCompile
+                              Just 1 -> mlCompile
+                              Just 2 -> rktCompile
+                              Just 3 -> jsCompile
+                              _ -> error (s <+> "is not a valid backend")
                         )
-                        (   metavar "STRATEGY"
-                         <> help "specify 'call-by-value' or 'call-by-name' evaluation strategy")
-           <*> switch (  long "untyped"
-                      <> help "compile to an untyped language" )
-           <*> switch (  long "oo"
-                      <> help "compile to an object-oriented language" )
+                        (   metavar "BACKEND"
+                         <> help "0 -> Haskell\n1 -> Ocaml\n2 -> Racket\n3 -> JavaScript")
            <*> inputFp
            <*> strArgument (metavar "OUTPUT" <> help "output source file")
 
@@ -160,14 +156,7 @@ stdPipeline fp debug =
 
 runCompile :: CompileMode -> (Top.Program FlatTerm,Ty.Type) -> IO ()
 runCompile cm (pgm,_) =
-  let !prog' = (case (cmStrat cm,cmUntyped cm,cmOO cm) of
-                  (CallByName,False,False)  -> runBackend hsCompile
-                  (CallByName,True,False)   -> error "not existing call-by-name untyped translation"
-                  (CallByValue,False,False) -> runBackend mlCompile
-                  (CallByValue,True,False)  -> runBackend rktCompile
-                  (CallByValue,True,True)   -> runBackend jsCompile
-                  (_,_,True)                -> error "not existing object oriented translation")
-               $ pgm in
+  let !prog' = runBackend (cmBackend cm) pgm in
     case cmOutput cm of
       "-" -> putStrLn prog'
       fp  -> writeFile fp prog'

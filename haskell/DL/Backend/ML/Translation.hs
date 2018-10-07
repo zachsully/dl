@@ -182,6 +182,7 @@ transTerm (FFix v a) =
   let a' = Lazy . transTerm $ a in
     Let v (substTerm (Force (Var v)) (Var v) a') (Force (Var v))
 transTerm (FVar v) = Var v
+transTerm (FAnn t _) = transTerm t
 
 transTerm (FLit i) = Lit i
 transTerm (FAdd a b) = Add (transTerm a) (transTerm b)
