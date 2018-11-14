@@ -110,4 +110,7 @@ transTerm' (FCoalt (v, t) a) = do t' <- transTerm' t
 
 transTerm' (FEmpty) = return $ JSFail
 
-transTerm' _ = error "transTerm'"
+transTerm' (FAnn t _) = transTerm' t
+transTerm' (FCocase (FlatObsCut _) _) = error "transTerm'{cut}"
+transTerm' (FShift _ _) = error "transTerm'{shift}"
+transTerm' (FPrompt t) = transTerm' t
