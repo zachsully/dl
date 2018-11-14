@@ -2,7 +2,10 @@
 
 # A Prototype Compiler for λcop
 
-`dl` is a compiler for λcop capable of generating code for Haskell, Ocaml, and
+λcop is a language with recursive (co)data types and nested (co)pattern matching
+presented in
+[Sullivan '18](https://www.cs.uoregon.edu/Reports/MS-201806-Sullivan.pdf). `dl`
+is a compiler for λcop capable of generating code for Haskell, Ocaml, and
 Racket.
 
 ## Example Program
@@ -16,37 +19,25 @@ codata Stream a
   , Tail : Stream a -> Stream a }
 
 let zipwith = (fix f in { Head [# o a b] -> o (Head a) (Head b)
-                        , Tail [# o a b] -> f o (Tail a) (Tail b) })
-in let fib = (fix x in
-                { Head # -> 1
-    	        , Head [Tail #] -> 1
-                , Tail [Tail #] -> zipwith ({# p q -> p + q}) x (Tail x) })
-   in Head (Tail (Tail (Tail (Tail fib))))
+                        , Tail [# o a b] -> f o (Tail a) (Tail b) }) in
+let fib = (fix x in
+             { Head # -> 1
+    	     , Head [Tail #] -> 1
+             , Tail [Tail #] -> zipwith {# p q -> p + q} x (Tail x) })
+in Head (Tail (Tail (Tail (Tail fib))))
 ```
 
-## Running and Compiling
+## Compiling
 
-* Repl
-```
-dl repl
-```
+`dl` features several compilers that are invoked with the following command.
 
-* Interpreter
 ```
-dl eval <file-in>
+dl compile <compiler-num> <file-in> <file-out>
 ```
 
-* Haskell
-```
-dl compile call-by-name <file-in> <file-out>
-```
-
-* Ocaml
-```
-dl compile call-by-value <file-in> <file-out>
-```
-
-* Racket
-```
-dl compile call-by-value --untyped <file-in> <file-out>
-```
+| Backend | compiler-num |
+|---------|--------------|
+| Haskell | 0 |
+| Ocaml   | 1 |
+| Racket  | 2 |
+| JavaScript | 3 |
