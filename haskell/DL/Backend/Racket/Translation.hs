@@ -160,7 +160,7 @@ transTerm (FCocase (FlatObsDest h) t) = App (Var (Variable "obs" <> h))
                                             (transTerm t)
 transTerm (FCocase (FlatObsCut _) _) = error "transTerm{FlatObsCut}"
 transTerm (FShift _ _) = error "transTerm{FShift}"
-transTerm (FPrompt _) = error "transTerm{FPrompt}"
+transTerm (FPrompt t) = transTerm t
 
 transPat :: FlatPattern -> Pattern
 transPat (FlatPatVar v)     = PVar v

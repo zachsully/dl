@@ -10,7 +10,6 @@ import System.Exit
 
 -- local
 import qualified DL.Syntax.Term            as T
-import qualified DL.Syntax.Type            as Ty
 import qualified DL.Syntax.Top             as Top
 import DL.Backend
 import DL.Backend.Haskell
@@ -130,7 +129,7 @@ main = do { mode <- parseMode
               Repl        -> runRepl
           }
 
-stdPipeline :: FilePath -> Bool -> IO (Top.Program FlatTerm, Ty.Type)
+stdPipeline :: FilePath -> Bool -> IO (Top.Program FlatTerm)
 stdPipeline fp debug =
   do { pgm <- getProgram fp
      ; when debug $
@@ -139,7 +138,7 @@ stdPipeline fp debug =
             ; putStrLn "" }
      ; let pgm' :: Top.Program T.Term
            pgm' = renamePgm pgm
-     ; ety <- typeCheckPgm (TcConfig debug) pgm
+     -- ; ety <- typeCheckPgm (TcConfig debug) pgm
      ; when debug $
          do { putStrLn "====== Renamed ======="
             ; pprint pgm'
@@ -150,24 +149,25 @@ stdPipeline fp debug =
          do { putStrLn "====== Flattened ======"
             ; pprint pgm''
             ; putStrLn "" }
-     ; case ety of
-         Right ty -> return (pgm'',ty)
-         Left e -> putStrLn e >> exitWith (ExitFailure 1)
+     ; return pgm''
+     -- ; case ety of
+     --     Right ty -> return (pgm'',ty)
+     --     Left e -> putStrLn e >> exitWith (ExitFailure 1)
      }
 
-runCompile :: CompileMode -> (Top.Program FlatTerm,Ty.Type) -> IO ()
-runCompile cm (pgm,_) =
+runCompile :: CompileMode -> Top.Program FlatTerm -> IO ()
+runCompile cm pgm =
   let !prog' = runBackend (cmBackend cm) pgm in
     case cmOutput cm of
       "-" -> putStrLn prog'
       fp  -> writeFile fp prog'
 
-runEvaluate :: EvalMode -> (Top.Program FlatTerm,Ty.Type) -> IO ()
-runEvaluate _ (pgm,ty) =
+runEvaluate :: EvalMode -> Top.Program FlatTerm -> IO ()
+runEvaluate _ pgm =
   do { putStrLn "====== Evaluated ======"
      ; case runStd (interpPgm pgm) of
-         Left s -> putStrLn s >> putStrLn (pp ty)
-         Right a -> putStrLn (pp a <+> ":" <+> pp ty)
+         Left s -> putStrLn s
+         Right a -> putStrLn (pp a)
      }
 
 runTypeOf :: TypeMode -> IO ()
