@@ -1,4 +1,4 @@
-module DL.Typecheck
+module DL.Surface.Typecheck
   ( TcConfig (..)
   , typeCheckPgm
   ) where
@@ -7,12 +7,12 @@ import Control.Monad
 import Data.Map.Lazy hiding (foldr)
 import qualified Data.Set as Set
 
-import DL.Pretty
-import DL.Syntax.Type
-import DL.Syntax.Term
-import DL.Syntax.Top
-import DL.Syntax.Variable
-import DL.Utils
+import DL.Surface.Syntax
+import DL.General.Type
+import DL.General.Top
+import DL.General.Variable
+import DL.Utils.StdMonad
+import DL.Utils.Pretty
 
 --------------------------------------------------------------------------------
 --                            Environments                                    --

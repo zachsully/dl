@@ -8,21 +8,21 @@ import System.Directory
 import System.Exit
 import Text.Read
 
-import DL.Syntax.Top
-import DL.Syntax.Term
-import DL.Syntax.Flat
-import DL.Evaluation.Interpreter
-import DL.Typecheck
-import DL.Utils
-import DL.IO
-import DL.Pretty
-import qualified DL.Syntax.Flat               as F
-import qualified DL.Syntax.Type               as Ty
 import DL.Backend
 import DL.Backend.JavaScript
 import DL.Backend.ML
 import DL.Backend.Racket
 import DL.Backend.Haskell
+import DL.General.Top
+import qualified DL.General.Type as Ty
+import DL.Flat.Syntax
+import DL.Flat.Interpreter
+import qualified DL.Flat.Syntax as F
+import DL.Surface.Syntax
+import DL.Surface.Typecheck
+import DL.Utils.StdMonad
+import DL.Utils.IO
+import DL.Utils.Pretty
 
 expectedTypeErrors,expectedOutputErrors :: Int
 expectedTypeErrors = 3
@@ -77,7 +77,7 @@ instance Pretty TestCase where
                                )
     , "eval output?      " <+> (case e of
                             Nothing -> "none"
-                            Just n -> "some" <> DL.Pretty.parens (show n)
+                            Just n -> "some" <> DL.Utils.Pretty.parens (show n)
                          )
     , "", ""
     ]

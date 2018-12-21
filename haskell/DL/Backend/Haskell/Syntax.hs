@@ -1,9 +1,9 @@
 module DL.Backend.Haskell.Syntax where
 
 import qualified Data.Set as Set
-import DL.Syntax.Variable
-import DL.Pretty
-import DL.Utils
+import DL.General.Variable
+import DL.Utils.Pretty
+import DL.Utils.StdMonad
 
 data HsProgram
   = HsPgm

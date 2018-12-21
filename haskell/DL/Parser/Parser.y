@@ -14,13 +14,13 @@ import Control.Monad
 import Data.Monoid
 
 import DL.Parser.Lexer
-import DL.Syntax.Top
-import DL.Syntax.Term
-import DL.Syntax.Variable
-import DL.Syntax.Kind
-import DL.Syntax.Type
-import DL.Utils
-import DL.Pretty
+import DL.Surface.Syntax
+import DL.General.Top
+import DL.General.Variable
+import DL.General.Kind
+import DL.General.Type
+import DL.Utils.StdMonad
+import DL.Utils.Pretty
 }
 -- All shift/reduce conflicts
 %expect 34

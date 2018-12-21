@@ -1,10 +1,10 @@
-module DL.Utils where
+module DL.Utils.StdMonad where
 
 import Control.Monad
 import Data.Set
 
-import DL.Syntax.Variable
-import DL.Pretty
+import DL.General.Variable
+import DL.Utils.Pretty
 
 foldrWithIndex :: (Int -> a -> b -> b) -> b -> [a] -> b
 foldrWithIndex f b = snd . Prelude.foldr (\a (i,x) -> (i+1,f i a x)) (0,b)

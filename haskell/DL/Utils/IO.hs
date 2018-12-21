@@ -1,10 +1,10 @@
 {-# LANGUAGE BangPatterns #-}
-module DL.IO where
+module DL.Utils.IO where
 
-import DL.Syntax.Top
-import DL.Syntax.Term
 import DL.Parser.Parser
 import DL.Parser.Lexer
+import DL.General.Top
+import DL.Surface.Syntax
 
 import System.Directory
 import System.Exit

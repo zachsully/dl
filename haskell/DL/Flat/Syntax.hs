@@ -9,7 +9,7 @@ Module      : DL.Syntax.Flat
 Description : Gives the flat core language for the compiler. Provides a
               transformation from the source to core language
 -}
-module DL.Syntax.Flat
+module DL.Flat.Syntax
   ( -- * Core flat language
     FlatTerm (..)
   , FlatPattern (..)
@@ -23,11 +23,11 @@ module DL.Syntax.Flat
 import Control.Monad.State
 import Control.Monad.Reader
 import Data.Monoid ((<>))
-import DL.Syntax.Top
-import DL.Syntax.Term
-import DL.Syntax.Type
-import DL.Syntax.Variable
-import DL.Pretty
+import DL.General.Top
+import DL.General.Type
+import DL.General.Variable
+import DL.Surface.Syntax
+import DL.Utils.Pretty
 
 --------------------------------------------------------------------------------
 --                              Flat Terms                                    --

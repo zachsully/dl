@@ -9,23 +9,23 @@ import System.IO
 import System.Exit
 
 -- local
-import qualified DL.Syntax.Term            as T
-import qualified DL.Syntax.Top             as Top
+import qualified DL.Surface.Syntax         as T
+import qualified DL.General.Top            as Top
 import DL.Backend
 import DL.Backend.Haskell
 import DL.Backend.ML
 import DL.Backend.Racket
 import DL.Backend.JavaScript
-import DL.Syntax.Flat
-import DL.Prelude
+import DL.Flat.Syntax
+import DL.Flat.Interpreter
 import DL.Parser.Lexer
 import DL.Parser.Parser
-import DL.Evaluation.Interpreter
-import DL.Rename
-import DL.Typecheck
-import DL.Utils
-import DL.Pretty
-import DL.IO
+import DL.Surface.Prelude
+import DL.Surface.Rename
+import DL.Surface.Typecheck
+import DL.Utils.StdMonad
+import DL.Utils.Pretty
+import DL.Utils.IO
 
 --------------------------------------------------------------------------------
 --                              Cmdline Options                               --

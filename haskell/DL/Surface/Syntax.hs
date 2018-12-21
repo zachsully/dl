@@ -1,13 +1,13 @@
 {-# LANGUAGE GADTs, DataKinds, RankNTypes, KindSignatures #-}
-module DL.Syntax.Term where
+module DL.Surface.Syntax where
 
 import Data.Monoid ((<>))
 import Data.Set ((\\),singleton,empty,union,unions,Set)
 
-import DL.Syntax.Type
-import DL.Syntax.Variable
-import DL.Pretty
-import DL.Utils
+import DL.General.Type
+import DL.General.Variable
+import DL.Utils.Pretty
+import DL.Utils.FreeVars
 
 --------------------------------------------------------------------------------
 --                                 Terms                                      --

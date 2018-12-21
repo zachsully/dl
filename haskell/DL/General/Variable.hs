@@ -1,8 +1,8 @@
-module DL.Syntax.Variable where
+module DL.General.Variable where
 
 import qualified Data.Semigroup as S
 import qualified Data.Monoid as M
-import DL.Pretty
+import DL.Utils.Pretty
 
 newtype Variable = Variable String
   deriving Ord

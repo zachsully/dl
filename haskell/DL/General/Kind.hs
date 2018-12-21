@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-module DL.Syntax.Kind where
+module DL.General.Kind where
 
 data Kind where
   KStar :: Kind

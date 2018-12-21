@@ -1,4 +1,4 @@
-module DL.Pretty where
+module DL.Utils.Pretty where
 
 import Data.Char (toLower)
 

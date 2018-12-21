@@ -1,4 +1,4 @@
-module DL.Rename
+module DL.Surface.Rename
   ( renamePgm
   , renameDecl
   , renameTerm
@@ -6,10 +6,10 @@ module DL.Rename
 
 import Control.Monad
 import Data.Map.Lazy
-import DL.Syntax.Top
-import DL.Syntax.Term
-import DL.Syntax.Variable
-import DL.Pretty
+import DL.Surface.Syntax
+import DL.General.Top
+import DL.General.Variable
+import DL.Utils.Pretty
 import Prelude hiding (lookup)
 
 data RnState

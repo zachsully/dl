@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module DL.Syntax.Top
+module DL.General.Top
   ( Program (..)
   , pgmConsDestArity
   , Metadata (..), Behavior (..)
@@ -18,9 +18,9 @@ module DL.Syntax.Top
   ) where
 
 import Control.Arrow ((&&&),(<<<))
-import DL.Pretty
-import DL.Syntax.Type
-import DL.Syntax.Variable
+import DL.Utils.Pretty
+import DL.General.Type
+import DL.General.Variable
 
 --------------------------------------------------------------------------------
 --                             Top Level                                      --

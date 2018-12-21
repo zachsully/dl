@@ -5,15 +5,15 @@
       TypeFamilies,
       UnicodeSyntax
 #-}
-module DL.Evaluation.Interpreter ( interpPgm ) where
+module DL.Flat.Interpreter ( interpPgm ) where
 
 import Control.Monad.State
-import DL.Utils
-import DL.Pretty
-import DL.Syntax.Top
-import DL.Syntax.Flat
-import DL.Syntax.Variable
-import DL.Evaluation.Strategy
+import DL.Utils.StdMonad
+import DL.Utils.Pretty
+import DL.Flat.Syntax
+import DL.General.Top
+import DL.General.Variable
+import DL.General.Strategy
 
 data EvalCtx :: Strategy -> * where
   EEmpty   :: EvalCtx s

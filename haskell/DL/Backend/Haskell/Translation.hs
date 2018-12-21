@@ -1,15 +1,16 @@
 module DL.Backend.Haskell.Translation
   (hsCompile) where
 
+import qualified Data.Set as Set
+
 import DL.Backend
 import DL.Backend.Haskell.Syntax
-import qualified Data.Set as Set
-import DL.Syntax.Type
-import DL.Syntax.Top
-import DL.Syntax.Flat
-import DL.Syntax.Variable
-import DL.Utils
-import DL.Pretty
+import DL.General.Type
+import DL.General.Top
+import DL.General.Variable
+import DL.Flat.Syntax
+import DL.Utils.StdMonad
+import DL.Utils.Pretty
 
 hsCompile :: Backend
 hsCompile = Backend trans

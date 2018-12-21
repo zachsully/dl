@@ -1,10 +1,10 @@
-module DL.Syntax.Type where
+module DL.General.Type where
 
 import Data.Set hiding (foldl)
 
-import DL.Syntax.Variable
-import DL.Pretty
-import DL.Utils
+import DL.General.Variable
+import DL.Utils.Pretty
+import DL.Utils.StdMonad
 
 --------------------------------------------------------------------------------
 --                                  Kind                                      --

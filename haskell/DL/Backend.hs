@@ -1,9 +1,9 @@
 {-# LANGUAGE ExistentialQuantification #-}
 module DL.Backend (Backend (..),runBackend) where
 
-import DL.Syntax.Top
-import DL.Syntax.Flat
-import DL.Pretty
+import DL.General.Top
+import DL.Flat.Syntax
+import DL.Utils.Pretty
 
 -- | A Backend is an object for which we can apply on operation turning a
 -- FlatTerm into a String

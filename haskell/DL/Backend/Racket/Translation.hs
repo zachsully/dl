@@ -1,12 +1,13 @@
-module DL.Backend.Racket.Translation where
+module DL.Backend.Racket.Translation
+  (rktCompile) where
 
-import qualified DL.Syntax.Top  as Top
-import qualified DL.Syntax.Type as Ty
-import DL.Syntax.Flat
 import DL.Backend
 import DL.Backend.Racket.Syntax
-import DL.Syntax.Variable
-import DL.Utils
+import qualified DL.General.Top  as Top
+import qualified DL.General.Type as Ty
+import DL.General.Variable
+import DL.Flat.Syntax
+import DL.Utils.StdMonad
 
 rktCompile :: Backend
 rktCompile = Backend trans

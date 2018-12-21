@@ -1,8 +1,8 @@
 {-# LANGUAGE GADTs #-}
 module DL.Backend.ML.Syntax where
 
-import DL.Syntax.Variable
-import DL.Pretty
+import DL.General.Variable
+import DL.Utils.Pretty
 
 data Program
   = Pgm

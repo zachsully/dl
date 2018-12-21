@@ -3,8 +3,8 @@
 module DL.Backend.JavaScript.Syntax where
 
 import Data.List (isPrefixOf)
-import DL.Pretty
-import DL.Syntax.Variable
+import DL.General.Variable
+import DL.Utils.Pretty
 
 data Program
   = Pgm

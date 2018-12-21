@@ -1,13 +1,14 @@
-module DL.Backend.ML.Translation where
+module DL.Backend.ML.Translation
+  (mlCompile) where
 
-import qualified DL.Syntax.Type as Ty
-import qualified DL.Syntax.Top  as Top
-import DL.Syntax.Flat
-import DL.Syntax.Variable
 import DL.Backend
 import DL.Backend.ML.Syntax
-import DL.Pretty
-import DL.Utils
+import qualified DL.General.Type as Ty
+import qualified DL.General.Top  as Top
+import DL.General.Variable
+import DL.Flat.Syntax
+import DL.Utils.Pretty
+import DL.Utils.StdMonad
 
 mlCompile :: Backend
 mlCompile = Backend trans

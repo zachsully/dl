@@ -2,12 +2,12 @@
    This module contains a number of the standard data declarations including
    pairs and optional values.
 -}
-module DL.Prelude where
+module DL.Surface.Prelude where
 
-import DL.Syntax.Term
-import DL.Syntax.Variable
-import DL.Syntax.Type
-import DL.Syntax.Top
+import DL.Surface.Syntax
+import DL.General.Variable
+import DL.General.Type
+import DL.General.Top
 
 prelude :: [Decl]
 prelude = [unitDecl,pairDecl,eitherDecl,boolDecl,listDecl
