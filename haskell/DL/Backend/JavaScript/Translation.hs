@@ -95,14 +95,6 @@ transTerm' (FCase t ((FlatPatCons p ps),a) (v,u)) = do t' <- transTerm' t
 
 transTerm' (FCaseEmpty t) = transTerm' t
 
-transTerm' (FCocase (FlatObsDest v) t) = do t' <- transTerm' t
-                                            return $ JSMethod v t'
-
-
-transTerm' (FCocase (FlatObsFun a) b) = do a' <- transTerm' a
-                                           b' <- transTerm' b
-                                           return $ JSApp b' a'
-
 transTerm' (FFun v t) = do t' <- transTerm' t
                            return $ JSFun v t'
 
@@ -113,6 +105,12 @@ transTerm' (FCoalt (v, t) a) = do t' <- transTerm' t
 transTerm' (FEmpty) = return $ JSFail
 
 transTerm' (FAnn t _) = transTerm' t
-transTerm' (FCocase (FlatObsCut _) _) = error "transTerm'{cut}"
 transTerm' (FShift _ _) = error "transTerm'{shift}"
 transTerm' (FPrompt t) = transTerm' t
+
+transTerm' (FObsApp a b) =
+  do { a' <- transTerm' a
+     ; b' <- transTerm' b
+     ; return $ JSApp b' a' }
+transTerm' (FObsDest v t) = JSMethod v <$> transTerm' t
+transTerm' (FObsCut _ _) = error "transTerm'{cut}"

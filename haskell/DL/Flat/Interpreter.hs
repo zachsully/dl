@@ -1,10 +1,4 @@
-{-# LANGUAGE
-      DataKinds,
-      GADTs,
-      KindSignatures,
-      TypeFamilies,
-      UnicodeSyntax
-#-}
+{-# LANGUAGE DataKinds, TypeFamilies #-}
 module DL.Flat.Interpreter ( interpPgm ) where
 
 import Control.Monad.State
@@ -162,11 +156,11 @@ step (MState e (ECase k (p,u) (x,d)) t@(FConsApp cons as)) =
           in return (MState e' k u)
         False -> return (MState (extendEnvVar x (t,e) e) k d)
 
-step (MState e k (FCocase (FlatObsFun arg) t)) =
+step (MState e k (FObsApp arg t)) =
   return (MState e (EAppFun k arg) t)
-step (MState e k (FCocase (FlatObsDest h) t)) =
+step (MState e k (FObsDest h t)) =
   return (MState e (EAppDest h k) t)
-step (MState e k (FCocase (FlatObsCut v) t)) =
+step (MState e k (FObsCut v t)) =
   case lookup v (covars e) of
     Just k' -> return (MState e (plugEvalCtx k k') t)
     Nothing ->

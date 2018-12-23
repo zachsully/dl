@@ -156,12 +156,12 @@ transTerm (FCoalt (h,u) t) = App (App (Var (Variable "set" <> h)) (transTerm t))
                                  (Lazy . transTerm $ u)
 transTerm (FEmpty) = Fail
 transTerm (FFun v t) = Lam v (transTerm t)
-transTerm (FCocase (FlatObsFun e) t) = App (transTerm t) (transTerm e)
-transTerm (FCocase (FlatObsDest h) t) = App (Var (Variable "obs" <> h))
-                                            (transTerm t)
-transTerm (FCocase (FlatObsCut _) _) = error "transTerm{FlatObsCut}"
 transTerm (FShift _ _) = error "transTerm{FShift}"
 transTerm (FPrompt t) = transTerm t
+
+transTerm (FObsApp e t) = App (transTerm t) (transTerm e)
+transTerm (FObsDest h t) = App (Var (Variable "obs" <> h)) (transTerm t)
+transTerm (FObsCut _ _) = error "transTerm{FlatObsCut}"
 
 transPat :: FlatPattern -> Pattern
 transPat (FlatPatVar v)     = PVar v

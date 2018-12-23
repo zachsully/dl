@@ -162,12 +162,14 @@ transTerm (FCoalt (h,u) t) = HsApp (HsApp (HsVar (Variable "set_" <> h))
                                (transTerm u)
 transTerm (FEmpty) = HsFail
 transTerm (FFun v t) = HsLam v (transTerm t)
-transTerm (FCocase (FlatObsFun e) t) = HsApp (transTerm t) (transTerm e)
-transTerm (FCocase (FlatObsDest h) t) = HsApp (HsVar (Variable "_" <> h))
-                                              (transTerm t)
-transTerm (FCocase (FlatObsCut _) _) = error "transTerm{FlatObsCut}"
 transTerm (FShift _ _) = error "transTerm{FShift}"
 transTerm (FPrompt t) = transTerm t
+
+transTerm (FObsApp e t) = HsApp (transTerm t) (transTerm e)
+transTerm (FObsDest h t) = HsApp (HsVar (Variable "_" <> h))
+                                              (transTerm t)
+transTerm (FObsCut _ _) = error "transTerm{FlatObsCut}"
+
 
 transPat :: FlatPattern -> HsPattern
 transPat (FlatPatVar v)     = HsPVar v

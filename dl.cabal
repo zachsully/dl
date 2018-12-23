@@ -12,7 +12,7 @@ cabal-version:       >=1.10
 
 executable dl
   main-is:             DL/Main.hs
-  default-extensions:  UnicodeSyntax
+  default-extensions:  UnicodeSyntax, GADTs, KindSignatures
   GHC-Options :       -Wall -j6 -Werror
   hs-source-dirs:      haskell
   other-modules:       DL.Backend,
@@ -29,6 +29,7 @@ executable dl
                        DL.Backend.Racket.Translation,
                        DL.Backend.Racket.Syntax,
                        DL.Core.Data.Syntax,
+                       DL.Core.Data.ToLdata,
                        DL.Core.Codata.Syntax,
                        DL.General.Top,
                        DL.General.Type,
@@ -63,7 +64,7 @@ executable dl
 test-suite tests
   type:                exitcode-stdio-1.0
   main-is:             Tests.hs
-  default-extensions:  UnicodeSyntax
+  default-extensions:  UnicodeSyntax, GADTs, KindSignatures
   hs-source-dirs:      tests,haskell
   other-modules:       DL.Backend,
                        DL.Backend.Haskell,

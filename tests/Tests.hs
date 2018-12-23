@@ -20,6 +20,7 @@ import DL.Flat.Interpreter
 import qualified DL.Flat.Syntax as F
 import DL.Surface.Syntax
 import DL.Surface.Typecheck
+import DL.Surface.Flatten
 import DL.Utils.StdMonad
 import DL.Utils.IO
 import DL.Utils.Pretty
@@ -136,9 +137,10 @@ testFile fp =
                     }
      ; let fpgm = fmap flattenPgm mpgm
      ; let me = join (fmap interp fpgm)
-     -- ; mhs <- runIfJust (fmap interpHaskell fpgm)
-     -- ; mml <- runIfJust (fmap interpOcaml fpgm)
-     -- ; mrkt <- runIfJust (fmap interpRacket fpgm)
+     ; mhs  <- runIfJust (fmap interpHaskell fpgm)
+     ; mml  <- runIfJust (fmap interpOcaml fpgm)
+     ; mrkt <- runIfJust (fmap interpRacket fpgm)
+     ; mjs  <- runIfJust (fmap interpJS fpgm)
      ; return (TestCase { tfile     = fp
                         , tbehavior = mbehavior
                         , tpgm      = mpgm
@@ -160,12 +162,10 @@ interp prog =
     Right (F.FLit i) -> return i
     _ -> Nothing
 
-
 -- | Different interpreters for the backends
-interpHaskell,interpRacket,interpOcaml
+interpHaskell,interpRacket,interpOcaml,interpJS
   :: Program FlatTerm -> IO (Maybe Int)
 interpHaskell prog = interpretWith (runBackend hsCompile prog) "runhaskell"
 interpRacket  prog = interpretWith (runBackend rktCompile prog) "racket"
 interpOcaml   prog = interpretWith (runBackend mlCompile prog) "ocaml"
-
--- interpJS      prog = interpretWith prog "node"
+interpJS      prog = interpretWith (runBackend jsCompile prog) "node"

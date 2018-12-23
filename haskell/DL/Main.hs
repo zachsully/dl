@@ -23,6 +23,7 @@ import DL.Parser.Parser
 import DL.Surface.Prelude
 import DL.Surface.Rename
 import DL.Surface.Typecheck
+import DL.Surface.Flatten
 import DL.Utils.StdMonad
 import DL.Utils.Pretty
 import DL.Utils.IO
