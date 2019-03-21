@@ -1,32 +1,19 @@
 {-# LANGUAGE BangPatterns #-}
+{- |
+Module      : Main
+Description : Handles command line parsing and calling of compilers
+-}
 module Main where
 
 import Text.Read (readMaybe)
 import Options.Applicative
-import Control.Monad.State
-import Control.Monad (when)
-import System.IO
-import System.Exit
 
 -- local
-import qualified DL.Surface.Syntax         as T
-import qualified DL.General.Top            as Top
 import DL.Backend
-import DL.Backend.Haskell
-import DL.Backend.ML
-import DL.Backend.Racket
-import DL.Backend.JavaScript
+import DL.Flat.Backends
+import DL.Pipelines
 import DL.Flat.Syntax
-import DL.Flat.Interpreter
-import DL.Parser.Lexer
-import DL.Parser.Parser
-import DL.Surface.Prelude
-import DL.Surface.Rename
-import DL.Surface.Typecheck
-import DL.Surface.Flatten
-import DL.Utils.StdMonad
 import DL.Utils.Pretty
-import DL.Utils.IO
 
 --------------------------------------------------------------------------------
 --                              Cmdline Options                               --
@@ -38,7 +25,7 @@ data FlattenMode
 data CompileMode
   = CompileMode
   { cmDebug   :: Bool
-  , cmBackend :: Backend
+  , cmBackend :: Backend FlatTerm
   , cmInput   :: FilePath
   , cmOutput  :: FilePath }
 
@@ -121,89 +108,12 @@ parseMode = execParser
 --------------------------------------------------------------------------------
 
 main :: IO ()
-main = do { mode <- parseMode
-          ; case mode of
-              Flatten fm  -> stdPipeline (fmInput fm) True >> return ()
-              Compile cm  -> runCompile cm =<< stdPipeline (cmInput cm) (cmDebug cm)
-              Evaluate em -> runEvaluate em =<< stdPipeline (emInput em) (emDebug em)
-              TypeOf tm   -> runTypeOf tm
-              Repl        -> runRepl
-          }
-
-stdPipeline :: FilePath -> Bool -> IO (Top.Program FlatTerm)
-stdPipeline fp debug =
-  do { pgm <- getProgram fp
-     ; when debug $
-         do { putStrLn "====== Parsed ======"
-            ; pprint pgm
-            ; putStrLn "" }
-     ; let pgm' :: Top.Program T.Term
-           pgm' = renamePgm pgm
-     -- ; ety <- typeCheckPgm (TcConfig debug) pgm
-     ; when debug $
-         do { putStrLn "====== Renamed ======="
-            ; pprint pgm'
-            ; putStrLn "" }
-     ; let pgm'' :: Top.Program FlatTerm
-           pgm'' = flattenPgm pgm'
-     ; when debug $
-         do { putStrLn "====== Flattened ======"
-            ; pprint pgm''
-            ; putStrLn "" }
-     ; return pgm''
-     -- ; case ety of
-     --     Right ty -> return (pgm'',ty)
-     --     Left e -> putStrLn e >> exitWith (ExitFailure 1)
-     }
-
-runCompile :: CompileMode -> Top.Program FlatTerm -> IO ()
-runCompile cm pgm =
-  let !prog' = runBackend (cmBackend cm) pgm in
-    case cmOutput cm of
-      "-" -> putStrLn prog'
-      fp  -> writeFile fp prog'
-
-runEvaluate :: EvalMode -> Top.Program FlatTerm -> IO ()
-runEvaluate _ pgm =
-  do { putStrLn "====== Evaluated ======"
-     ; case runStd (interpPgm pgm) of
-         Left s -> putStrLn s
-         Right a -> putStrLn (pp a)
-     }
-
-runTypeOf :: TypeMode -> IO ()
-runTypeOf tm =
-  do { pgm <- getProgram (tmInput tm)
-     ; when (tmDebug tm) $
-         do { putStrLn "====== Parsed ======"
-            ; pprint pgm
-            ; putStrLn "" }
-     ; when (tmDebug tm) (putStrLn "====== Type Checked ======")
-     ; ety <- typeCheckPgm (TcConfig (tmDebug tm)) pgm
-     ; case ety of
-         Left err -> putStrLn err >> exitWith (ExitFailure 1)
-         Right ty -> pprint ty >> exitWith ExitSuccess }
-
-runRepl :: IO ()
-runRepl =
-  do { hSetBuffering stdout NoBuffering
-     ; hSetBuffering stdin  LineBuffering
-     ; forever $
-         do { hPutStr stdout "# "
-            ; m <- lexString <$> hGetLine stdin
-            ; case m of
-                Left e -> hPutStrLn stdout e
-                Right ts ->
-                  case runParserM (parseTerm ts) (pStateFromDecls prelude) of
-                    Left e -> hPutStrLn stdout e
-                    Right (t,_) ->
-                      case runStd (interpPgm (flattenPgm (preludePgm t))) of
-                        Left s -> hPutStrLn stdout $ s
-                        Right a -> hPutStrLn stdout $ pp a
-                          -- case runStd (infer [] (reifyValue a)) of
-                          --   Left _ -> hPutStrLn stdout . pp $ a
-                          --   Right ty -> hPutStrLn stdout $
-                          --     pp a <+> ":" <+> pp ty
-            }
-
+main =
+  do { mode <- parseMode
+     ; case mode of
+         Flatten fm  -> stdPipeline (fmInput fm) True >> return ()
+         Compile cm  -> compilePipeline (cmInput cm) (cmOutput cm) (cmDebug cm) (cmBackend cm)
+         Evaluate em -> evalPipeline (emInput em) (emDebug em)
+         TypeOf tm   -> tcPipeline (tmInput tm) (tmDebug tm)
+         Repl        -> repl
      }

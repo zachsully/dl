@@ -99,3 +99,7 @@ pad s = " " <> s <> " "
 
 allLower :: String -> String
 allLower = fmap toLower
+
+ppEither :: (Pretty a, Pretty b) => Either a b -> String
+ppEither (Left a)  = pp a
+ppEither (Right b) = pp b

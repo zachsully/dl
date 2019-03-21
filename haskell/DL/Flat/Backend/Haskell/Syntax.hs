@@ -1,4 +1,4 @@
-module DL.Backend.Haskell.Syntax where
+module DL.Flat.Backend.Haskell.Syntax where
 
 import qualified Data.Set as Set
 import DL.General.Variable

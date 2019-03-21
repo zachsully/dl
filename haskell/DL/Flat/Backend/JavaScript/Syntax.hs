@@ -1,6 +1,6 @@
 {-# LANGUAGE GADTs #-}
 
-module DL.Backend.JavaScript.Syntax where
+module DL.Flat.Backend.JavaScript.Syntax where
 
 import Data.List (isPrefixOf)
 import DL.General.Variable

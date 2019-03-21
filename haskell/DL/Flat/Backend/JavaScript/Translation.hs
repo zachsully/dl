@@ -1,16 +1,16 @@
-module DL.Backend.JavaScript.Translation
+module DL.Flat.Backend.JavaScript.Translation
   (jsCompile) where
 
 import Data.List (foldl')
 
 import DL.Backend
-import DL.Backend.JavaScript.Syntax
 import qualified DL.General.Top as Top
 import DL.Flat.Syntax
+import DL.Flat.Backend.JavaScript.Syntax
 import DL.General.Variable
 import DL.Utils.StdMonad
 
-jsCompile :: Backend
+jsCompile :: Backend FlatTerm
 jsCompile = Backend trans
 
 trans :: Top.Program FlatTerm -> Program

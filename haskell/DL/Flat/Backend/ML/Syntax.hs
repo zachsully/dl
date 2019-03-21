@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-module DL.Backend.ML.Syntax where
+module DL.Flat.Backend.ML.Syntax where
 
 import DL.General.Variable
 import DL.Utils.Pretty

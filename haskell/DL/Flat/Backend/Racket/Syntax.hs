@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-module DL.Backend.Racket.Syntax where
+module DL.Flat.Backend.Racket.Syntax where
 
 import DL.General.Variable
 import DL.Utils.Pretty

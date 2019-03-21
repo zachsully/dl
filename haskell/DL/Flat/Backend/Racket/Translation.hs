@@ -1,15 +1,15 @@
-module DL.Backend.Racket.Translation
+module DL.Flat.Backend.Racket.Translation
   (rktCompile) where
 
 import DL.Backend
-import DL.Backend.Racket.Syntax
+import DL.Flat.Backend.Racket.Syntax
 import qualified DL.General.Top  as Top
 import qualified DL.General.Type as Ty
 import DL.General.Variable
 import DL.Flat.Syntax
 import DL.Utils.StdMonad
 
-rktCompile :: Backend
+rktCompile :: Backend FlatTerm
 rktCompile = Backend trans
 
 {- Local translation defines new functions when a declaration is transformed.

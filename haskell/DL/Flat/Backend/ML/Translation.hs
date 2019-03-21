@@ -1,16 +1,16 @@
-module DL.Backend.ML.Translation
+module DL.Flat.Backend.ML.Translation
   (mlCompile) where
 
 import DL.Backend
-import DL.Backend.ML.Syntax
 import qualified DL.General.Type as Ty
 import qualified DL.General.Top  as Top
 import DL.General.Variable
 import DL.Flat.Syntax
+import DL.Flat.Backend.ML.Syntax
 import DL.Utils.Pretty
 import DL.Utils.StdMonad
 
-mlCompile :: Backend
+mlCompile :: Backend FlatTerm
 mlCompile = Backend trans
 
 {- Local translation defines new functions when a declaration is transformed.
