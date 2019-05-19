@@ -34,8 +34,8 @@ parsePipe fp debug =
             ; putStrLn "" }
      ; return pgm }
 
-renamePipe :: Program Term -> Bool -> IO (Program Term)
-renamePipe pgm debug =
+renamePipe :: Bool -> Program Term -> IO (Program Term)
+renamePipe debug pgm =
   let pgm' = renamePgm pgm in
     do { when debug $
            do { putStrLn "====== Renamed ======="
@@ -43,8 +43,8 @@ renamePipe pgm debug =
               ; putStrLn "" }
        ; return pgm' }
 
-tcPipe :: Program Term -> Bool -> IO (Program Term)
-tcPipe pgm debug =
+tcPipe :: Bool -> Program Term -> IO (Program Term)
+tcPipe debug pgm =
   do { ety <- typeCheckPgm (TcConfig debug) pgm
      ; when debug $
          do { putStrLn "====== Type ======="
@@ -52,8 +52,8 @@ tcPipe pgm debug =
             ; putStrLn "" }
      ; return pgm }
 
-flattenPipe :: Program Term -> Bool -> IO (Program FlatTerm)
-flattenPipe pgm debug =
+flattenPipe :: Bool -> Program Term -> IO (Program FlatTerm)
+flattenPipe debug pgm =
   let pgm' = flattenPgm pgm in
     do { when debug $
            do { putStrLn "====== Flattened ======"
@@ -115,9 +115,10 @@ tcPipeline fp debug =
          Right ty -> pprint ty >> exitWith ExitSuccess }
 
 evalPipeline :: FilePath -> Bool -> IO ()
-evalPipeline fp _ =
-  do { putStrLn "====== Evaluated ======"
-     ; case runStd (interpPgm (undefined fp)) of
+evalPipeline fp debug =
+  do { pgm <- flattenPipe debug =<< tcPipe debug =<< renamePipe debug =<< parsePipe fp debug
+     ; putStrLn "====== Evaluated ======"
+     ; case runStd (interpPgm pgm) of
          Left s -> putStrLn s
          Right a -> putStrLn (pp a)
      }
