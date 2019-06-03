@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {- |
 Module      : DL.Pipelines
 Description : Define all of the DL compilation and interpretation pipelines
@@ -19,8 +20,10 @@ import DL.Surface.Typecheck
 import DL.Surface.Flatten
 import DL.Surface.Prelude
 import DL.General.Top
+import DL.General.Strategy
 import DL.Flat.Syntax
-import DL.Flat.Interpreter
+-- import DL.Flat.Interpreter
+import DL.Flat.Machine
 import DL.Utils.Pretty
 import DL.Utils.StdMonad
 import DL.Utils.IO
@@ -83,7 +86,7 @@ repl =
                   case runParserM (parseTerm ts) (pStateFromDecls prelude) of
                     Left e -> hPutStrLn stdout e
                     Right (t,_) ->
-                      case runStd (interpPgm (flattenPgm (preludePgm t))) of
+                      case runStd (runPgm CallByName (flattenPgm (preludePgm t))) of
                         Left s -> hPutStrLn stdout $ s
                         Right a -> hPutStrLn stdout $ pp a
                           -- case runStd (infer [] (reifyValue a)) of
@@ -114,11 +117,12 @@ tcPipeline fp debug =
          Left err -> putStrLn err >> exitWith (ExitFailure 1)
          Right ty -> pprint ty >> exitWith ExitSuccess }
 
-evalPipeline :: FilePath -> Bool -> IO ()
-evalPipeline fp debug =
-  do { pgm <- flattenPipe debug =<< tcPipe debug =<< renamePipe debug =<< parsePipe fp debug
+evalPipeline :: Strategy -> FilePath -> Bool -> IO ()
+evalPipeline strat fp debug =
+  do { pgm <- parsePipe fp debug
+     ; pgm' <- flattenPipe debug =<< tcPipe debug =<< renamePipe debug (addPrelude pgm)
      ; putStrLn "====== Evaluated ======"
-     ; case runStd (interpPgm pgm) of
+     ; case runStd (runPgm strat pgm') of
          Left s -> putStrLn s
          Right a -> putStrLn (pp a)
      }

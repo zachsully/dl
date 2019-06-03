@@ -7,6 +7,7 @@ module DL.Flat.Syntax
   ( -- * Core flat language
     FlatTerm (..)
   , FlatPattern (..)
+  , substFlatTerm
   ) where
 
 import DL.General.Type
@@ -50,6 +51,38 @@ data FlatTerm :: * where
   FObsDest   :: Variable -> FlatTerm -> FlatTerm
   FObsCut    :: Variable -> FlatTerm -> FlatTerm
   deriving (Eq,Show)
+
+
+
+substFlatTerm :: Variable -> FlatTerm -> FlatTerm -> FlatTerm
+substFlatTerm v t (FLet v' t0 t1) =
+  let t0' = if v == v' then t0 else substFlatTerm v t t0
+      t1' = substFlatTerm v t t1 in
+    FLet v' t0' t1'
+substFlatTerm v t (FVar v') = if v == v' then t else FVar v'
+substFlatTerm v t (FFix v' t0) = FFix v' (if v == v' then t0 else substFlatTerm v t t0)
+substFlatTerm v t (FAnn t0 ty) = FAnn (substFlatTerm v t t0) ty
+substFlatTerm _ _ (FLit i) = FLit i
+substFlatTerm v t (FAdd t0 t1) = FAdd (substFlatTerm v t t0) (substFlatTerm v t t1)
+substFlatTerm v t (FConsApp k args) = FConsApp k (fmap (substFlatTerm v t) args)
+substFlatTerm v t (FCase arg (FlatPatVar v0,t0) (v1,t1))
+  = FCase (substFlatTerm v t arg)
+          (FlatPatVar v0, if v == v0 then t0 else substFlatTerm v t t0)
+          (v1, if v == v1 then t1 else substFlatTerm v t t1)
+substFlatTerm v t (FCase arg (FlatPatCons k vs,t0) (v1,t1))
+  = FCase (substFlatTerm v t arg)
+          (FlatPatCons k vs, if elem v vs then t0 else substFlatTerm v t t0)
+          (v1, if v == v1 then t1 else substFlatTerm v t t1)
+substFlatTerm v t (FCaseEmpty t0) = FCaseEmpty (substFlatTerm v t t0)
+substFlatTerm v t (FFun v' t0) = FFun v' (if v == v' then t0 else substFlatTerm v t t0)
+substFlatTerm v t (FCoalt (h,t0) t1) = FCoalt (h, substFlatTerm v t t0) (substFlatTerm v t t1)
+substFlatTerm v t (FShift v' t0) = FShift v' (if v == v' then t0 else substFlatTerm v t t0)
+substFlatTerm _ _ FEmpty = FEmpty
+substFlatTerm v t (FPrompt t0) = FPrompt (substFlatTerm v t t0)
+substFlatTerm v t (FObsApp t0 t1) = FObsApp (substFlatTerm v t t0) (substFlatTerm v t t1)
+substFlatTerm v t (FObsDest h t0) = FObsDest h (substFlatTerm v t t0)
+substFlatTerm v t (FObsCut k t0) = FObsCut k (substFlatTerm v t t0)
+
 
 instance Pretty FlatTerm where
   ppInd _ (FLit i)         = show i

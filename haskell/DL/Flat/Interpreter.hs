@@ -1,5 +1,5 @@
-{-# LANGUAGE DataKinds, TypeFamilies #-}
-module DL.Flat.Interpreter ( interpPgm ) where
+{-# LANGUAGE DataKinds, KindSignatures #-}
+module DL.Flat.Interpreter (interpPgm) where
 
 import Control.Monad.State
 import DL.Utils.StdMonad
@@ -8,6 +8,10 @@ import DL.Flat.Syntax
 import DL.General.Top
 import DL.General.Variable
 import DL.General.Strategy
+
+--------------------------------------------------------------------------------
+--                            Olde Interpreter                                --
+--------------------------------------------------------------------------------
 
 data EvalCtx :: Strategy -> * where
   EEmpty   :: EvalCtx s

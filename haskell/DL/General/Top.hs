@@ -33,6 +33,9 @@ data Program t
   , pgmMetadata :: Metadata
   } deriving Show
 
+instance Functor Program where
+  fmap f pgm = pgm { pgmTerm = f (pgmTerm pgm) }
+
 data Metadata
   = Md
   { mdExpectedBehavior :: Behavior

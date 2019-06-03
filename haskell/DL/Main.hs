@@ -14,6 +14,7 @@ import DL.Flat.Backends
 import DL.Pipelines
 import DL.Flat.Syntax
 import DL.Utils.Pretty
+import DL.General.Strategy
 
 --------------------------------------------------------------------------------
 --                              Cmdline Options                               --
@@ -32,6 +33,7 @@ data CompileMode
 data EvalMode
   = EvalMode
   { emDebug  :: Bool
+  , emStrat  :: Strategy
   , emInput  :: FilePath }
 
 data TypeMode
@@ -75,6 +77,14 @@ parseEvaluate = EvalMode
            <$> switch (  long "debug"
                       <> short 'D'
                       <> help "debug mode" )
+           <*> argument (str >>= \s -> return $
+                            case s of
+                              "cbn" -> CallByName
+                              "cbv" -> CallByValue
+                              _ -> error (s <+> "is not a valid strategy. It must be either 'cbn' or 'cbv'")
+                        )
+                        (   metavar "STRATEGY"
+                         <> help "either 'cbn' or 'cbv'")
            <*> inputFp
 
 parseTypeOf :: Parser TypeMode
@@ -113,7 +123,7 @@ main =
      ; case mode of
          Flatten fm  -> stdPipeline (fmInput fm) True >> return ()
          Compile cm  -> compilePipeline (cmInput cm) (cmOutput cm) (cmDebug cm) (cmBackend cm)
-         Evaluate em -> evalPipeline (emInput em) (emDebug em)
+         Evaluate em -> evalPipeline (emStrat em) (emInput em) (emDebug em)
          TypeOf tm   -> tcPipeline (tmInput tm) (tmDebug tm)
          Repl        -> repl
      }

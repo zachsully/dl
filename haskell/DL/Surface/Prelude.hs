@@ -16,6 +16,9 @@ prelude = [unitDecl,pairDecl,eitherDecl,boolDecl,listDecl
 preludePgm :: Term -> Program Term
 preludePgm t = Pgm prelude t (Md Undefined)
 
+addPrelude :: Program Term -> Program Term
+addPrelude (Pgm decls t md) = Pgm (prelude <> decls) t md
+
 {-
 PROBLEMA: Because the prelude is not in scope when parsing, constructors and
 destructors are captured as just variables. So we need to traverse the AST to

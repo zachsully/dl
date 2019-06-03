@@ -145,7 +145,9 @@ flatten' (Cons k)      =
   case lookup k w of
     Just i  ->
       do { vs <- replicateM i (fresh (Variable "k"))
-         ; return (foldr (\v t -> FFun v t) (FConsApp k (fmap FVar vs)) vs) }
+         ; return (foldr (\v t -> FFun v t)
+                         (FConsApp k (fmap FVar (reverse vs)))
+                         vs) }
     Nothing -> error "flatten' should not happen"
 
 flatten' (Case t alts) = flattenAlts alts =<< flatten' t

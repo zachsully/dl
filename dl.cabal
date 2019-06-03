@@ -34,6 +34,7 @@ executable dl
                        DL.Parser.Parser,
                        DL.Flat.Syntax,
                        DL.Flat.Interpreter,
+                       DL.Flat.Machine,
                        DL.Flat.ToLdata,
                        DL.Flat.ToLcodata,
                        DL.Flat.Backends,
