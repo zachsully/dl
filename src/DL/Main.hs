@@ -1,9 +1,8 @@
+{-# LANGUAGE BangPatterns #-}
 module Main where
 
-import Data.Monoid
 import Options.Applicative
 import Control.Monad.State
-import Control.Monad (when)
 import System.IO
 
 -- local

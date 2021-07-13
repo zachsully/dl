@@ -21,6 +21,8 @@ instance Pretty Variable where
 instance Show Variable where
   show = unVariable
 
+instance Semigroup Variable where
+ (Variable a) <> (Variable b) = Variable (a <> b)
+
 instance Monoid Variable where
   mempty = Variable mempty
-  mappend (Variable a) (Variable b) = Variable (a <> b)

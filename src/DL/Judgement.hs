@@ -104,9 +104,11 @@ instance FV Env where
 applyEnv :: Subst → Env → Env
 applyEnv σ = Env . fmap (\(v,s) → (v,applyScheme σ s)) . unEnv
 
+instance Semigroup Env where
+  (Env a) <> (Env b) = Env (a <> b)
+
 instance Monoid Env where
-  mempty = Env []
-  mappend (Env a) (Env b) = Env (a <> b)
+  mempty = Env mempty
 
 
 {-

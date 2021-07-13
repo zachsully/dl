@@ -52,9 +52,11 @@ data Env = Env [(Variable,(Term,Env))]
 lookupEnv :: Variable -> Env -> Std (Term,Env)
 lookupEnv v (Env e) = lookupStd v e
 
+instance Semigroup Env where
+  (Env a) <> (Env b) = Env (a <> b)
+
 instance Monoid Env where
-  mempty = Env []
-  mappend (Env a) (Env b) = Env (a <> b)
+  mempty = Env mempty
 
 interpPgm :: Program Term → Std Value
 interpPgm = interpEmpty . pgmTerm
