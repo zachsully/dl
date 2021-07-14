@@ -1,7 +1,6 @@
 {-# LANGUAGE GADTs, DataKinds, RankNTypes, KindSignatures #-}
 module DL.Surface.Syntax where
 
-import Data.Monoid ((<>))
 import Data.Set ((\\),singleton,empty,union,unions,Set)
 
 import DL.General.Type
