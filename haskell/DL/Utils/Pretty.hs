@@ -103,3 +103,9 @@ allLower = fmap toLower
 ppEither :: (Pretty a, Pretty b) => Either a b -> String
 ppEither (Left a)  = pp a
 ppEither (Right b) = pp b
+
+mkPurple,mkRed,mkBf,mkIt :: String -> String
+mkPurple s = "\ESC[32m" ++ s ++ "\ESC[0m"
+mkRed    s = "\ESC[31m" ++ s ++ "\ESC[0m"
+mkBf     s = "\ESC[1m" ++ s ++ "\ESC[0m"
+mkIt     s = "\ESC[3m" ++ s ++ "\ESC[0m"

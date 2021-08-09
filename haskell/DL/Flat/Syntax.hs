@@ -119,7 +119,7 @@ instance Pretty FlatTerm where
   ppInd i (FPrompt t)      = "#" <+> ppInd (i+2) t
 
   ppInd i (FObsApp a b)    =
-    "cocase" <-> ("[#" <+> (ppAtomicInd (i+3) a) <> "]")
+    "cocase" <-> indent (i+2) ("[#" <+> (ppAtomicInd (i+3) a) <> "]")
              <-> indent (i+2) (ppAtomicInd (i+2) b)
   ppInd i (FObsDest h b)    =
     "cocase" <-> (brackets (pp h <+> "#"))

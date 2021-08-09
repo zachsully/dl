@@ -146,7 +146,7 @@ flatten' (Cons k)      =
     Just i  ->
       do { vs <- replicateM i (fresh (Variable "k"))
          ; return (foldr (\v t -> FFun v t)
-                         (FConsApp k (fmap FVar (reverse vs)))
+                         (FConsApp k (fmap FVar vs))
                          vs) }
     Nothing -> error "flatten' should not happen"
 

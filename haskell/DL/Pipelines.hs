@@ -9,6 +9,7 @@ module DL.Pipelines where
 import Control.Monad
 import System.Exit
 import System.IO
+import Prelude hiding (log)
 
 -- local
 import DL.Backend
@@ -28,11 +29,11 @@ import DL.Utils.Pretty
 import DL.Utils.StdMonad
 import DL.Utils.IO
 
-parsePipe :: FilePath -> Bool -> IO (Program Term)
-parsePipe fp debug =
+parsePipe :: Bool -> FilePath -> IO (Program Term)
+parsePipe debug fp =
   do { pgm <- getProgram fp
      ; when debug $
-         do { putStrLn "====== Parsed ======"
+         do { putStrLn (mkBf "====== Parsed ======")
             ; pprint pgm
             ; putStrLn "" }
      ; return pgm }
@@ -41,7 +42,7 @@ renamePipe :: Bool -> Program Term -> IO (Program Term)
 renamePipe debug pgm =
   let pgm' = renamePgm pgm in
     do { when debug $
-           do { putStrLn "====== Renamed ======="
+           do { putStrLn (mkBf "====== Renamed =======")
               ; pprint pgm'
               ; putStrLn "" }
        ; return pgm' }
@@ -50,8 +51,10 @@ tcPipe :: Bool -> Program Term -> IO (Program Term)
 tcPipe debug pgm =
   do { ety <- typeCheckPgm (TcConfig debug) pgm
      ; when debug $
-         do { putStrLn "====== Type ======="
-            ; putStrLn (either id pp ety)
+         do { putStrLn (mkBf "====== Type =======")
+            ; case ety of
+                Left err -> putStrLn err >> exitWith (ExitFailure 1)
+                Right ty -> putStrLn (pp ty)
             ; putStrLn "" }
      ; return pgm }
 
@@ -59,7 +62,7 @@ flattenPipe :: Bool -> Program Term -> IO (Program FlatTerm)
 flattenPipe debug pgm =
   let pgm' = flattenPgm pgm in
     do { when debug $
-           do { putStrLn "====== Flattened ======"
+           do { putStrLn (mkBf "====== Flattened ======")
               ; pprint pgm'
               ; putStrLn "" }
        ; return pgm' }
@@ -97,21 +100,26 @@ repl =
 
      }
 
-compilePipeline :: FilePath -> FilePath -> Bool -> Backend p -> IO ()
-compilePipeline infp outfp _ bkd =
-  let !prog' = runBackend bkd (undefined infp) in
-    case outfp of
-      "-" -> putStrLn prog'
-      fp  -> writeFile fp prog'
+compilePipeline :: FilePath -> FilePath -> Bool -> Backend FlatTerm -> IO ()
+compilePipeline infp outfp debug bkd =
+  parsePipe debug infp
+    >>= renamePipe debug . addPrelude
+    >>= tcPipe debug
+    >>= flattenPipe debug
+    >>= outfn . runBackend bkd
+  where outfn :: String -> IO ()
+        outfn = case outfp of
+                  "-" -> putStrLn
+                  fp  -> writeFile fp
 
 tcPipeline :: FilePath -> Bool -> IO ()
 tcPipeline fp debug =
   do { pgm <- getProgram fp
      ; when debug $
-         do { putStrLn "====== Parsed ======"
+         do { putStrLn (mkBf "====== Parsed ======")
             ; pprint pgm
             ; putStrLn "" }
-     ; when debug (putStrLn "====== Type Checked ======")
+     ; when debug (putStrLn (mkBf "====== Type Checked ======"))
      ; ety <- typeCheckPgm (TcConfig debug) pgm
      ; case ety of
          Left err -> putStrLn err >> exitWith (ExitFailure 1)
@@ -119,10 +127,12 @@ tcPipeline fp debug =
 
 evalPipeline :: Strategy -> FilePath -> Bool -> IO ()
 evalPipeline strat fp debug =
-  do { pgm <- parsePipe fp debug
+  do { pgm <- parsePipe debug fp
      ; pgm' <- flattenPipe debug =<< tcPipe debug =<< renamePipe debug (addPrelude pgm)
-     ; putStrLn "====== Evaluated ======"
-     ; case runStd (runPgm strat pgm') of
+     ; putStrLn (mkBf "====== Evaluated ======")
+     ; let (log,er) = runStdWithLog (runPgm strat pgm')
+     ; when debug (putStrLn (stringmconcat "\n-----\n" log))
+     ; case er of
          Left s -> putStrLn s
          Right a -> putStrLn (pp a)
      }

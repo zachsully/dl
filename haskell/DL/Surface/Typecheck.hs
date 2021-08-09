@@ -377,7 +377,7 @@ data TypeError
   | Unimplemented String
 
 instance Pretty TypeError where
-  pp te = "<static error>\n" <> ppTypeError te <> "\n"
+  pp te = mkRed "<static error>\n" <> ppTypeError te <> "\n"
 
 ppTypeError :: TypeError -> String
 ppTypeError (InfiniteTypeError v ty) =

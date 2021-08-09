@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds, KindSignatures, TypeFamilies, AllowAmbiguousTypes #-}
 module DL.Flat.Machine where
 
--- import Control.Monad.State
 import DL.Utils.StdMonad
 import DL.Utils.Pretty
 import DL.Flat.Syntax
@@ -92,7 +91,7 @@ lookupEnv :: Env a -> Variable -> Std a
 lookupEnv (Env assoc) v =
   case lookup v assoc of
     Just a  -> return a
-    Nothing -> failure ("<unbound var>" <+> pp v)
+    Nothing -> failure (mkRed "<unbound var>" <+> pp v)
 
 emptyEnv :: Env a
 emptyEnv = Env []
@@ -128,9 +127,9 @@ instance Eq (MachineState s) where
 
 instance Pretty (MachineState s) where
   pp ms = "\nstrategy:" <+> pp (projStratSing ms)
-          <-> "\nterm:\n"
+          <-> "\nterm:"
           <-> pp (projTerm ms)
-          <-> "\ncont:\n"
+          <-> "\ncont:"
           <-> pp (projCont ms)
 
 isFinalState :: MachineState s -> Bool
@@ -151,22 +150,31 @@ isValue _       _                 = False
 
 runMachine ::  MachineState s -> Std (MachineState s)
 runMachine ms =
-  stepMachineState ms >>= \ms' ->
-    case isFinalState ms' of
-      True  -> return ms'
-      False ->
-        case ms' == ms of
-          True  -> failure ("<machine loop>" <-> pp ms')
-          False -> runMachine ms'
+  do { logStd (mkBf "new state:" <-> pp ms)
+     ; ms' <- stepMachineState ms
+     ; case isFinalState ms' of
+         True  -> return ms'
+         False ->
+           case ms' == ms of
+             True  -> failure (mkRed "<machine loop>" <+> mkBf "final machine state:" <-> pp ms')
+             False -> runMachine ms'
+     }
 
 
 runPgm :: Strategy -> Program FlatTerm -> Std FlatTerm
 runPgm CallByName t
-  = finalize <$> runMachine (MS SingCBN emptyEnv (pgmTerm t) KEmpty)
-  where finalize (MS _ (Env assoc) e _) =
-          foldr (\(v,NClos _ a) t' -> substFlatTerm v a t') e assoc
+  = finalizeCBN <$> runMachine (MS SingCBN emptyEnv (pgmTerm t) KEmpty)
 runPgm CallByValue t
-  = projTerm <$> runMachine (MS SingCBV emptyEnv (pgmTerm t) KEmpty)
+  = finalizeCBV <$> runMachine (MS SingCBV emptyEnv (pgmTerm t) KEmpty)
+
+finalizeCBN :: MachineState 'CallByName -> FlatTerm
+finalizeCBN (MS _ (Env assoc) e _) =
+  foldr (\(v,NClos _ a) t' -> substFlatTerm v a t') e assoc
+
+finalizeCBV :: MachineState 'CallByValue -> FlatTerm
+finalizeCBV (MS _ (Env assoc) e _) =
+  foldr (\(v,val) t' -> substFlatTerm v (toFlatTerm val) t') e assoc
+
 
 --------------------------------------------------------------------------------
 --                         Operational Rules                                  --
@@ -191,6 +199,16 @@ stepMachineState (MS s env (FLit i) (KAddR j k))
 stepMachineState (MS s env (FObsApp arg fun) k)
   = return (MS s env fun (KArg env arg k))
 
+stepMachineState (MS SingCBN env (FFun v t) (KArg aenv arg k))
+  = return (MS SingCBN (extendEnv env v (NClos aenv arg)) t k)
+
+stepMachineState (MS SingCBV env (FFun v t) (KArg aenv arg k))
+  = return (MS SingCBV aenv arg (KVApp env v t k))
+stepMachineState (MS SingCBV env t (KVApp benv v body k))
+  = case mkCBVValue t :: Either CBVValue FlatTerm of
+      Left val -> return (MS SingCBV (extendEnv benv v val) body k)
+      Right t' -> return (MS SingCBV env t' (KVApp benv v body k))
+
 -- Evaluate constructor args in call-by-value
 stepMachineState (MS SingCBV env (FConsApp cons (arg:args)) k)
   = case isValue SingCBV (FConsApp cons (arg:args)) of
@@ -204,17 +222,6 @@ stepMachineState (MS SingCBV env t (KVConsApp cons vals [] k))
   = case mkCBVValue t :: Either CBVValue FlatTerm of
       Left val -> return (MS SingCBV env (FConsApp cons (fmap toFlatTerm (val:vals))) k)
       Right t' -> return (MS SingCBV env t' (KVConsApp cons vals [] k))
-
--- cocase
-stepMachineState (MS SingCBN env (FFun v t) (KArg aenv arg k))
-  = return (MS SingCBN (extendEnv env v (NClos aenv arg)) t k)
-
-stepMachineState (MS SingCBV env (FFun v t) (KArg aenv arg k))
-  = return (MS SingCBV aenv arg (KVApp env v t k))
-stepMachineState (MS SingCBV env t (KVApp benv v body k))
-  = case mkCBVValue t :: Either CBVValue FlatTerm of
-      Left val -> return (MS SingCBV (extendEnv benv v val) body k)
-      Right t' -> return (MS SingCBV env t' (KVApp benv v body k))
 
 -- control
 stepMachineState (MS s env (FPrompt t) k)
