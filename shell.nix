@@ -5,8 +5,7 @@ let
   inherit (nixpkgs) pkgs;
 
   f = { mkDerivation, alex, array, base, containers, directory
-      , filepath, ghc, happy, hspec, HUnit, mtl, optparse-applicative
-      , QuickCheck, stdenv
+      , filepath, ghc, happy, mtl, optparse-applicative, process, stdenv
       }:
       mkDerivation {
         pname = "dl";
@@ -15,12 +14,13 @@ let
         isLibrary = false;
         isExecutable = true;
         executableHaskellDepends = [
-          array base containers ghc mtl optparse-applicative
+          array base containers directory ghc mtl optparse-applicative
+          process
         ];
         executableToolDepends = [ alex happy ];
         testHaskellDepends = [
-          array base containers directory filepath ghc hspec HUnit mtl
-          optparse-applicative QuickCheck
+          array base containers directory filepath ghc mtl
+          optparse-applicative process
         ];
         homepage = "zachsully.com";
         description = "A simple dual data language";
