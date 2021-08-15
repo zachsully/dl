@@ -5,12 +5,12 @@ Description : Handles command line parsing and calling of compilers
 -}
 module Main where
 
-import Text.Read (readMaybe)
+
 import Options.Applicative
 
--- local
 import DL.Backend
 import DL.Flat.Backends
+import DL.DMach.CodeGen (cCompile)
 import DL.Pipelines
 import DL.Flat.Syntax
 import DL.Utils.Pretty
@@ -60,15 +60,16 @@ parseCompile = CompileMode
                       <> short 'D'
                       <> help "debug mode" )
            <*> argument (str >>= \s -> return $
-                            case (readMaybe s) :: Maybe Int of
-                              Just 0 -> hsCompile
-                              Just 1 -> mlCompile
-                              Just 2 -> rktCompile
-                              Just 3 -> jsCompile
+                            case s :: String of
+                              "haskell" -> hsCompile
+                              "ml" -> mlCompile
+                              "racket" -> rktCompile
+                              "JavaScript" -> jsCompile
+                              "c" -> cCompile
                               _ -> error (s <+> "is not a valid backend")
                         )
                         (   metavar "BACKEND"
-                         <> help "0 -> Haskell\n1 -> Ocaml\n2 -> Racket\n3 -> JavaScript")
+                         <> help "Choices: haskell, ml, racket, JavaScript, or c")
            <*> inputFp
            <*> strArgument (metavar "OUTPUT" <> help "output source file")
 

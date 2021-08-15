@@ -50,6 +50,9 @@ data FlatTerm :: * where
   FObsApp    :: FlatTerm -> FlatTerm -> FlatTerm
   FObsDest   :: Variable -> FlatTerm -> FlatTerm
   FObsCut    :: Variable -> FlatTerm -> FlatTerm
+
+  FStreamCoiter :: (Variable,FlatTerm)
+                -> (Variable,FlatTerm) -> FlatTerm -> FlatTerm
   deriving (Eq,Show)
 
 
@@ -82,6 +85,10 @@ substFlatTerm v t (FPrompt t0) = FPrompt (substFlatTerm v t t0)
 substFlatTerm v t (FObsApp t0 t1) = FObsApp (substFlatTerm v t t0) (substFlatTerm v t t1)
 substFlatTerm v t (FObsDest h t0) = FObsDest h (substFlatTerm v t t0)
 substFlatTerm v t (FObsCut k t0) = FObsCut k (substFlatTerm v t t0)
+substFlatTerm v t (FStreamCoiter (x,a) (y,b) c)
+  = FStreamCoiter (x,if (v == x) then a else substFlatTerm v t a)
+                  (y,if (v == y) then b else substFlatTerm v t b)
+                  (substFlatTerm v t c)
 
 
 instance Pretty FlatTerm where
@@ -127,6 +134,11 @@ instance Pretty FlatTerm where
   ppInd i (FObsCut v b)    =
     "cocase" <-> (brackets (pp v <+> "#"))
              <-> indent (i+2) (ppAtomicInd (i+2) b)
+  ppInd i (FStreamCoiter (x,a) (y,b) c)
+                          = "coiter { Head # ->" <+> pp x <> "." <+> ppInd (i+1) a
+                            <+> "; Tail # ->" <+> pp y <> "." <+> ppInd (i+1) b
+                            <+> "} with"
+                            <+> ppInd (i+1) c
 
 instance Atomic FlatTerm where
   isAtomic (FLet _ _ _) = False
@@ -147,6 +159,7 @@ instance Atomic FlatTerm where
   isAtomic (FObsApp _ _) = False
   isAtomic (FObsDest _ _) = False
   isAtomic (FObsCut _ _) = False
+  isAtomic (FStreamCoiter _ _ _) = False
 
 data FlatPattern where
   FlatPatVar  :: Variable -> FlatPattern

@@ -42,6 +42,8 @@ import DL.Utils.Pretty
   'index'  { TokIndex }
   'case'   { TokCase }
   'cocase' { TokCocase }
+  'coiter' { TokCoiter }
+  'with'   { TokWith }
   'fix'    { TokFix }
   'let'    { TokLet }
   '='      { TokEq }
@@ -58,8 +60,10 @@ import DL.Utils.Pretty
   '['      { TokLBrack }
   ']'      { TokRBrack }
   ','      { TokComma }
+  '.'      { TokPeriod }
   '|'      { TokMid }
   ':'      { TokColon }
+  ';'      { TokSemiColon }
   '{-'     { TokPragmaOpen }
   '-}'     { TokPragmaClose }
 
@@ -207,6 +211,10 @@ term3 :  '#' term                { Prompt $2 }
 term4 :: { Term }
 term4 :  term termA               { App $1 $2 }
       |  'cocase' obsctxA termA   { Cocase $2 $3 }
+      |  'coiter' '{' str '#' '->' var '.' termA  ';' str '#' '->' var '.' termA '}' 'with' termA
+                                  {% if ($3 == "Head") && ($10 == "Tail")
+                                     then return (StreamCoiter ($6,$8) ($13,$15) $18)
+                                     else error "<coiter parse error>"}
       |  termA                    { $1 }
 
 {- We lookup to see if the string is defined as a symbol and a singleton

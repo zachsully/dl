@@ -23,6 +23,8 @@ tokens :-
   data       { const TokData }
   index      { const TokIndex }
   cocase     { const TokCocase }
+  coiter     { const TokCoiter }
+  with       { const TokWith }
   case       { const TokCase }
   fix        { const TokFix }
   let        { const TokLet }
@@ -43,8 +45,10 @@ tokens :-
   \[         { const TokLBrack }
   \]         { const TokRBrack }
   \,         { const TokComma }
+  \.         { const TokPeriod }
   \|         { const TokMid }
   \:         { const TokColon }
+  \;         { const TokSemiColon }
   module     { const TokModule }
   $alpha+    { TokString }
 
@@ -59,6 +63,8 @@ data Token
   | TokIndex
   | TokCase
   | TokCocase
+  | TokCoiter
+  | TokWith
   | TokFix
   | TokLet
   | TokLetrec
@@ -77,8 +83,10 @@ data Token
   | TokLBrack
   | TokRBrack
   | TokComma
+  | TokPeriod
   | TokMid
   | TokColon
+  | TokSemiColon
   | TokModule
   | TokPragmaOpen
   | TokPragmaClose

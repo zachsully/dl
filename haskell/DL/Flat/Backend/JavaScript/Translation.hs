@@ -114,3 +114,4 @@ transTerm' (FObsApp a b) =
      ; return $ JSApp b' a' }
 transTerm' (FObsDest v t) = JSMethod v <$> transTerm' t
 transTerm' (FObsCut _ _) = error "transTerm'{cut}"
+transTerm' (FStreamCoiter _ _ _) = error "transTerm'{FStreamCoiter}"

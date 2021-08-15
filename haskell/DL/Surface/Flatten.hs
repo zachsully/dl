@@ -46,6 +46,8 @@ unflatten (FPrompt t) = Prompt (unflatten t)
 unflatten (FObsApp a b)  = Cocase (ObsFun ObsHead (unflatten a)) (unflatten b)
 unflatten (FObsDest h b) = Cocase (ObsDest h ObsHead) (unflatten b)
 unflatten (FObsCut v b)  = Cocase (ObsCut v ObsHead) (unflatten b)
+unflatten (FStreamCoiter (x,a) (y,b) c) =
+  StreamCoiter (x,unflatten a) (y,unflatten b) (unflatten c)
 
 --------------------------------------------------------------------------------
 --                        Flattening Transformation                           --
@@ -169,6 +171,10 @@ flatten' (Cocase c t) = go c =<< flatten' t
         go (ObsCut v o) e = FObsCut v <$> go o e
 
 flatten' (Coalts coalts) = flattenCoalts coalts
+flatten' (StreamCoiter (x,a) (y,b) c) =
+  do { a' <- flatten' a
+     ; b' <- flatten' b
+     ; FStreamCoiter (x,a') (y,b') <$> flatten' c }
 
 {-
 The bits that flatten alternatives and coalternatives are the trickiest parts of

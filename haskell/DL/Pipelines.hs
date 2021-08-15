@@ -23,7 +23,6 @@ import DL.Surface.Prelude
 import DL.General.Top
 import DL.General.Strategy
 import DL.Flat.Syntax
--- import DL.Flat.Interpreter
 import DL.Flat.Machine
 import DL.Utils.Pretty
 import DL.Utils.StdMonad

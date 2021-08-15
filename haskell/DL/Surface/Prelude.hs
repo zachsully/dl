@@ -113,7 +113,7 @@ streamDecl = CodataDecl $
 
 zeros :: Term
 zeros = Fix (Variable "s")
-            (Coalts [ ( QDest (Variable "head") QHead , Lit 0 )
+            (Coalts [ ( QDest (Variable "Head") QHead , Lit 0 )
                     , ( QDest (Variable "Tail") QHead , (Var (Variable "s")))])
 
 nats :: Term

@@ -83,6 +83,13 @@ renameTerm (Cons k) = Cons <$> lookupVar k
 renameTerm (Case a alts) = Case <$> renameTerm a <*> mapM renameAlt alts
 renameTerm (Dest h) = Dest <$> lookupVar h
 renameTerm (Coalts coalts) = Coalts <$> mapM renameCoalt coalts
+renameTerm (StreamCoiter (x,a) (y,b) c) =
+  do { x' <- renameVar x
+     ; y' <- renameVar y
+     ; a' <- renameTerm a
+     ; b' <- renameTerm b
+     ; c' <- renameTerm c
+     ; return (StreamCoiter (x',a') (y',b') c') }
 renameTerm (Cocase o a) = Cocase <$> renameObsCtx o <*> renameTerm a
 renameTerm (Prompt a) = Prompt <$> renameTerm a
 

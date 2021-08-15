@@ -26,3 +26,4 @@ toLdata (FPrompt a) = undefined a
 toLdata (FObsApp a b) = DApp (toLdata a) (toLdata b)
 toLdata (FObsDest o a) = undefined o a
 toLdata (FObsCut o a) = undefined o a
+toLdata (FStreamCoiter _ _ _) = error "toLdata{FStreamCoiter _ _ _}"

@@ -1,16 +1,11 @@
-module DL.DMach.Translation
-  (dmachCompile) where
+module DL.DMach.Translation (trans) where
 
-
-import DL.Backend
 import DL.General.Top
 import DL.Flat.Syntax
 import DL.DMach.Syntax
 import DL.Utils.StdMonad hiding (fvs)
 import DL.Utils.FreeVars
 
-dmachCompile :: Backend FlatTerm
-dmachCompile = Backend trans
 
 trans :: Program FlatTerm -> DMach
 trans t =
@@ -54,3 +49,4 @@ transTerm (FObsDest h a) =
      ; aV <- freshVariable
      ; return (DMLet aV a' (DMObs aV (DMODest h) [])) }
 transTerm (FObsCut _v _a) = undefined
+transTerm (FStreamCoiter _ _ _) = undefined

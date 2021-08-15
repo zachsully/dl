@@ -52,6 +52,7 @@ executable dl
                        DL.Flat.Backend.Racket.Syntax,
                        DL.DMach.Translation,
                        DL.DMach.Syntax,
+                       DL.DMach.CodeGen,
                        DL.Utils.IO,
                        DL.Utils.StdMonad,
                        DL.Utils.FreeVars,

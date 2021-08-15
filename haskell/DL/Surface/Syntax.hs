@@ -25,6 +25,7 @@ data Term
   | Case Term [(Pattern,Term)]
   | Dest Variable
   | Coalts [(CoPattern,Term)]
+  | StreamCoiter (Variable,Term) (Variable,Term) Term
   | Cocase ObsCtx Term
   | Prompt Term -- sets a point to delimit continuations
   deriving (Eq,Show)
@@ -66,6 +67,11 @@ instance Pretty Term where
                             . fmap (\(q,u) -> pp q <+> "->" <+> ppInd (i+3) u)
                             $ coalts)
                         <+> "}"
+  ppInd i (StreamCoiter (x,a) (y,b) c)
+                          = "coiter { Head # ->" <+> pp x <> "." <+> ppInd (i+1) a
+                            <+> "; Tail # ->" <+> pp y <> "." <+> ppInd (i+1) b
+                            <+> "} with"
+                            <+> ppInd (i+1) c
   ppInd i (Prompt t)      = "#" <+> parensIf (not . atomicT) t (ppInd (i+2) t)
 
 instance FV Term where
@@ -82,6 +88,8 @@ instance FV Term where
   fvs (Dest _) = empty
   fvs (Cocase obsctx t) = fvs obsctx `union` fvs t
   fvs (Coalts coalts) = unions . fmap (\(q,u) -> fvs u \\ copBinds q) $ coalts
+  fvs (StreamCoiter (x,a) (y,b) c) =
+    unions [fvs a,fvs b,fvs c] \\ (singleton x `union` singleton y)
   fvs (Prompt a) = fvs a
 
 {-

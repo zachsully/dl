@@ -169,6 +169,7 @@ transTerm (FObsApp e t) = HsApp (transTerm t) (transTerm e)
 transTerm (FObsDest h t) = HsApp (HsVar (Variable "_" <> h))
                                               (transTerm t)
 transTerm (FObsCut _ _) = error "transTerm{FlatObsCut}"
+transTerm (FStreamCoiter _ _ _) = error "transTerm{FStreamCoiter}"
 
 
 transPat :: FlatPattern -> HsPattern

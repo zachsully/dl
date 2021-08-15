@@ -45,3 +45,4 @@ toLcodata (FPrompt a) = CPrompt <$> toLcodata a
 toLcodata (FObsApp a b) = CObsApp <$> toLcodata a <*> toLcodata b
 toLcodata (FObsDest v a) = CObsDest v <$> toLcodata a
 toLcodata (FObsCut v a) = CObsCut v <$> toLcodata a
+toLcodata (FStreamCoiter _ _ _) = error "toLcodata (FStreamCoiter _ _ _)"
