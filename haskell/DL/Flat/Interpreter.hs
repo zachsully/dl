@@ -195,6 +195,9 @@ step (MState e k (FShift v t)) =
 step (MState e k (FPrompt t)) =
   return (MState e (EPrompt k) t)
 
+step (MState e (EAppDest h k) (FStreamCoiter (x,a) (y,b) c))
+  | h == Variable "Head" = return (MState (extendEnvVar x c e) k a)
+
 step s = do { states <- get
             ; let string = vmconcat . fmap pp $ states
             ; lift (failure $ string <-> "\n<stuck>:" <-> pp s) }

@@ -299,8 +299,8 @@ gatherTerm env (StreamCoiter (x,a) (y,b) c) =
   do { (cTy,cC) <- gatherTerm env c
      ; (aTy,aC) <- gatherTerm (extendEnv x (Forall Set.empty mempty cTy) env) a
      ; (bTy,bC) <- gatherTerm (extendEnv y (Forall Set.empty mempty cTy) env) b
-     ; return (TyApp (TyCons (Variable "Stream")) cTy
-              , cC <> aC <> bC <> (cTy `ceq` bTy) <> (cTy `ceq` aTy)) }
+     ; return (TyApp (TyCons (Variable "Stream")) aTy
+              , cC <> aC <> bC <> (cTy `ceq` bTy)) }
 gatherTerm env (Prompt a) = gatherTerm env a
 
 -- | Takes the argument type, the output type, and an alternative and generates

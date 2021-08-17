@@ -211,7 +211,7 @@ term3 :  '#' term                { Prompt $2 }
 term4 :: { Term }
 term4 :  term termA               { App $1 $2 }
       |  'cocase' obsctxA termA   { Cocase $2 $3 }
-      |  'coiter' '{' str '#' '->' var '.' termA  ';' str '#' '->' var '.' termA '}' 'with' termA
+      |  'coiter' '{' str '#' '->' var '.' term  ';' str '#' '->' var '.' term '}' 'with' termA
                                   {% if ($3 == "Head") && ($10 == "Tail")
                                      then return (StreamCoiter ($6,$8) ($13,$15) $18)
                                      else error "<coiter parse error>"}
@@ -440,6 +440,8 @@ replaceCD d (Coalts coalts)
   = Coalts (fmap (replaceCDCoalt d) coalts)
 replaceCD d (Prompt a)
   = Prompt (replaceCD d a)
+replaceCD d (StreamCoiter (x,a) (y,b) c)
+  = StreamCoiter (x,replaceCD d a) (y, replaceCD d b) (replaceCD d c)
 
 replaceCDAlt :: [(Variable,Polarity)] -> (Pattern,Term) -> (Pattern,Term)
 replaceCDAlt d (p,t) = (replaceCDPat d p,replaceCD d t)
