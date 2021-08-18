@@ -11,4 +11,27 @@ let fib = coiter { Head # -> x . Fst x
                  ; Tail # -> y . { Fst # -> Snd y
                                  , Snd # -> Fst y + Snd y }
                  } with { Fst # -> 1, Snd # -> 1 }
-in cocase [Head [Tail [Tail [Tail [Tail [Tail #]]]]]] fib
+in
+cocase
+[Head
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail #]]]]]]]]]]]]]]]]]]]]]
+fib

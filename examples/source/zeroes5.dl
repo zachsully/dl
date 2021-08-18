@@ -6,4 +6,4 @@ codata Stream a
 let zeroes = fix x in
  	       { Head # -> 0
     	       , Tail # -> x } in
-Head zeroes
+Head (Tail (Tail (Tail (Tail (Tail zeroes)))))

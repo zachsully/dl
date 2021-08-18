@@ -6,4 +6,4 @@ codata Stream a
 let zeroes = coiter
  	       { Head # -> x. x
     	       ; Tail # -> x. x } with 0
-in Head zeroes
+in Head (Tail (Tail (Tail (Tail (Tail zeroes)))))

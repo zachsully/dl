@@ -9,4 +9,26 @@ let fib = (fix x in
              { Head # -> 1
     	     , Head [Tail #] -> 1
              , Tail [Tail #] -> zipwith {# p q -> p + q} x (Tail x) }) in
-cocase [Head [Tail [Tail [Tail [Tail [Tail #]]]]]] fib
+cocase
+[Head
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail #]]]]]]]]]]]]]]]]]]]]]
+fib
