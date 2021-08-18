@@ -1,0 +1,119 @@
+{- BEHAVIOR : 5 -}
+codata Stream a
+  { Head : Stream a -> a
+  , Tail : Stream a -> Stream a }
+
+codata With a b
+  { Fst : With a b -> a
+  , Snd : With a b -> b }
+
+let fib = coiter { Head # -> x . Fst x
+                 ; Tail # -> x . { Fst # -> (Fst x) + Snd x
+                                 , Snd # -> Snd x }
+                 } with { Fst # -> 1, Snd # -> 1 }
+in
+cocase
+[Head
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail
+[Tail #]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+fib
+

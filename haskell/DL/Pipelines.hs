@@ -23,7 +23,7 @@ import DL.Surface.Prelude
 import DL.General.Top
 import DL.General.Strategy
 import DL.Flat.Syntax
-import DL.Flat.Machine
+import DL.Flat.Interpreter
 import DL.Utils.Pretty
 import DL.Utils.StdMonad
 import DL.Utils.IO
@@ -88,9 +88,9 @@ repl =
                   case runParserM (parseTerm ts) (pStateFromDecls prelude) of
                     Left e -> hPutStrLn stdout e
                     Right (t,_) ->
-                      case runStd (runPgm CallByName (flattenPgm (preludePgm t))) of
+                      case runStd (interpPgm CallByName False (flattenPgm (preludePgm t))) of
                         Left s -> hPutStrLn stdout $ s
-                        Right a -> hPutStrLn stdout $ pp a
+                        Right a -> hPutStrLn stdout $ pp (snd a)
                           -- case runStd (infer [] (reifyValue a)) of
                           --   Left _ -> hPutStrLn stdout . pp $ a
                           --   Right ty -> hPutStrLn stdout $
@@ -129,9 +129,10 @@ evalPipeline strat fp debug =
   do { pgm <- parsePipe debug fp
      ; pgm' <- flattenPipe debug =<< tcPipe debug =<< renamePipe debug (addPrelude pgm)
      ; putStrLn (mkBf "====== Evaluated ======")
-     ; let (log,er) = runStdWithLog (runPgm strat pgm')
-     ; when debug (putStrLn (stringmconcat "\n-----\n" log))
+     ; let (log,er) = runStdWithLog (interpPgm strat debug pgm')
+     ; when debug (putStrLn (stringmconcat "\n---------------------\n" log))
      ; case er of
          Left s -> putStrLn s
-         Right a -> putStrLn (pp a)
+         Right (i,a) -> putStrLn (("<steps taken>:" <+> show i) <->
+                                  "<output>:" <+> (pp a))
      }

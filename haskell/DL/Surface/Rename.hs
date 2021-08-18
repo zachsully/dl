@@ -85,8 +85,8 @@ renameTerm (Dest h) = Dest <$> lookupVar h
 renameTerm (Coalts coalts) = Coalts <$> mapM renameCoalt coalts
 renameTerm (StreamCoiter (x,a) (y,b) c) =
   do { x' <- renameVar x
-     ; y' <- renameVar y
      ; a' <- renameTerm a
+     ; y' <- renameVar y
      ; b' <- renameTerm b
      ; c' <- renameTerm c
      ; return (StreamCoiter (x',a') (y',b') c') }

@@ -3,10 +3,12 @@ codata Stream a
   { Head : Stream a -> a
   , Tail : Stream a -> Stream a }
 
-data Pair a b
-  { Pair : a -> b -> Pair a b }
+codata With a b
+  { Fst : With a b -> a
+  , Snd : With a b -> b }
 
-let fib = coiter { Head # -> x . case x { Pair y z -> y }
-                 ; Tail # -> x . case x { Pair y z -> Pair (y+z) z }
-                 } with (Pair 0 1)
+let fib = coiter { Head # -> x . Fst x
+                 ; Tail # -> x . { Fst # -> (Fst x) + Snd x
+                                 , Snd # -> Snd x }
+                 } with { Fst # -> 1, Snd # -> 1 }
 in cocase [Head [Tail [Tail [Tail [Tail #]]]]] fib

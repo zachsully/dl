@@ -13,7 +13,7 @@ cabal-version:       >=1.10
 executable dl
   main-is:             DL/Main.hs
   default-extensions:  UnicodeSyntax, GADTs, KindSignatures
-  GHC-Options :       -Wall -j6 -Werror
+  GHC-Options :       -Wall -j6
   hs-source-dirs:      haskell
   other-modules:       DL.Backend,
                        DL.Pipelines,
@@ -34,7 +34,6 @@ executable dl
                        DL.Parser.Parser,
                        DL.Flat.Syntax,
                        DL.Flat.Interpreter,
-                       DL.Flat.Machine,
                        DL.Flat.ToLdata,
                        DL.Flat.ToLcodata,
                        DL.Flat.Backends,

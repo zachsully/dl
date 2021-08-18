@@ -129,10 +129,10 @@ instance Pretty FlatTerm where
     "cocase" <-> indent (i+2) ("[#" <+> (ppAtomicInd (i+3) a) <> "]")
              <-> indent (i+2) (ppAtomicInd (i+2) b)
   ppInd i (FObsDest h b)    =
-    "cocase" <-> (brackets (pp h <+> "#"))
+    "cocase" <-> indent (i+2) (brackets (pp h <+> "#"))
              <-> indent (i+2) (ppAtomicInd (i+2) b)
   ppInd i (FObsCut v b)    =
-    "cocase" <-> (brackets (pp v <+> "#"))
+    "cocase" <-> indent (i+2) (brackets (pp v <+> "#"))
              <-> indent (i+2) (ppAtomicInd (i+2) b)
   ppInd i (FStreamCoiter (x,a) (y,b) c)
                           = "coiter { Head # ->" <+> pp x <> "." <+> ppInd (i+1) a

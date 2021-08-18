@@ -1,0 +1,9 @@
+{- BEHAVIOR : 4 -}
+codata Stream a
+  { Head : Stream a -> a
+  , Tail : Stream a -> Stream a }
+
+let evens = (fix countTwo in
+ 	      { Head [# y] -> y
+              , Tail [# y] -> countTwo (y+2) }) 0
+in Head (Tail (Tail (Tail (Tail (Tail evens)))))
