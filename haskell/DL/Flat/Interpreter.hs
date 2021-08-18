@@ -10,36 +10,24 @@ import DL.General.Top
 import DL.General.Variable
 import DL.General.Strategy
 
---------------------------------------------------------------------------------
---                            Olde Interpreter                                --
---------------------------------------------------------------------------------
-
-data Result :: * where
-  RNum     :: Int -> Result
-  RConsApp :: Variable -> [Result] -> Result
-
-resToFlatTerm :: Result -> FlatTerm
-resToFlatTerm (RNum i) = FLit i
-resToFlatTerm (RConsApp cons rs) = FConsApp cons (fmap resToFlatTerm rs)
-
-instance Pretty Result where
-  pp (RNum i) = show i
-  pp (RConsApp cons rs) = pp cons <+> stringmconcat " " (fmap pp rs)
-
 maybeCBVValue :: Env 'CallByValue -> FlatTerm -> Maybe (Value 'CallByValue)
-maybeCBVValue _ (FLit i) = Just (VRes (RNum i))
+maybeCBVValue _ (FLit i) = Just (VLit i)
 maybeCBVValue e (FFun x t) = Just (VFunClos e x t)
 maybeCBVValue e (FCoalt (h,t) def) = Just (VCoalt e (h,t) def)
--- maybeCBVValue e (FStreamCoiter b0 b1 t) =
---   maybeCBVValue e t >>= \val -> Just (VCoiter e b0 b1 val)
 maybeCBVValue _ _ = Nothing
+
+valToFlatTerm :: Value strat -> FlatTerm
+valToFlatTerm (VLit i) = FLit i
+valToFlatTerm (VConsApp cons vs) = FConsApp cons (fmap valToFlatTerm vs)
+valToFlatTerm _ = error "valToFlatTerm"
 
 data Value :: Strategy -> * where
   VFix :: FlatTerm -> Value strat
 
   VThunk :: Env 'CallByName -> FlatTerm -> Value 'CallByName
 
-  VRes :: Result -> Value 'CallByValue
+  VLit :: Int -> Value 'CallByValue
+  VConsApp :: Variable -> [Value 'CallByValue] -> Value 'CallByValue
   VFunClos :: Env 'CallByValue -> Variable -> FlatTerm -> Value 'CallByValue
   VCoalt :: Env 'CallByValue -> (Variable,FlatTerm) -> FlatTerm
          -> Value 'CallByValue
@@ -49,7 +37,8 @@ data Value :: Strategy -> * where
 instance Pretty (Value strat) where
   pp (VFix _) = "<fixpoint>"
   pp (VThunk e _) = "<thunk" <+> pp e <> ">"
-  pp (VRes r) = pp r
+  pp (VLit i) = show i
+  pp (VConsApp cons vs) = pp cons <+> stringmconcat " " (fmap pp vs)
   pp (VFunClos e x t) = "<function" <+> pp e <+> pp x <+> ">"
   pp (VCoalt e x t) = "<codata" <+> pp e <+> ">"
   pp (VCoiter e _ _ s) = "<coiter" <+> pp e <+> pp s <+> ">"
@@ -96,6 +85,8 @@ data Cont (strat :: Strategy) :: * where
            -> Cont 'CallByValue -> Cont 'CallByValue
   CLetR :: Env 'CallByValue -> Variable -> FlatTerm -> Cont 'CallByValue
         -> Cont 'CallByValue
+  CConsApp :: Env 'CallByValue -> Variable -> [Value 'CallByValue] -> [FlatTerm]
+           -> Cont 'CallByValue -> Cont 'CallByValue
 
 instance Pretty (Cont strat) where
   pp CEmpty = "ε"
@@ -110,6 +101,7 @@ instance Pretty (Cont strat) where
   pp (CDest h c) = "CDest" <+> pp h <+> "•" <+> pp c
   pp (CCoiterR _ _ _ c) = "CCoiterR" <+> "•" <+> pp c
   pp (CLetR _ _ _ c) = "CLetR" <+> "•" <+> pp c
+  pp (CConsApp e cons _ _ c) = "CConsApp" <+> pp e <+> pp cons <+> "•" <+> pp c
 
 data ControlTerm :: Strategy -> * where
   CtrlT :: FlatTerm -> ControlTerm strat
@@ -155,12 +147,12 @@ runMachine strat debug i st =
 finalState :: StratSingleton strat -> MState strat -> Bool
 finalState SingCBN (MState _ CEmpty (CtrlT (FLit _))) = True
 finalState SingCBN (MState _ CEmpty (CtrlT (FConsApp _ _))) = True
-finalState SingCBV (MState _ (CRet (VRes r) CEmpty) CtrlE) = True
+finalState SingCBV (MState _ (CRet v CEmpty) CtrlE) = True
 finalState _ _ = False
 
 extractFinal :: StratSingleton strat -> MState strat -> FlatTerm
 extractFinal SingCBN (MState _ _ (CtrlT t)) = t
-extractFinal SingCBV (MState _ (CRet (VRes r) _) _) = resToFlatTerm r
+extractFinal SingCBV (MState _ (CRet v _) _) = valToFlatTerm v
 extractFinal _ _ = error "extractFlatTerm"
 
 step :: StratSingleton strat -> MState strat -> Std (MState strat)
@@ -200,10 +192,10 @@ step SingCBN (MState _ (CAddL e t c) (CtrlT (FLit i)))
   = return (MState e (CAddR i c) (CtrlT t))
 step SingCBN (MState e (CAddR i c) (CtrlT (FLit j)))
   = return (MState e c (CtrlT (FLit (i+j))))
-step SingCBV (MState _ (CRet (VRes (RNum i)) (CAddL e t c)) CtrlE)
+step SingCBV (MState _ (CRet (VLit i) (CAddL e t c)) CtrlE)
   = return (MState e (CAddR i c) (CtrlT t))
-step SingCBV (MState e (CRet (VRes (RNum j)) (CAddR i c)) CtrlE)
-  = return (MState e (CRet (VRes (RNum (i+j))) c) CtrlE)
+step SingCBV (MState e (CRet (VLit j) (CAddR i c)) CtrlE)
+  = return (MState e (CRet (VLit (i+j)) c) CtrlE)
 
 
 -- Data
@@ -217,6 +209,23 @@ step SingCBN (MState e (CCase e' (FlatPatCons cons xs,t0) (y,t1) c) (CtrlT (FCon
       return (MState (extendManyEnvVar (zip xs (fmap (VThunk e) ts)) e') c (CtrlT t0))
     False ->
       return (MState (extendEnvVar y (VThunk e (FConsApp cons' ts)) e') c (CtrlT t1))
+
+step SingCBV (MState e c (CtrlT (FConsApp cons (t:ts)))) =
+  return (MState e (CConsApp e cons [] ts c) (CtrlT t))
+step SingCBV (MState _ (CRet val (CConsApp e cons vs ts c)) CtrlE) =
+  return (MState emptyEnv (CConsApp e cons (val:vs) ts c) CtrlE)
+step SingCBV (MState _ (CConsApp e cons vs (t:ts) c) CtrlE) =
+  return (MState e (CConsApp e cons vs ts c) (CtrlT t))
+step SingCBV (MState _ (CConsApp e cons vs [] c) CtrlE) =
+  return (MState emptyEnv (CRet (VConsApp cons (reverse vs)) c) CtrlE)
+step SingCBV (MState _ (CRet val (CCase e (FlatPatVar x, t) _ c)) CtrlE) =
+  return (MState (extendEnvVar x val e) c (CtrlT t))
+step SingCBV (MState _ (CRet (VConsApp cons vs) (CCase e' (FlatPatCons cons' xs,t0) (y,t1) c)) CtrlE) =
+  case cons == cons' && length xs == length vs of
+    True ->
+      return (MState (extendManyEnvVar (zip xs vs) e') c (CtrlT t0))
+    False ->
+      return (MState (extendEnvVar y (VConsApp cons vs) e') c (CtrlT t1))
 
 ------------
 -- CODATA --
