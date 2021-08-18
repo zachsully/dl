@@ -1,0 +1,10 @@
+{- BEHAVIOR : 4 -}
+codata Stream a
+  { Head : Stream a -> a
+  , Tail : Stream a -> Stream a }
+
+let testing = coiter
+ 	      { Head # -> x. 0
+              ; Tail # -> x. 0 }
+              with (fix s in s)
+in Head (Tail (Tail (Tail (Tail (Tail testing)))))
