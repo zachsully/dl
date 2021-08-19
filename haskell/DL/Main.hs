@@ -97,9 +97,10 @@ parseTypeOf = TypeMode
 
 selectMode :: Parser Mode
 selectMode = subparser
-  $  (command "flatten" (info (helper <*> (Flatten <$> parseFlatten))
-                              (progDesc "run flattening rewrite rules.")))
-  <> (command "compile" (info (helper <*> (Compile <$> parseCompile))
+  $
+  -- (command "flatten" (info (helper <*> (Flatten <$> parseFlatten))
+  --                             (progDesc "run flattening rewrite rules.")))
+     (command "compile" (info (helper <*> (Compile <$> parseCompile))
                               (progDesc "compile a dual language program to Haskell.")))
   <> (command "eval" (info (helper <*> (Evaluate <$> parseEvaluate))
                            (progDesc "evaluate a dual language program.")))
@@ -122,7 +123,7 @@ main :: IO ()
 main =
   do { mode <- parseMode
      ; case mode of
-         Flatten fm  -> stdPipeline (fmInput fm) True >> return ()
+         -- Flatten fm  -> stdPipeline (fmInput fm) True >> return ()
          Compile cm  -> compilePipeline (cmInput cm) (cmOutput cm) (cmDebug cm) (cmBackend cm)
          Evaluate em -> evalPipeline (emStrat em) (emInput em) (emDebug em)
          TypeOf tm   -> tcPipeline (tmInput tm) (tmDebug tm)

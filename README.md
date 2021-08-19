@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/zachsully/dl.svg?branch=master)](https://travis-ci.org/zachsully/dl)
+[![Build Status](https://travis-ci.com/zachsully/dl.svg?branch=master)](https://travis-ci.com/zachsully/dl)
 
 # A Prototype Compiler for λcop
 
