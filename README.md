@@ -8,7 +8,7 @@ presented in
 is a compiler for λcop capable of generating code for Haskell, Ocaml, and
 Racket.
 
-## Example Program
+## An Example Program
 
 `dl` programs are a series of data and codata declarations followed by a term to
 evaluate. To observe the final output, that term must be an integer or some data
@@ -36,6 +36,10 @@ in Head (Tail (Tail (Tail (Tail fib))))
 ```
 dl compile <compiler-backend> <file-in> <file-out>
 ```
+
+For the compiler backends, the evaluation strategy of the entire program is
+decided by which backed. For example, the `haskell` backend will be call-by-need
+and the `ml` backend will be call-by-value.
 
 ## Evaluation
 
