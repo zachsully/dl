@@ -10,8 +10,10 @@ Racket.
 
 ## Example Program
 
-Here is a program that constructs the stream of Fibonacci numbers and then gets
-the fourth element.
+`dl` programs are a series of data and codata declarations followed by a term to
+evaluate. To observe the final output, that term must be an integer or some data
+type. Here is a program that constructs the stream of Fibonacci numbers and then
+gets the fourth element:
 
 ```
 codata Stream a
@@ -32,12 +34,16 @@ in Head (Tail (Tail (Tail (Tail fib))))
 `dl` features several compilers that are invoked with the following command.
 
 ```
-dl compile <compiler-num> <file-in> <file-out>
+dl compile <compiler-backend> <file-in> <file-out>
 ```
 
-| Backend | compiler-num |
-|---------|--------------|
-| Haskell | 0 |
-| Ocaml   | 1 |
-| Racket  | 2 |
-| JavaScript | 3 |
+## Evaluation
+
+Another way to run `dl` programs is to evaluate them with the abstract machine.
+
+```
+dl eval <cbn or cbv> <file-in>
+```
+
+Here the debug flag `-D` will force the interpreter to show the entire trace of
+execution.
