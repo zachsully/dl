@@ -210,6 +210,8 @@ step SingCBN (MState e (CCase e' (FlatPatCons cons xs,t0) (y,t1) c) (CtrlT (FCon
     False ->
       return (MState (extendEnvVar y (VThunk e (FConsApp cons' ts)) e') c (CtrlT t1))
 
+step SingCBV (MState e c (CtrlT (FConsApp cons []))) =
+  return (MState e (CRet (VConsApp cons []) c) CtrlE)
 step SingCBV (MState e c (CtrlT (FConsApp cons (t:ts)))) =
   return (MState e (CConsApp e cons [] ts c) (CtrlT t))
 step SingCBV (MState _ (CRet val (CConsApp e cons vs ts c)) CtrlE) =

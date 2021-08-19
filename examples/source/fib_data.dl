@@ -1,0 +1,18 @@
+data Pair a b
+  { Pair : a -> b -> Pair a b }
+
+data Nat
+  { Zero : Nat
+  | Succ : Nat -> Nat }
+
+let fib = (fix go in
+            { # (Pair x y) Zero     -> x
+            , # (Pair x y) (Succ n) -> go (Pair y (x+y)) n })
+          (Pair 1 1)
+in
+fib
+(Succ
+(Succ
+(Succ
+(Succ
+(Succ Zero)))))
