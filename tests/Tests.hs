@@ -9,10 +9,11 @@ import System.Exit
 import Text.Read
 
 import DL.Backend
-import DL.Backend.JavaScript
-import DL.Backend.ML
-import DL.Backend.Racket
-import DL.Backend.Haskell
+import DL.Flat.Backend.JavaScript
+import DL.Flat.Backend.ML
+import DL.Flat.Backend.Racket
+import DL.Flat.Backend.Haskell
+import DL.General.Strategy
 import DL.General.Top
 import qualified DL.General.Type as Ty
 import DL.Flat.Syntax
@@ -27,61 +28,7 @@ import DL.Utils.Pretty
 
 expectedTypeErrors,expectedOutputErrors :: Int
 expectedTypeErrors = 3
-expectedOutputErrors = 1
-
--- | Holds information for a particular test
-data TestCase
-  = TestCase
-  { tfile     :: FilePath
-    -- | Expected behavior
-  , tbehavior :: Maybe Behavior
-    -- | Parser output
-  , tpgm      :: Maybe (Program Term)
-    -- | Type checker output
-  , pgmTy     :: Maybe Ty.Type
-    -- | Flattening output
-  , tfpgm     :: Maybe (Program FlatTerm)
-    -- | Evalutation output
-  , teval     :: Maybe Int
-    -- | Haskell backend output
-  , ths       :: Maybe Int
-    -- | Ocaml backend output
-  , tml       :: Maybe Int
-    -- | Racket backend output
-  , trkt      :: Maybe Int
-    -- | Javascript backend output
-  , tjs       :: Maybe Int
-  }
-
-instance Pretty TestCase where
-  pp (TestCase
-      { tfile     = f
-      , tbehavior = b
-      , tpgm      = p
-      , pgmTy     = t
-      , tfpgm     = p'
-      , teval     = e
-      , ths       = h
-      , tml       = m
-      , trkt      = r
-      , tjs       = j })
-    = vmconcat
-    [ "===============" <+> f <+> "==============="
-    , "did parse?        " <+> (case p of
-                          Nothing -> "false"
-                          Just _ -> "true"
-                       )
-    , "type?             " <+> ppMaybe t
-    , "expected behavior?" <+> (case b of
-                                  Just a -> show a
-                                  Nothing -> "Undefined"
-                               )
-    , "eval output?      " <+> (case e of
-                            Nothing -> "none"
-                            Just n -> "some" <> DL.Utils.Pretty.parens (show n)
-                         )
-    , "", ""
-    ]
+expectedOutputErrors = 10
 
 main :: IO ()
 main =
@@ -89,29 +36,26 @@ main =
      ; report cases }
   where report cases =
           let n = length cases
-              failedToType = foldr (\c a ->
-                                      case (do { _ <- tpgm c
-                                               ; pgmTy c }) of
-                                        Nothing ->
-                                          case tbehavior c of
-                                            Just ThrowsTypeError -> a
-                                            _ -> a + 1
-                                        Just _ -> a
-                                   ) 0 cases
-              badOutput = foldr (\c a ->
-                                      case (do { _ <- tpgm c
-                                               ; actual <- teval c
-                                               ; case tbehavior c of
-                                                   Just (Computes expected) -> return (expected == actual)
-                                                   _ -> Nothing
-                                               }) of
-                                        Nothing -> a
-                                        Just True -> a
-                                        Just False -> a + 1
-                                   ) 0 cases
-          in do { putStrLn ("Failed to type:" <+> show failedToType <> "/" <> show n)
+              unexpectedTypeError = sum (fmap (\c ->
+                                                 case (tsurface c,tTy c) of
+                                                   (Just _, Nothing) ->
+                                                     case tbehavior c of
+                                                       Just ThrowsTypeError -> 0
+                                                       _ -> 1
+                                                   _ -> 0)
+                                              cases)
+              badOutput = sum (fmap (\c ->
+                                       case (tsurface c,tflat c,tevalCBNOut c) of
+                                         (Just _,Just _, Just i) ->
+                                           case tbehavior c of
+                                             Just (Computes j) ->
+                                               if i == j then 0 else 1
+                                             _ -> 0
+                                         _ -> 0 )
+                                    cases)
+          in do { putStrLn ("Unexpected type error:" <+> show unexpectedTypeError <> "/" <> show n)
                 ; putStrLn ("Bad output:" <+> show badOutput <> "/" <> show n)
-                ; when (failedToType /= expectedTypeErrors) $
+                ; when (unexpectedTypeError /= expectedTypeErrors) $
                     do { putStrLn ("Expected" <+> show expectedTypeErrors <+> "type errors")
                        ; exitWith (ExitFailure 1) }
                 ; when (badOutput /= expectedOutputErrors) $
@@ -120,8 +64,34 @@ main =
                 ; exitWith ExitSuccess }
 
 getPgmFiles :: IO [FilePath]
-getPgmFiles = (sort . fmap ("examples/source/"++) . filter ((==".dl") . takeExtension))
-          <$> listDirectory "examples/source"
+getPgmFiles = (sort . fmap ("examples/"++) . filter ((==".dl") . takeExtension))
+          <$> listDirectory "examples/"
+
+-- | Holds information for a particular test
+data TestCase
+  = TestCase
+  { tfile       :: FilePath
+  , tbehavior   :: Maybe Behavior
+  , tsurface    :: Maybe (Program Term)
+  , tTy         :: Maybe Ty.Type
+  , tflat       :: Maybe (Program FlatTerm)
+  , tevalCBNOut :: Maybe Int
+  , tevalCBVOut :: Maybe Int
+  , thsOut      :: Maybe Int
+  , tmlOut      :: Maybe Int
+  , trktOut     :: Maybe Int
+  , tjsOut      :: Maybe Int
+  }
+
+instance Pretty TestCase where
+  pp test = vmconcat
+    [ "===============" <+> tfile test <+> "==============="
+    , "did parse?        " <+> maybe "false" (const "true") (tsurface test)
+    , "type?             " <+> ppMaybe (tTy test)
+    , "expected behavior?" <+> maybe "Undefined" show (tbehavior test)
+    , "eval output?      " <+> maybe "none" (\n -> "some" <> DL.Utils.Pretty.parens (show n)) (tevalCBNOut test)
+    , "", ""
+    ]
 
 testFile :: FilePath -> IO TestCase
 testFile fp =
@@ -135,32 +105,33 @@ testFile fp =
                         Left _ -> return Nothing
                         Right x -> return (Just x)
                     }
-     ; let fpgm = fmap flattenPgm mpgm
-     ; let me = join (fmap interp fpgm)
-     ; mhs  <- runIfJust (fmap interpHaskell fpgm)
-     ; mml  <- runIfJust (fmap interpOcaml fpgm)
-     ; mrkt <- runIfJust (fmap interpRacket fpgm)
-     ; mjs  <- runIfJust (fmap interpJS fpgm)
-     ; return (TestCase { tfile     = fp
-                        , tbehavior = mbehavior
-                        , tpgm      = mpgm
-                        , pgmTy     = ty
-                        , tfpgm     = fpgm
-                        , teval     = me
-                        , ths       = Nothing
-                        , tml       = Nothing
-                        , trkt      = Nothing
-                        , tjs       = Nothing })
+     ; let fpgm = flattenPgm <$> mpgm
+     ; let cbnOut = runInterp CallByName =<< fpgm
+     ; let cbvOut = runInterp CallByValue =<< fpgm
+     -- ; mhs  <- runIfJust (fmap interpHaskell fpgm)
+     -- ; mml  <- runIfJust (fmap interpOcaml fpgm)
+     -- ; mrkt <- runIfJust (fmap interpRacket fpgm)
+     -- ; mjs  <- runIfJust (fmap interpJS fpgm)
+     ; return (TestCase { tfile       = fp
+                        , tbehavior   = mbehavior
+                        , tsurface    = mpgm
+                        , tTy         = ty
+                        , tflat       = fpgm
+                        , tevalCBNOut = cbnOut
+                        , tevalCBVOut = cbvOut
+                        , thsOut      = Nothing
+                        , tmlOut      = Nothing
+                        , trktOut     = Nothing
+                        , tjsOut      = Nothing })
      }
   where runIfJust :: Maybe (IO (Maybe a)) -> IO (Maybe a)
         runIfJust Nothing  = return Nothing
         runIfJust (Just i) = i
-
-interp :: Program FlatTerm -> Maybe Int
-interp prog =
-  case runStd (interpPgm prog) of
-    Right (F.FLit i) -> return i
-    _ -> Nothing
+        runInterp :: Strategy -> Program FlatTerm -> Maybe Int
+        runInterp strat t =
+          case runStd (interpPgm CallByName False t) of
+            Right (_,FLit i) -> Just i
+            _ -> Nothing
 
 -- | Different interpreters for the backends
 interpHaskell,interpRacket,interpOcaml,interpJS

@@ -199,7 +199,7 @@ transTerm (FCoalt (h,u) t) = App (App (Var (Variable "set" <> h))
                                  (Lazy . transTerm $ u)
 transTerm (FEmpty) = Fail
 transTerm (FFun v t) = Lam v (transTerm t)
-transTerm (FShift _ _) = error "transTerm{FShift}"
+transTerm (FShift _ t) = transTerm t
 transTerm (FPrompt t) = transTerm t
 
 transTerm (FObsApp e t) = App (transTerm t) (transTerm e)

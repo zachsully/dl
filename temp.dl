@@ -1,0 +1,12 @@
+open Lazy
+
+
+exception UnmatchedCopattern
+let unmatched = None;;
+
+
+let prog =
+ 23 + 42;;
+
+print_int prog;;
+print_newline ();;

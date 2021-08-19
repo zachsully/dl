@@ -66,15 +66,6 @@ flattenPipe debug pgm =
               ; putStrLn "" }
        ; return pgm' }
 
-stdPipeline :: FilePath -> Bool -> IO (Program FlatTerm)
-stdPipeline _fp _debug = undefined
-
-coreDataPipeline :: FilePath -> Bool -> IO ()
-coreDataPipeline = undefined
-
-coreCodataPipeline :: FilePath -> Bool -> IO ()
-coreCodataPipeline = undefined
-
 repl :: IO ()
 repl =
   do { hSetBuffering stdout NoBuffering
@@ -91,10 +82,6 @@ repl =
                       case runStd (interpPgm CallByName False (flattenPgm (preludePgm t))) of
                         Left s -> hPutStrLn stdout $ s
                         Right a -> hPutStrLn stdout $ pp (snd a)
-                          -- case runStd (infer [] (reifyValue a)) of
-                          --   Left _ -> hPutStrLn stdout . pp $ a
-                          --   Right ty -> hPutStrLn stdout $
-                          --     pp a <+> ":" <+> pp ty
             }
 
      }

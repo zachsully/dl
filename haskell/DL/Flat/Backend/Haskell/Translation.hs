@@ -162,7 +162,7 @@ transTerm (FCoalt (h,u) t) = HsApp (HsApp (HsVar (Variable "set_" <> h))
                                (transTerm u)
 transTerm (FEmpty) = HsFail
 transTerm (FFun v t) = HsLam v (transTerm t)
-transTerm (FShift _ _) = error "transTerm{FShift}"
+transTerm (FShift _ t) = transTerm t
 transTerm (FPrompt t) = transTerm t
 
 transTerm (FObsApp e t) = HsApp (transTerm t) (transTerm e)
