@@ -1,7 +1,7 @@
 {- BEHAVIOR : Undefined -}
 codata Stream a
   { Head : Stream a -> a
-  , Tail : Stream a -> Stream a }
+  ; Tail : Stream a -> Stream a }
 
 data Nat
   { Zero : Nat
@@ -11,5 +11,5 @@ let nats =
   cocase [# Zero]
     (fix f in
        { Head [# x] → x
-       , Tail [# x] → f (Succ x) }) in
+       ; Tail [# x] → f (Succ x) }) in
 cocase [Head [Tail [Tail #]]] nats

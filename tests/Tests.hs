@@ -26,42 +26,26 @@ import DL.Utils.StdMonad
 import DL.Utils.IO
 import DL.Utils.Pretty
 
-expectedTypeErrors,expectedOutputErrors :: Int
-expectedTypeErrors = 3
-expectedOutputErrors = 10
+allowedErrs :: Int
+allowedErrs = 3
 
 main :: IO ()
 main =
-  do { cases <- mapM (\p -> testFile p >>= \c -> pprint c >> return c) =<< getPgmFiles
-     ; report cases }
-  where report cases =
-          let n = length cases
-              unexpectedTypeError = sum (fmap (\c ->
-                                                 case (tsurface c,tTy c) of
-                                                   (Just _, Nothing) ->
-                                                     case tbehavior c of
-                                                       Just ThrowsTypeError -> 0
-                                                       _ -> 1
-                                                   _ -> 0)
-                                              cases)
-              badOutput = sum (fmap (\c ->
-                                       case (tsurface c,tflat c,tevalCBNOut c) of
-                                         (Just _,Just _, Just i) ->
-                                           case tbehavior c of
-                                             Just (Computes j) ->
-                                               if i == j then 0 else 1
-                                             _ -> 0
-                                         _ -> 0 )
-                                    cases)
-          in do { putStrLn ("Unexpected type error:" <+> show unexpectedTypeError <> "/" <> show n)
-                ; putStrLn ("Bad output:" <+> show badOutput <> "/" <> show n)
-                ; when (unexpectedTypeError /= expectedTypeErrors) $
-                    do { putStrLn ("Expected" <+> show expectedTypeErrors <+> "type errors")
-                       ; exitWith (ExitFailure 1) }
-                ; when (badOutput /= expectedOutputErrors) $
-                    do { putStrLn ("Expected" <+> show expectedTypeErrors <+> "output errors")
-                       ; exitWith (ExitFailure 2) }
-                ; exitWith ExitSuccess }
+  do { cases <- mapM testFile =<< getPgmFiles
+     ; errs <- concat <$> (mapM (\c -> let err = testCaseErrors c in
+                                         if err /= []
+                                         then pprint c >> return err
+                                         else return err) cases)
+     ; let (p,t,f,n,v) = countErrors errs
+     ; putStrLn "########### Report ###########"
+     ; putStrLn (show (length cases) <+> "test programs")
+     ; putStrLn ("Parse errors:             " <+> show p)
+     ; putStrLn ("Type errors:              " <+> show t)
+     ; putStrLn ("Flattening errors:        " <+> show f)
+     ; putStrLn ("Call-by-name eval errors: " <+> show n)
+     ; putStrLn ("Call-by-value eval errors:" <+> show v)
+     ; exitWith (if length errs - allowedErrs > 0 then ExitFailure 1 else ExitSuccess)
+     }
 
 getPgmFiles :: IO [FilePath]
 getPgmFiles = (sort . fmap ("examples/"++) . filter ((==".dl") . takeExtension))
@@ -87,11 +71,59 @@ instance Pretty TestCase where
   pp test = vmconcat
     [ "===============" <+> tfile test <+> "==============="
     , "did parse?        " <+> maybe "false" (const "true") (tsurface test)
-    , "type?             " <+> ppMaybe (tTy test)
-    , "expected behavior?" <+> maybe "Undefined" show (tbehavior test)
-    , "eval output?      " <+> maybe "none" (\n -> "some" <> DL.Utils.Pretty.parens (show n)) (tevalCBNOut test)
+    , "type:             " <+> maybe "" pp (tTy test)
+    , "expected behavior:" <+> maybe "Undefined" show (tbehavior test)
+    , "eval output cbn:  " <+> maybe "" show (tevalCBNOut test)
+    , "eval output cbv:  " <+> maybe "" show (tevalCBVOut test)
     , "", ""
     ]
+
+data ErrorType
+  = ParseError
+  | TypeError
+  | FlattenError
+  | CBNEvalError
+  | CBVEvalError
+  deriving (Show,Eq)
+
+instance Pretty ErrorType where
+  pp = show
+
+testCaseErrors :: TestCase -> [ErrorType]
+testCaseErrors c =
+  case tsurface c of
+    Nothing -> [ParseError]
+    Just _ ->
+      case tTy c of
+        Nothing ->
+          case tbehavior c of
+            Just ThrowsTypeError -> []
+            _ -> [TypeError]
+        Just _ ->
+          case tflat c of
+            Nothing -> [FlattenError]
+            Just _ ->
+              case tbehavior c of
+                Just (Computes n) ->
+                  (case tevalCBNOut c of
+                    Just x -> if n == x then [] else [CBNEvalError]
+                    Nothing -> [])
+                  ++
+                  (case tevalCBVOut c of
+                    Just x -> if n == x then [] else [CBVEvalError]
+                    Nothing -> [])
+                _ -> []
+
+countErrors :: [ErrorType] -> (Int,Int,Int,Int,Int)
+countErrors = foldr (\err (p,t,f,n,v) ->
+                       case err of
+                         ParseError -> (p+1,t,f,n,v)
+                         TypeError -> (p,t+1,f,n,v)
+                         FlattenError -> (p,t,f+1,n,v)
+                         CBNEvalError -> (p,t,f,n+1,v)
+                         CBVEvalError -> (p,t,f,n,v+1)
+                    )
+                    (0,0,0,0,0)
 
 testFile :: FilePath -> IO TestCase
 testFile fp =

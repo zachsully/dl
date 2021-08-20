@@ -5,4 +5,4 @@ data Bool
 
 cocase [# True]
   { # False -> 0
-  , # True  -> 42 }
+  ; # True  -> 42 }

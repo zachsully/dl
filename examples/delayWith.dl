@@ -4,7 +4,7 @@ codata Delay a
 
 codata With a b
   { Fst : With a b -> a
-  , Snd : With a b -> b }
+  ; Snd : With a b -> b }
 
 {  Fst [Force #]    -> 0
-, [Snd [Force #]] x -> x + 42 }
+; [Snd [Force #]] x -> x + 42 }

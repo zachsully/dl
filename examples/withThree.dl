@@ -1,9 +1,9 @@
 {- BEHAVIOR : Undefined -}
 codata WithThree a b c
   { Fst : WithThree a b c -> a
-  , Snd : WithThree a b c -> b
-  , Trd : WithThree a b c -> c }
+  ; Snd : WithThree a b c -> b
+  ; Trd : WithThree a b c -> c }
 
 { Fst # -> 0
-, Snd # -> 1
-, Trd # -> 2 }
+; Snd # -> 1
+; Trd # -> 2 }

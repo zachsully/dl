@@ -4,7 +4,7 @@ index Succ n
 
 codata Stack n
   { Push : m = Succ n => Stack n -> Int -> Stack m
-  , Pop  : n = Succ m => Stack n -> Int }
+  ; Pop  : n = Succ m => Stack n -> Int }
 
 let x = {} : Stack Zero in
   Pop x

@@ -1,7 +1,7 @@
-{- BEHAVIOR : 5 -}
+{- BEHAVIOR : 10946 -}
 codata Stream a
   { Head : Stream a -> a
-  , Tail : Stream a -> Stream a }
+  ; Tail : Stream a -> Stream a }
 
 data Pair a b
   { Pair : a -> b -> Pair a b }

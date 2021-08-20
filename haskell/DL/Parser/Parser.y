@@ -138,7 +138,7 @@ proj : var ':' constraint '=>' type            {% do { addVar $1 Negative
      | var ':' type                            {% do { addVar $1 Negative
                                                      ; return (Proj $1 Nothing $3) } }
 projs :: { [Projection] }
-projs : projs ',' proj                         { $3 : $1 }
+projs : projs ';' proj                         { $3 : $1 }
       | proj                                   { [$1] }
       | {- empty-}                             { [] }
 
@@ -249,7 +249,7 @@ coalt : copattern '->' term      { ($1,$3) }
 
 coalts :: { [(CoPattern,Term)] }
 coalts : coalt                   { [$1] }
-       | coalts ',' coalt        { $3 : $1 }
+       | coalts ';' coalt        { $3 : $1 }
        | {- empty -}             { [] }
 
 pattern :: { Pattern }

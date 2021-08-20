@@ -1,11 +1,11 @@
-{- BEHAVIOR : 4 -}
+{- BEHAVIOR : 40 -}
 codata Stream a
   { Head : Stream a -> a
-  , Tail : Stream a -> Stream a }
+  ; Tail : Stream a -> Stream a }
 
 let evens = (fix countTwo in
  	      { Head [# y] -> y
-              , Tail [# y] -> countTwo (y+2) }) 0
+              ; Tail [# y] -> countTwo (y+2) }) 0
 in
 cocase
 [Head

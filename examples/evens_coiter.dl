@@ -1,7 +1,7 @@
-{- BEHAVIOR : 4 -}
+{- BEHAVIOR : 10 -}
 codata Stream a
   { Head : Stream a -> a
-  , Tail : Stream a -> Stream a }
+  ; Tail : Stream a -> Stream a }
 
 let evens = coiter
  	      { Head # -> x. x

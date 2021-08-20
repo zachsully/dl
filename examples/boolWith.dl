@@ -1,13 +1,13 @@
 {- BEHAVIOR : 42 -}
 codata With a b
   { Fst : With a b -> a
-  , Snd : With a b -> b }
+  ; Snd : With a b -> b }
 
 data Bool
   { True  : Bool
   | False : Bool }
 
 let f = { [Fst #] True  -> 0
-        , [Fst #] False -> 42
-        ,  Snd #        -> True }
+        ; [Fst #] False -> 42
+        ;  Snd #        -> True }
 in (Fst f) False

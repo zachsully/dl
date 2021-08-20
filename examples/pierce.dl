@@ -4,11 +4,11 @@
 
 codata Counter
   { Get : Counter -> Int
-  , Set : Counter -> Int -> Counter
-  , Inc : Counter -> Counter }
+  ; Set : Counter -> Int -> Counter
+  ; Inc : Counter -> Counter }
 
 let newCounter = fix self in
                    { Get [# i] -> i
-                   , [Set [# _]] j -> self j
-                   , Inc [# i] -> Set (self i) (1 + (Get (self i))) } in
+                   ; [Set [# _]] j -> self j
+                   ; Inc [# i] -> Set (self i) (1 + (Get (self i))) } in
 Get (Set (newCounter 0) 5)

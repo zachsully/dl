@@ -1,14 +1,14 @@
-{- BEHAVIOR : 5 -}
+{- BEHAVIOR : 8 -}
 codata Stream a
   { Head : Stream a -> a
-  , Tail : Stream a -> Stream a }
+  ; Tail : Stream a -> Stream a }
 
 codata With a b
   { Fst : With a b -> a
-  , Snd : With a b -> b }
+  ; Snd : With a b -> b }
 
 let fib = coiter { Head # -> x . Fst x
                  ; Tail # -> y . { Fst # -> Snd y
-                                 , Snd # -> Fst y + Snd y }
-                 } with { Fst # -> 1, Snd # -> 1 }
+                                 ; Snd # -> Fst y + Snd y }
+                 } with { Fst # -> 1; Snd # -> 1 }
 in cocase [Head [Tail [Tail [Tail [Tail [Tail #]]]]]] fib

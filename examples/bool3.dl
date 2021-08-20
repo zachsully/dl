@@ -4,4 +4,4 @@ data Bool
   | False : Bool }
 
 { # True  -> 42
-, # False -> 0  }
+; # False -> 0  }

@@ -236,6 +236,7 @@ step SingCBV (MState _ (CRet (VConsApp cons vs) (CCase e' (FlatPatCons cons' xs,
 -- Applications
 step _ (MState e c (CtrlT (FObsApp t0 t1))) =
   return (MState e (CArg e t0 c) (CtrlT t1))
+
 step SingCBN (MState e (CArg e1 t1 c) (CtrlT (FFun x t))) =
   return (MState (extendEnvVar x (VThunk e1 t1) e) c (CtrlT t))
 

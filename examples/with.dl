@@ -1,9 +1,9 @@
 {- BEHAVIOR : 42 -}
 codata With a b
   { Fst : With a b -> a
-  , Snd : With a b -> b }
+  ; Snd : With a b -> b }
 
 let f = { Fst [Fst #] -> 0
-        , Snd [Fst #] -> 1
-        ,      Snd #  -> 42 } in
+        ; Snd [Fst #] -> 1
+        ;      Snd #  -> 42 } in
 cocase [Snd #] f

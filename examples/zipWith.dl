@@ -1,10 +1,10 @@
 {- BEHAVIOR : Undefined -}
 codata Stream a
   { Head : Stream a -> a
-  , Tail : Stream a -> Stream a }
+  ; Tail : Stream a -> Stream a }
 
 fix s in
   { # f sa sb ->
     { Head # -> f (Head sa) (Head sb)
-    , Tail # -> s f (Tail sa) (Tail sb) }
+    ; Tail # -> s f (Tail sa) (Tail sb) }
   }

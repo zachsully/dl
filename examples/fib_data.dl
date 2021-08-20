@@ -1,3 +1,4 @@
+{- BEHAVIOR : 8 -}
 data Pair a b
   { Pair : a -> b -> Pair a b }
 
@@ -7,7 +8,7 @@ data Nat
 
 let fib = (fix go in
             { # (Pair x y) Zero     -> x
-            , # (Pair x y) (Succ n) -> go (Pair y (x+y)) n })
+            ; # (Pair x y) (Succ n) -> go (Pair y (x+y)) n })
           (Pair 1 1)
 in
 fib
